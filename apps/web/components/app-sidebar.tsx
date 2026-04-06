@@ -1,0 +1,139 @@
+'use client'
+
+import * as React from "react"
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarMenuBadge,
+} from "@workspace/ui/components/sidebar"
+import {
+  LayoutDashboardIcon,
+  InboxIcon,
+  BookOpenIcon,
+  BarChart2Icon,
+  SettingsIcon,
+  ZapIcon,
+} from 'lucide-react'
+import { UserMenu } from '@/components/nav/UserMenu'
+
+type NavItem = {
+  label: string
+  href: string
+  icon: any
+  exact?: boolean
+  badge?: string
+}
+
+type NavGroup = {
+  label: string
+  items: NavItem[]
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: "Main",
+    items: [
+      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboardIcon, exact: true },
+      { label: 'Inbox',     href: '/inbox',     icon: InboxIcon, badge: '3' },
+    ]
+  },
+  {
+    label: "Management",
+    items: [
+      { label: 'Knowledge Base', href: '/dashboard/knowledge', icon: BookOpenIcon },
+      { label: 'Analytics',      href: '/dashboard/analytics', icon: BarChart2Icon },
+    ]
+  },
+  {
+    label: "System",
+    items: [
+      { label: 'Settings', href: '/dashboard/settings', icon: SettingsIcon },
+    ]
+  }
+]
+
+interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  user: {
+    email?: string
+  } | null
+}
+
+export function AppSidebar({ user, ...props }: AppSidebarProps) {
+  const pathname = usePathname()
+  
+  const initials = user?.email?.slice(0, 2).toUpperCase() ?? 'TF'
+
+  const isActive = (href: string, exact = false) => {
+    if (exact) return pathname === href
+    return pathname === href || pathname.startsWith(href + '/')
+  }
+
+  return (
+    <Sidebar collapsible="icon" variant="sidebar" {...props}>
+      <SidebarHeader className="border-b border-sidebar-border">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild tooltip="Tinfin Dashboard">
+              <Link href="/dashboard">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                  <ZapIcon className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left leading-tight">
+                  <span className="truncate text-sm font-semibold tracking-tight">Tinfin</span>
+                  <span className="truncate text-[11px] text-muted-foreground">Support Platform</span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+
+      <SidebarContent>
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label} className="py-2">
+            <SidebarGroupLabel className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">
+              {group.label}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-0.5">
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.href, item.exact)}
+                      tooltip={item.label}
+                      className="h-9 gap-3 px-3 rounded-lg font-medium"
+                    >
+                      <Link href={item.href}>
+                        <item.icon className="size-4 shrink-0" />
+                        <span className="flex-1 truncate text-[13px]">{item.label}</span>
+                        {item.badge && (
+                          <SidebarMenuBadge className="min-w-[18px] h-[18px] text-[10px] font-bold tabular-nums">
+                            {item.badge}
+                          </SidebarMenuBadge>
+                        )}
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <UserMenu email={user?.email ?? ''} initials={initials} />
+      <SidebarRail />
+    </Sidebar>
+  )
+}
