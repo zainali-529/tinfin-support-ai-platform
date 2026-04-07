@@ -49,6 +49,75 @@ export const STYLES = `
   }
   .header-btn:hover, .close-btn:hover { background: rgba(255,255,255,0.28); }
 
+  /* ── Tabs ── */
+  .tabs {
+    display: grid; grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid #f0f0f0; background: #fff;
+  }
+  .tab-btn {
+    border: none; border-bottom: 2px solid transparent; background: transparent;
+    padding: 11px 8px; font-size: 13px; font-weight: 600; color: #6b7280;
+    cursor: pointer; transition: color 0.15s;
+  }
+  .tab-btn:hover { color: #111827; }
+  .tab-btn.active { color: #111827; }
+
+  /* ── Inbox ── */
+  .inbox-list {
+    flex: 1; overflow-y: auto; padding: 10px; background: #f8f9fb;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .inbox-top-actions {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 2px;
+  }
+  .inbox-start-btn {
+    flex: 1; border: none; border-radius: 10px; color: #fff;
+    padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .inbox-start-btn:hover { opacity: 0.9; }
+  .inbox-refresh-btn {
+    border: 1px solid #e5e7eb; border-radius: 10px; background: #fff;
+    color: #374151; padding: 10px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .inbox-refresh-btn:hover { background: #f9fafb; }
+
+  .inbox-empty {
+    text-align: center; padding: 40px 18px; color: #6b7280;
+    background: #fff; border: 1px dashed #e5e7eb; border-radius: 12px;
+  }
+
+  .inbox-item {
+    border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; cursor: pointer;
+    text-align: left; padding: 10px 11px; display: flex; flex-direction: column; gap: 6px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .inbox-item:hover { border-color: #d1d5db; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .inbox-item.selected { border-color: #9ca3af; }
+
+  .inbox-item-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .inbox-item-title {
+    font-size: 13px; font-weight: 700; color: #111827; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .inbox-item-time {
+    font-size: 11px; color: #9ca3af; flex-shrink: 0;
+  }
+  .inbox-item-preview {
+    font-size: 12px; color: #6b7280; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .inbox-item-meta { display: flex; }
+  .inbox-status {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;
+    border-radius: 999px; padding: 3px 7px;
+  }
+  .status-bot { background: #dbeafe; color: #1d4ed8; }
+  .status-pending { background: #fef3c7; color: #b45309; }
+  .status-open { background: #d1fae5; color: #047857; }
+  .status-resolved, .status-closed { background: #e5e7eb; color: #4b5563; }
+
   /* ── Pre-chat form ── */
   .prechat {
     flex: 1; overflow-y: auto; display: flex; flex-direction: column;

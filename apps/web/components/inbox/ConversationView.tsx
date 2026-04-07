@@ -50,17 +50,46 @@ function useAgentWS(orgId: string, agentId: string) {
   useEffect(() => {
     if (!orgId || !agentId) return
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3003'
-    const ws = new WebSocket(`${wsUrl}?orgId=${orgId}&type=agent&agentId=${agentId}`)
-    wsRef.current = ws
-    ws.onopen = () => setConnected(true)
-    ws.onclose = () => setConnected(false)
-    return () => ws.close()
+    const supabase = createClient()
+    let ws: WebSocket | null = null
+    let cancelled = false
+
+    const connect = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (cancelled || !token) {
+        setConnected(false)
+        return
+      }
+
+      const params = new URLSearchParams({
+        orgId,
+        type: 'agent',
+        agentId,
+        token,
+      })
+
+      ws = new WebSocket(`${wsUrl}?${params.toString()}`)
+      wsRef.current = ws
+      ws.onopen = () => setConnected(true)
+      ws.onclose = () => setConnected(false)
+      ws.onerror = () => setConnected(false)
+    }
+
+    void connect()
+
+    return () => {
+      cancelled = true
+      setConnected(false)
+      ws?.close()
+    }
   }, [orgId, agentId])
 
   const send = useCallback((data: unknown) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data))
-    }
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return false
+    wsRef.current.send(JSON.stringify(data))
+    return true
   }, [])
 
   return { send, connected }
@@ -103,8 +132,18 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     const text = reply.trim()
     if (!text || sending || !canReply) return
     setReply('')
-    await sendMessage(text, agentId)
-  }, [reply, sending, canReply, sendMessage, agentId])
+
+    const sentOverWs = wsSend({
+      type: 'agent:message',
+      conversationId: conversation.id,
+      content: text,
+    })
+
+    // Fallback if agent socket is unavailable: still persist the reply in DB.
+    if (!sentOverWs) {
+      await sendMessage(text, agentId)
+    }
+  }, [reply, sending, canReply, wsSend, conversation.id, sendMessage, agentId])
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend()

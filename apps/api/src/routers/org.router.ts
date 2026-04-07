@@ -1,14 +1,23 @@
 import { z } from 'zod'
+import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
+
+function requireOrgAccess(userOrgId: string, requestedOrgId: string) {
+  if (requestedOrgId !== userOrgId) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Organization access denied.' })
+  }
+  return userOrgId
+}
 
 export const orgRouter = router({
   getOrg: protectedProcedure
     .input(z.object({ orgId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
       const { data } = await ctx.supabase
         .from('organizations')
         .select('*')
-        .eq('id', input.orgId)
+        .eq('id', orgId)
         .single()
       return data
     }),
@@ -16,10 +25,11 @@ export const orgRouter = router({
   getWidgetConfig: protectedProcedure
     .input(z.object({ orgId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
       const { data } = await ctx.supabase
         .from('widget_configs')
         .select('*')
-        .eq('org_id', input.orgId)
+        .eq('org_id', orgId)
         .single()
       return data
     }),
@@ -33,7 +43,8 @@ export const orgRouter = router({
       showBranding: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { orgId, ...rest } = input
+      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
+      const { orgId: _orgId, ...rest } = input
       const { data } = await ctx.supabase
         .from('widget_configs')
         .upsert({ org_id: orgId, ...rest }, { onConflict: 'org_id' })

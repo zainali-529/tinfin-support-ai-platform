@@ -16,17 +16,22 @@ function initWidget(config: WidgetConfig) {
 }
 
 const script = document.currentScript as HTMLScriptElement
-const orgId = script?.getAttribute('data-org-id') || 'f672108e-1fcb-4c6a-a5d4-42b84452364a'
+const envOrgId = (import.meta as any).env?.VITE_WIDGET_ORG_ID as string | undefined
+const orgId = script?.getAttribute('data-org-id')?.trim() || envOrgId?.trim() || ''
 const primaryColor = script?.getAttribute('data-color') || undefined
 const companyName = script?.getAttribute('data-company') || undefined
 const position = (script?.getAttribute('data-position') as WidgetConfig['position']) || 'bottom-right'
 
-const config: WidgetConfig = { orgId, primaryColor, companyName, position }
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => initWidget(config))
+if (!orgId) {
+  console.error('[tinfin-widget] Missing org id. Provide data-org-id on the script tag or VITE_WIDGET_ORG_ID at build time.')
 } else {
-  initWidget(config)
+  const config: WidgetConfig = { orgId, primaryColor, companyName, position }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => initWidget(config))
+  } else {
+    initWidget(config)
+  }
 }
 
 export { initWidget }

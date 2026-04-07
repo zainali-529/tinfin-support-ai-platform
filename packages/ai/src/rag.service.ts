@@ -31,6 +31,7 @@ export interface RAGResult {
 
 interface MatchedChunk {
   id: string
+  kb_id?: string | null
   content: string
   source_url: string | null
   source_title: string | null
@@ -44,6 +45,9 @@ const DEFAULT_SEARCH_THRESHOLD = 0.3
 const HANDOFF_THRESHOLD = 0.4
 const DEFAULT_MAX_CHUNKS = 5
 const GPT_MODEL = 'gpt-4o-mini'
+const KB_SCOPE_SEARCH_FACTOR = 8
+const KB_SCOPE_MIN_COUNT = 50
+const KB_SCOPE_MAX_COUNT = 200
 
 // ─── Intent Detection ─────────────────────────────────────────────────────────
 
@@ -113,22 +117,65 @@ async function searchSimilarChunks(
   embedding: number[],
   orgId: string,
   threshold: number,
-  count: number
+  count: number,
+  kbId?: string
 ): Promise<MatchedChunk[]> {
   const supabase = getSupabaseAdmin()
+  const expandedCount = kbId
+    ? Math.min(Math.max(count * KB_SCOPE_SEARCH_FACTOR, KB_SCOPE_MIN_COUNT), KB_SCOPE_MAX_COUNT)
+    : count
 
-  const { data, error } = await supabase.rpc('match_kb_chunks', {
+  let data: MatchedChunk[] | null = null
+  let error: { message: string } | null = null
+
+  // Prefer db-side kb filter if RPC supports it.
+  const scopedRpc = await supabase.rpc('match_kb_chunks', {
     query_embedding: embedding,
     match_org_id: orgId,
     match_threshold: threshold,
-    match_count: count,
+    match_count: expandedCount,
+    ...(kbId ? { match_kb_id: kbId } : {}),
   })
+
+  data = (scopedRpc.data as MatchedChunk[] | null) ?? null
+  error = scopedRpc.error ? { message: scopedRpc.error.message } : null
+
+  // Fallback for deployments where RPC signature does not accept match_kb_id yet.
+  if (error && kbId) {
+    const fallbackRpc = await supabase.rpc('match_kb_chunks', {
+      query_embedding: embedding,
+      match_org_id: orgId,
+      match_threshold: threshold,
+      match_count: expandedCount,
+    })
+    data = (fallbackRpc.data as MatchedChunk[] | null) ?? null
+    error = fallbackRpc.error ? { message: fallbackRpc.error.message } : null
+  }
 
   if (error) {
     throw new Error(`[rag] Vector search RPC failed: ${error.message}`)
   }
 
-  return (data as MatchedChunk[]) ?? []
+  let chunks = (data as MatchedChunk[]) ?? []
+
+  if (kbId && chunks.length > 0) {
+    const candidateIds = chunks.map(chunk => chunk.id)
+    const { data: kbRows, error: kbError } = await supabase
+      .from('kb_chunks')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('kb_id', kbId)
+      .in('id', candidateIds)
+
+    if (kbError) {
+      throw new Error(`[rag] kb scope validation failed: ${kbError.message}`)
+    }
+
+    const allowedIds = new Set((kbRows ?? []).map((row: { id: string }) => row.id))
+    chunks = chunks.filter(chunk => allowedIds.has(chunk.id))
+  }
+
+  return chunks.slice(0, count)
 }
 
 // ─── Confidence Scoring ───────────────────────────────────────────────────────
@@ -201,6 +248,7 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   const {
     query,
     orgId,
+    kbId,
     threshold = DEFAULT_SEARCH_THRESHOLD,
     maxChunks = DEFAULT_MAX_CHUNKS,
     openaiApiKey,
@@ -248,7 +296,8 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     queryEmbedding,
     orgId,
     threshold,
-    maxChunks
+    maxChunks,
+    kbId
   )
 
   // ── Step 6: Score confidence ──────────────────────────────────────────────

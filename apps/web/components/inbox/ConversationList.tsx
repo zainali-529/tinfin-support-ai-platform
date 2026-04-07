@@ -33,7 +33,11 @@ function getInitials(name?: string | null, email?: string | null) {
 function getLastMessage(conv: Conversation) {
   const msgs = conv.messages
   if (!msgs?.length) return 'No messages yet'
-  return msgs[msgs.length - 1]?.content?.slice(0, 72) || ''
+  const latest = msgs.reduce((acc, msg) => {
+    if (!acc) return msg
+    return new Date(msg.created_at).getTime() >= new Date(acc.created_at).getTime() ? msg : acc
+  }, msgs[0])
+  return latest?.content?.slice(0, 72) || ''
 }
 
 interface Props {

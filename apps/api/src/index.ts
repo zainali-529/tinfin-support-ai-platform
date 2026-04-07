@@ -12,7 +12,7 @@ import { createWsServer } from './ws/wsServer'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
-const WS_PORT = Number(process.env.WS_PORT || 3002)
+const WS_PORT = Number(process.env.WS_PORT || 3003)
 
 app.use(helmet())
 app.use(cors({ origin: process.env.WEB_URL || 'http://localhost:3000', credentials: true }))
