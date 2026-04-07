@@ -11,14 +11,15 @@ export function useConversations(orgId: string) {
 
   const fetch = useCallback(async () => {
     if (!orgId) return
+    setLoading(true)
     const supabase = createClient()
+    // Include ALL statuses — resolved shown as disabled, not hidden
     const { data } = await supabase
       .from('conversations')
-      .select('*, contacts(*), messages(id, role, content, created_at)')
+      .select('*, contacts(*), messages(id, role, content, created_at, ai_metadata)')
       .eq('org_id', orgId)
       .order('started_at', { ascending: false })
-      .limit(100)
-
+      .limit(150)
     setConversations((data as Conversation[]) ?? [])
     setLoading(false)
   }, [orgId])
@@ -29,9 +30,11 @@ export function useConversations(orgId: string) {
     if (payload.eventType === 'INSERT') {
       setConversations(prev => [payload.new, ...prev])
     } else if (payload.eventType === 'UPDATE') {
-      setConversations(prev => prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c))
+      setConversations(prev =>
+        prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c)
+      )
     } else if (payload.eventType === 'DELETE') {
-      setConversations(prev => prev.filter(c => c.id !== (payload.old as any).id))
+      setConversations(prev => prev.filter(c => c.id !== (payload.old as Conversation).id))
     }
   }, []))
 

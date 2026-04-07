@@ -12,6 +12,7 @@ export function useMessages(conversationId: string, orgId: string) {
 
   const fetch = useCallback(async () => {
     if (!conversationId) return
+    setLoading(true)
     const supabase = createClient()
     const { data } = await supabase
       .from('messages')
@@ -24,6 +25,7 @@ export function useMessages(conversationId: string, orgId: string) {
 
   useEffect(() => { fetch() }, [fetch])
 
+  // Real-time: new messages
   useRealtimeTable<Message>('messages', orgId, 'INSERT', useCallback((payload) => {
     if (payload.new.conversation_id === conversationId) {
       setMessages(prev => {
@@ -33,6 +35,7 @@ export function useMessages(conversationId: string, orgId: string) {
     }
   }, [conversationId]))
 
+  // Agent sends a message (updates DB directly, also marks conversation open)
   const sendMessage = useCallback(async (content: string, agentId: string) => {
     setSending(true)
     const supabase = createClient()
@@ -42,9 +45,12 @@ export function useMessages(conversationId: string, orgId: string) {
       role: 'agent',
       content,
     })
-    await supabase.from('conversations').update({ status: 'open', assigned_to: agentId }).eq('id', conversationId)
+    await supabase
+      .from('conversations')
+      .update({ status: 'open', assigned_to: agentId })
+      .eq('id', conversationId)
     setSending(false)
   }, [conversationId, orgId])
 
-  return { messages, loading, sending, sendMessage }
+  return { messages, loading, sending, sendMessage, refetch: fetch }
 }
