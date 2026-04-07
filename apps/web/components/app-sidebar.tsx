@@ -23,6 +23,7 @@ import {
   BarChart2Icon,
   SettingsIcon,
   ZapIcon,
+  CodeIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
 
@@ -51,6 +52,7 @@ const navGroups: NavGroup[] = [
     label: "Management",
     items: [
       { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon },
+      { label: 'Widget',         href: '/widget',    icon: CodeIcon },
       { label: 'Analytics',      href: '/dashboard/analytics', icon: BarChart2Icon },
     ]
   },

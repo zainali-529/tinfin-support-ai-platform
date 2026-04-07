@@ -24,7 +24,8 @@ export interface WidgetConfig {
   welcomeMessage?: string
   companyName?: string
   logoUrl?: string
-  position?: 'bottom-right' | 'bottom-left'
+  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+  showBranding?: boolean
 }
 
 export interface VisitorInfo {

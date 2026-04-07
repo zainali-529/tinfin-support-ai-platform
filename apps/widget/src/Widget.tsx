@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useChat } from './useChat'
+import { useWidgetConfig } from './useWidgetConfig'
 import { SendIcon, CloseIcon, ChatIcon, BotIcon, AgentIcon, NewChatIcon } from './icons'
 import { STYLES } from './styles'
 import type { WidgetConfig, VisitorInfo } from './types'
@@ -26,7 +27,10 @@ function formatRelativeTimestamp(value?: string | null) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-export default function Widget({ config }: { config: WidgetConfig }) {
+export default function Widget({ config: staticConfig }: { config: WidgetConfig }) {
+  // Fetch DB config and merge with static script-tag attributes
+  const { config } = useWidgetConfig(staticConfig.orgId, staticConfig)
+
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'inbox' | 'chat'>('inbox')
   const [input, setInput] = useState('')
@@ -45,7 +49,8 @@ export default function Widget({ config }: { config: WidgetConfig }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const color = config.primaryColor || '#6366f1'
-  const isLeft = config.position === 'bottom-left'
+  const isLeft = config.position === 'bottom-left' || config.position === 'top-left'
+  const isTop = config.position === 'top-left' || config.position === 'top-right'
   const showPreChat = !visitorInfo
 
   useEffect(() => {
@@ -101,11 +106,13 @@ export default function Widget({ config }: { config: WidgetConfig }) {
   const statusColor = !connected ? '#f87171' : agentActive ? '#34d399' : '#4ade80'
   const isResolvedConversation = activeConversation?.status === 'resolved' || activeConversation?.status === 'closed'
 
+  const companyName = config.companyName || 'Support'
+
   return (
     <>
       <style>{STYLES}</style>
 
-      <div className={`window ${isLeft ? 'left' : ''} ${open ? '' : 'hidden'}`}>
+      <div className={`window ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''} ${open ? '' : 'hidden'}`}>
         {/* Header */}
         <div className="header" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
           <div className="header-avatar">
@@ -115,7 +122,7 @@ export default function Widget({ config }: { config: WidgetConfig }) {
             }
           </div>
           <div className="header-info">
-            <div className="header-name">{config.companyName || 'Support'}</div>
+            <div className="header-name">{companyName}</div>
             <div className="header-status">
               <span className="status-dot" style={{ background: statusColor }} />
               {statusText}
@@ -338,14 +345,16 @@ export default function Widget({ config }: { config: WidgetConfig }) {
           </>
         )}
 
-        <div className="branding">
-          Powered by <a href="https://tinfin.com" target="_blank" rel="noopener">Tinfin</a>
-        </div>
+        {config.showBranding !== false && (
+          <div className="branding">
+            Powered by <a href="https://tinfin.com" target="_blank" rel="noopener">Tinfin</a>
+          </div>
+        )}
       </div>
 
       {/* Launcher */}
       <button
-        className={`launcher ${isLeft ? 'left' : ''}`}
+        className={`launcher ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''}`}
         style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Close chat' : 'Open chat'}

@@ -11,6 +11,7 @@ export const STYLES = `
   }
   .launcher:hover { transform: scale(1.08); box-shadow: 0 8px 32px rgba(0,0,0,0.22); }
   .launcher.left { right: auto; left: 24px; }
+  .launcher.top { bottom: auto; top: 24px; }
 
   .window {
     position: fixed; bottom: 96px; right: 24px; width: 380px; height: 580px;
@@ -21,6 +22,8 @@ export const STYLES = `
     transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s;
   }
   .window.left { right: auto; left: 24px; transform-origin: bottom left; }
+  .window.top { bottom: auto; top: 96px; transform-origin: top right; }
+  .window.left.top { transform-origin: top left; }
   .window.hidden { transform: scale(0.85); opacity: 0; pointer-events: none; }
 
   /* ── Header ── */
@@ -251,5 +254,7 @@ export const STYLES = `
   @media (max-width: 440px) {
     .window { width: calc(100vw - 16px); right: 8px; bottom: 88px; height: 72vh; }
     .window.left { left: 8px; right: auto; }
+    .window.top { top: 88px; bottom: auto; }
+    .launcher.top { top: 16px; bottom: auto; }
   }
 `

@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 3002 },
   define: {
-    'import.meta.env.VITE_API_WS_URL': JSON.stringify(process.env.VITE_API_WS_URL || 'ws://localhost:3003')
+    'import.meta.env.VITE_API_WS_URL': JSON.stringify(process.env.VITE_API_WS_URL || 'ws://localhost:3003'),
+    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:3001'),
   },
   build: {
     lib: {
