@@ -50,7 +50,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Management",
     items: [
-      { label: 'Knowledge Base', href: '/dashboard/knowledge', icon: BookOpenIcon },
+      { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon },
       { label: 'Analytics',      href: '/dashboard/analytics', icon: BarChart2Icon },
     ]
   },
