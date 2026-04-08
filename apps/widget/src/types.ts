@@ -20,12 +20,26 @@ export interface WidgetConversation {
 
 export interface WidgetConfig {
   orgId: string
+  // Basic — direct DB columns
   primaryColor?: string
   welcomeMessage?: string
   companyName?: string
   logoUrl?: string
   position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
   showBranding?: boolean
+  // Advanced — from settings JSONB
+  botName?: string
+  inputPlaceholder?: string
+  responseTimeText?: string
+  launcherSize?: 'sm' | 'md' | 'lg'
+  borderRadius?: number
+  widgetWidth?: number
+  headerStyle?: 'gradient' | 'solid'
+  userBubbleColor?: string | null
+  autoOpen?: boolean
+  autoOpenDelay?: number
+  showTypingIndicator?: boolean
+  offlineMessage?: string | null
 }
 
 export interface VisitorInfo {
@@ -44,8 +58,7 @@ export interface StoredChat {
     content: string
     createdAt: string
   }>>
-
-  // Backward compatibility with older widget storage shape.
+  // Backward compatibility
   conversationId?: string | null
   messages?: Array<{
     id: string

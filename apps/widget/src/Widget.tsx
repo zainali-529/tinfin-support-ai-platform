@@ -18,7 +18,6 @@ function formatRelativeTimestamp(value?: string | null) {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
-
   const deltaMs = Date.now() - date.getTime()
   const deltaMins = Math.floor(deltaMs / 60_000)
   if (deltaMins < 1) return 'Now'
@@ -27,8 +26,9 @@ function formatRelativeTimestamp(value?: string | null) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+const LAUNCHER_PX: Record<string, number> = { sm: 48, md: 56, lg: 64 }
+
 export default function Widget({ config: staticConfig }: { config: WidgetConfig }) {
-  // Fetch DB config and merge with static script-tag attributes
   const { config } = useWidgetConfig(staticConfig.orgId, staticConfig)
 
   const [open, setOpen] = useState(false)
@@ -38,6 +38,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const [nameInput, setNameInput] = useState('')
   const [emailInput, setEmailInput] = useState('')
   const [formError, setFormError] = useState('')
+  const autoOpenDone = useRef(false)
 
   const {
     messages, conversations, activeConversation, activeConversationId,
@@ -49,9 +50,59 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const color = config.primaryColor || '#6366f1'
+  const userBubbleColor = config.userBubbleColor || color
+  const launcherPx = LAUNCHER_PX[config.launcherSize || 'md'] ?? 56
+  const borderRadius = config.borderRadius ?? 20
+  const widgetWidth = config.widgetWidth ?? 380
+  const headerStyle = config.headerStyle ?? 'gradient'
+  const showTyping = config.showTypingIndicator !== false
+  const botName = config.botName || 'AI Assistant'
+  const inputPlaceholder = config.inputPlaceholder || 'Type a message...'
+  const responseTimeText = config.responseTimeText || 'AI · We reply instantly'
+
   const isLeft = config.position === 'bottom-left' || config.position === 'top-left'
   const isTop = config.position === 'top-left' || config.position === 'top-right'
   const showPreChat = !visitorInfo
+
+  // Auto-open logic
+  useEffect(() => {
+    if (!config.autoOpen || autoOpenDone.current) return
+    const delay = (config.autoOpenDelay ?? 5) * 1000
+    const timer = setTimeout(() => {
+      setOpen(true)
+      autoOpenDone.current = true
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [config.autoOpen, config.autoOpenDelay])
+
+  // Dynamic CSS overrides from config
+  const dynamicStyles = `
+    .launcher {
+      width: ${launcherPx}px !important;
+      height: ${launcherPx}px !important;
+    }
+    .window {
+      width: ${widgetWidth}px !important;
+      border-radius: ${borderRadius}px !important;
+    }
+    .bubble { border-radius: ${Math.max(borderRadius - 4, 8)}px; }
+    .bubble.user { background: ${userBubbleColor} !important; border-radius: ${Math.max(borderRadius - 4, 8)}px; border-bottom-right-radius: 4px !important; }
+    .bubble.agent { border-radius: ${Math.max(borderRadius - 4, 8)}px; border-bottom-left-radius: 4px !important; }
+    .bubble.bot { border-radius: ${Math.max(borderRadius - 4, 8)}px; border-bottom-left-radius: 4px !important; }
+    .input-wrap { border-radius: ${Math.max(borderRadius - 8, 6)}px; }
+    .inbox-item { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
+    .prechat-field input { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
+    .prechat-submit { border-radius: ${Math.max(borderRadius - 6, 8)}px; }
+    .inbox-start-btn { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
+    .inbox-refresh-btn { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
+    @media (max-width: 440px) {
+      .window { width: calc(100vw - 16px) !important; }
+    }
+  `
+
+  const headerBg = headerStyle === 'gradient'
+    ? `linear-gradient(135deg, ${color}, ${color}cc)`
+    : color
 
   useEffect(() => {
     if (open) {
@@ -101,20 +152,20 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   }
 
   const statusText = !connected
-    ? 'Connecting...'
-    : agentActive ? 'Agent is online' : 'AI · We reply instantly'
+    ? config.offlineMessage || 'Connecting...'
+    : agentActive ? 'Agent is online' : responseTimeText
   const statusColor = !connected ? '#f87171' : agentActive ? '#34d399' : '#4ade80'
   const isResolvedConversation = activeConversation?.status === 'resolved' || activeConversation?.status === 'closed'
-
   const companyName = config.companyName || 'Support'
 
   return (
     <>
       <style>{STYLES}</style>
+      <style>{dynamicStyles}</style>
 
       <div className={`window ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''} ${open ? '' : 'hidden'}`}>
         {/* Header */}
-        <div className="header" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
+        <div className="header" style={{ background: headerBg }}>
           <div className="header-avatar">
             {config.logoUrl
               ? <img src={config.logoUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
@@ -168,22 +219,13 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
             <form className="prechat-form" onSubmit={handlePreChatSubmit}>
               <div className="prechat-field">
                 <label>Your Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Ali Hassan"
-                  value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
-                  autoFocus
-                />
+                <input type="text" placeholder="e.g. Ali Hassan" value={nameInput}
+                  onChange={e => setNameInput(e.target.value)} autoFocus />
               </div>
               <div className="prechat-field">
                 <label>Email Address</label>
-                <input
-                  type="email"
-                  placeholder="e.g. ali@example.com"
-                  value={emailInput}
-                  onChange={e => setEmailInput(e.target.value)}
-                />
+                <input type="email" placeholder="e.g. ali@example.com" value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)} />
               </div>
               {formError && <p className="prechat-error">{formError}</p>}
               <button type="submit" className="prechat-submit" style={{ background: color }}>
@@ -194,20 +236,12 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
         ) : (
           <>
             <div className="tabs">
-              <button
-                className={`tab-btn ${tab === 'inbox' ? 'active' : ''}`}
+              <button className={`tab-btn ${tab === 'inbox' ? 'active' : ''}`}
                 style={tab === 'inbox' ? { borderBottomColor: color, color } : {}}
-                onClick={() => setTab('inbox')}
-              >
-                Inbox
-              </button>
-              <button
-                className={`tab-btn ${tab === 'chat' ? 'active' : ''}`}
+                onClick={() => setTab('inbox')}>Inbox</button>
+              <button className={`tab-btn ${tab === 'chat' ? 'active' : ''}`}
                 style={tab === 'chat' ? { borderBottomColor: color, color } : {}}
-                onClick={() => setTab('chat')}
-              >
-                Chat
-              </button>
+                onClick={() => setTab('chat')}>Chat</button>
             </div>
 
             {tab === 'inbox' ? (
@@ -218,7 +252,6 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                   </button>
                   <button className="inbox-refresh-btn" onClick={refreshInbox}>Refresh</button>
                 </div>
-
                 {conversations.length === 0 ? (
                   <div className="inbox-empty">
                     <div className="welcome-title">No conversations yet</div>
@@ -230,14 +263,9 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                     const title = conversation.contactName || conversation.contactEmail || visitorInfo?.name || 'Conversation'
                     const preview = conversation.lastMessage || 'No messages yet'
                     return (
-                      <button
-                        key={conversation.id}
+                      <button key={conversation.id}
                         className={`inbox-item ${selected ? 'selected' : ''}`}
-                        onClick={() => {
-                          openConversation(conversation.id)
-                          setTab('chat')
-                        }}
-                      >
+                        onClick={() => { openConversation(conversation.id); setTab('chat') }}>
                         <div className="inbox-item-row">
                           <span className="inbox-item-title">{title}</span>
                           <span className="inbox-item-time">{formatRelativeTimestamp(conversation.lastMessageAt)}</span>
@@ -268,8 +296,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                     messages.map((msg, idx) => {
                       const isSystem = msg.content.startsWith('—') && msg.content.endsWith('—')
                       const prevMsg = messages[idx - 1]
-                      const showDate = !prevMsg ||
-                        msg.createdAt.getTime() - prevMsg.createdAt.getTime() > 5 * 60 * 1000
+                      const showDate = !prevMsg || msg.createdAt.getTime() - prevMsg.createdAt.getTime() > 5 * 60 * 1000
 
                       return (
                         <div key={msg.id}>
@@ -285,15 +312,20 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                                   {msg.role === 'agent' ? <AgentIcon /> : <BotIcon />}
                                 </div>
                               )}
-                              <div
-                                className={`bubble ${msg.role === 'user' ? 'user' : msg.role === 'agent' ? 'agent' : 'bot'}`}
-                                style={
-                                  msg.role === 'user' ? { background: color }
-                                  : msg.role === 'agent' ? { background: '#059669' }
-                                  : {}
-                                }
-                              >
-                                {msg.content}
+                              <div className="msg-bubble-group">
+                                {msg.role === 'assistant' && (
+                                  <div style={{ fontSize: '10px', color: '#9ca3af', paddingLeft: '2px', marginBottom: '1px' }}>{botName}</div>
+                                )}
+                                <div
+                                  className={`bubble ${msg.role === 'user' ? 'user' : msg.role === 'agent' ? 'agent' : 'bot'}`}
+                                  style={
+                                    msg.role === 'user' ? { background: userBubbleColor }
+                                    : msg.role === 'agent' ? { background: '#059669' }
+                                    : {}
+                                  }
+                                >
+                                  {msg.content}
+                                </div>
                               </div>
                             </div>
                           )}
@@ -302,7 +334,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                     })
                   )}
 
-                  {typing && activeConversationId && (
+                  {showTyping && typing && activeConversationId && (
                     <div className="msg-row">
                       <div className="msg-avatar" style={{ background: `${color}22`, color }}>
                         <BotIcon />
@@ -319,24 +351,22 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                     <textarea
                       ref={textareaRef} rows={1}
                       placeholder={
-                        !activeConversationId
-                          ? 'Start a chat from Inbox...'
-                          : isResolvedConversation
-                          ? 'This conversation is resolved'
-                          : agentActive
-                          ? 'Message the agent...'
-                          : 'Type a message...'
+                        !activeConversationId ? 'Start a chat from Inbox...'
+                        : isResolvedConversation ? 'This conversation is resolved'
+                        : !connected ? (config.offlineMessage || 'Reconnecting...')
+                        : agentActive ? inputPlaceholder
+                        : inputPlaceholder
                       }
                       value={input}
                       onChange={handleInput}
                       onKeyDown={handleKey}
                       onBlur={() => sendTyping(false)}
-                      disabled={!activeConversationId || isResolvedConversation}
+                      disabled={!activeConversationId || isResolvedConversation || !connected}
                     />
                   </div>
                   <button className="send-btn" style={{ background: color }}
                     onClick={handleSend}
-                    disabled={!input.trim() || !activeConversationId || isResolvedConversation}>
+                    disabled={!input.trim() || !activeConversationId || isResolvedConversation || !connected}>
                     <SendIcon />
                   </button>
                 </div>
@@ -355,7 +385,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
       {/* Launcher */}
       <button
         className={`launcher ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''}`}
-        style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}
+        style={{ background: headerBg }}
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Close chat' : 'Open chat'}
       >

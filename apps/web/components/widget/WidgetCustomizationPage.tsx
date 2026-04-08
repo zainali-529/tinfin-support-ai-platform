@@ -8,26 +8,39 @@ import { Input } from '@workspace/ui/components/input'
 import { Label } from '@workspace/ui/components/label'
 import { Textarea } from '@workspace/ui/components/textarea'
 import { Switch } from '@workspace/ui/components/switch'
+import { Slider } from '@workspace/ui/components/slider'
 import { Badge } from '@workspace/ui/components/badge'
-import { Separator } from '@workspace/ui/components/separator'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs'
+import { Tabs, TabsContent, TabsList } from '@workspace/ui/components/tabs'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import {
-  PaletteIcon, LayoutIcon, MessageSquareIcon, CodeIcon,
-  CheckIcon, CopyIcon, SaveIcon, EyeIcon, ZapIcon,
-  GlobeIcon, InfoIcon,
+  CheckIcon, CopyIcon, SaveIcon, ZapIcon, GlobeIcon, InfoIcon,
+  PaletteIcon, MessageSquareIcon, CodeIcon, SlidersHorizontalIcon,
 } from 'lucide-react'
 import { WidgetPreview } from './WidgetPreview'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface WidgetSettings {
+  // Direct DB columns
   primaryColor: string
   welcomeMessage: string
   companyName: string
   logoUrl: string
   position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
   showBranding: boolean
+  // Advanced — stored in settings JSONB
+  botName: string
+  inputPlaceholder: string
+  responseTimeText: string
+  launcherSize: 'sm' | 'md' | 'lg'
+  borderRadius: number
+  widgetWidth: number
+  headerStyle: 'gradient' | 'solid'
+  userBubbleColor: string
+  autoOpen: boolean
+  autoOpenDelay: number
+  showTypingIndicator: boolean
+  offlineMessage: string
 }
 
 const DEFAULT_SETTINGS: WidgetSettings = {
@@ -37,14 +50,32 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   logoUrl: '',
   position: 'bottom-right',
   showBranding: true,
+  botName: 'AI Assistant',
+  inputPlaceholder: 'Type a message...',
+  responseTimeText: 'AI · We reply instantly',
+  launcherSize: 'md',
+  borderRadius: 20,
+  widgetWidth: 380,
+  headerStyle: 'gradient',
+  userBubbleColor: '',
+  autoOpen: false,
+  autoOpenDelay: 5,
+  showTypingIndicator: true,
+  offlineMessage: '',
 }
 
 const POSITIONS = [
-  { value: 'bottom-right', label: 'Bottom Right' },
-  { value: 'bottom-left', label: 'Bottom Left' },
-  { value: 'top-right', label: 'Top Right' },
-  { value: 'top-left', label: 'Top Left' },
+  { value: 'bottom-right', label: 'Bottom Right', dot: { bottom: 0, right: 0 } },
+  { value: 'bottom-left',  label: 'Bottom Left',  dot: { bottom: 0, left: 0 } },
+  { value: 'top-right',    label: 'Top Right',    dot: { top: 0, right: 0 } },
+  { value: 'top-left',     label: 'Top Left',     dot: { top: 0, left: 0 } },
 ] as const
+
+const LAUNCHER_SIZES = {
+  sm: 48,
+  md: 56,
+  lg: 64,
+} as const
 
 const PRESET_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
@@ -52,89 +83,59 @@ const PRESET_COLORS = [
   '#0ea5e9', '#3b82f6', '#1e293b', '#18181b',
 ]
 
-// ─── Color Picker ─────────────────────────────────────────────────────────────
+// ─── Sub-components ────────────────────────────────────────────────────────────
 
-function ColorPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (v: string) => void
-}) {
-  const [hexInput, setHexInput] = useState(value)
+function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hex, setHex] = useState(value)
+  useEffect(() => setHex(value), [value])
 
-  useEffect(() => setHexInput(value), [value])
-
-  const handleHexChange = (v: string) => {
-    setHexInput(v)
+  const handleHex = (v: string) => {
+    setHex(v)
     if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v)
   }
 
   return (
     <div className="space-y-3">
-      {/* Preset swatches */}
       <div className="grid grid-cols-6 gap-1.5">
         {PRESET_COLORS.map(c => (
-          <button
-            key={c}
-            className="relative w-full aspect-square rounded-md border-2 transition-all hover:scale-110"
+          <button key={c}
+            className="relative w-full aspect-square rounded-md border-2 transition-all hover:scale-105"
             style={{
               background: c,
               borderColor: value === c ? '#000' : 'transparent',
               outline: value === c ? `2px solid ${c}` : 'none',
               outlineOffset: 2,
             }}
-            onClick={() => onChange(c)}
-          >
-            {value === c && (
-              <CheckIcon className="absolute inset-0 m-auto w-3 h-3 text-white drop-shadow" />
-            )}
+            onClick={() => onChange(c)}>
+            {value === c && <CheckIcon className="absolute inset-0 m-auto w-3 h-3 text-white drop-shadow" />}
           </button>
         ))}
       </div>
-
-      {/* Custom hex + native picker */}
       <div className="flex items-center gap-2">
         <div className="relative">
-          <input
-            type="color"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-          />
-          <div
-            className="w-9 h-9 rounded-lg border border-border cursor-pointer"
-            style={{ background: value }}
-          />
+          <input type="color" value={value} onChange={e => onChange(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+          <div className="w-9 h-9 rounded-lg border border-border cursor-pointer" style={{ background: value }} />
         </div>
-        <Input
-          value={hexInput}
-          onChange={e => handleHexChange(e.target.value)}
-          placeholder="#6366f1"
-          className="h-9 font-mono text-sm flex-1"
-        />
+        <Input value={hex} onChange={e => handleHex(e.target.value)}
+          placeholder="#6366f1" className="h-9 font-mono text-sm flex-1" />
       </div>
     </div>
   )
 }
 
-// ─── Copy Code Button ──────────────────────────────────────────────────────────
-
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
-  const copy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
   return (
-    <Button variant="ghost" size="icon-sm" onClick={copy}>
+    <Button variant="ghost" size="icon-sm" onClick={() => {
+      navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }}>
       {copied ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
     </Button>
   )
 }
-
-// ─── Code Block ───────────────────────────────────────────────────────────────
 
 function CodeBlock({ code, lang = 'html' }: { code: string; lang?: string }) {
   return (
@@ -143,45 +144,64 @@ function CodeBlock({ code, lang = 'html' }: { code: string; lang?: string }) {
         <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wide">{lang}</span>
         <CopyButton text={code} />
       </div>
-      <pre className="px-4 py-3 text-xs text-zinc-300 overflow-x-auto leading-relaxed font-mono whitespace-pre-wrap">
-        {code}
-      </pre>
+      <pre className="px-4 py-3 text-xs text-zinc-300 overflow-x-auto leading-relaxed font-mono whitespace-pre-wrap">{code}</pre>
+    </div>
+  )
+}
+
+function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        {description && <div className="text-xs text-muted-foreground mt-0.5 leading-snug">{description}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
     </div>
   )
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-interface Props {
-  orgId: string
-}
+interface Props { orgId: string }
 
 export function WidgetCustomizationPage({ orgId }: Props) {
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
-  const [activeTab, setActiveTab] = useState('appearance')
+  const [activeTab, setActiveTab] = useState('style')
 
   const { data: existingConfig, isLoading } = trpc.org.getWidgetConfig.useQuery(
-    { orgId },
-    { retry: false }
+    { orgId }, { retry: false }
   )
   const updateConfig = trpc.org.updateWidgetConfig.useMutation()
 
-  // Load existing config into form
+  // Load existing config
   useEffect(() => {
-    if (existingConfig) {
-      setSettings({
-        primaryColor: existingConfig.primary_color ?? DEFAULT_SETTINGS.primaryColor,
-        welcomeMessage: existingConfig.welcome_message ?? DEFAULT_SETTINGS.welcomeMessage,
-        companyName: existingConfig.company_name ?? DEFAULT_SETTINGS.companyName,
-        logoUrl: existingConfig.logo_url ?? DEFAULT_SETTINGS.logoUrl,
-        position: (existingConfig.position as WidgetSettings['position']) ?? DEFAULT_SETTINGS.position,
-        showBranding: existingConfig.show_branding ?? DEFAULT_SETTINGS.showBranding,
-      })
-      setIsDirty(false)
-    }
+    if (!existingConfig) return
+    const s = (existingConfig.settings ?? {}) as Record<string, unknown>
+    setSettings({
+      primaryColor:      (existingConfig.primary_color as string)     ?? DEFAULT_SETTINGS.primaryColor,
+      welcomeMessage:    (existingConfig.welcome_message as string)   ?? DEFAULT_SETTINGS.welcomeMessage,
+      companyName:       (existingConfig.company_name as string)      ?? DEFAULT_SETTINGS.companyName,
+      logoUrl:           (existingConfig.logo_url as string)          ?? DEFAULT_SETTINGS.logoUrl,
+      position:          (existingConfig.position as WidgetSettings['position']) ?? DEFAULT_SETTINGS.position,
+      showBranding:      (existingConfig.show_branding as boolean)    ?? DEFAULT_SETTINGS.showBranding,
+      botName:           typeof s.botName === 'string'          ? s.botName          : DEFAULT_SETTINGS.botName,
+      inputPlaceholder:  typeof s.inputPlaceholder === 'string' ? s.inputPlaceholder : DEFAULT_SETTINGS.inputPlaceholder,
+      responseTimeText:  typeof s.responseTimeText === 'string' ? s.responseTimeText : DEFAULT_SETTINGS.responseTimeText,
+      launcherSize:      typeof s.launcherSize === 'string'     ? s.launcherSize as WidgetSettings['launcherSize'] : DEFAULT_SETTINGS.launcherSize,
+      borderRadius:      typeof s.borderRadius === 'number'     ? s.borderRadius     : DEFAULT_SETTINGS.borderRadius,
+      widgetWidth:       typeof s.widgetWidth === 'number'      ? s.widgetWidth      : DEFAULT_SETTINGS.widgetWidth,
+      headerStyle:       typeof s.headerStyle === 'string'      ? s.headerStyle as WidgetSettings['headerStyle'] : DEFAULT_SETTINGS.headerStyle,
+      userBubbleColor:   typeof s.userBubbleColor === 'string'  ? s.userBubbleColor  : DEFAULT_SETTINGS.userBubbleColor,
+      autoOpen:          typeof s.autoOpen === 'boolean'        ? s.autoOpen         : DEFAULT_SETTINGS.autoOpen,
+      autoOpenDelay:     typeof s.autoOpenDelay === 'number'    ? s.autoOpenDelay    : DEFAULT_SETTINGS.autoOpenDelay,
+      showTypingIndicator: typeof s.showTypingIndicator === 'boolean' ? s.showTypingIndicator : DEFAULT_SETTINGS.showTypingIndicator,
+      offlineMessage:    typeof s.offlineMessage === 'string'   ? s.offlineMessage   : DEFAULT_SETTINGS.offlineMessage,
+    })
+    setIsDirty(false)
   }, [existingConfig])
 
   const update = useCallback((patch: Partial<WidgetSettings>) => {
@@ -194,12 +214,26 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     try {
       await updateConfig.mutateAsync({
         orgId,
-        primaryColor: settings.primaryColor,
+        primaryColor:   settings.primaryColor,
         welcomeMessage: settings.welcomeMessage,
-        companyName: settings.companyName,
-        logoUrl: settings.logoUrl,
-        position: settings.position,
-        showBranding: settings.showBranding,
+        companyName:    settings.companyName,
+        logoUrl:        settings.logoUrl,
+        position:       settings.position,
+        showBranding:   settings.showBranding,
+        settings: {
+          botName:            settings.botName,
+          inputPlaceholder:   settings.inputPlaceholder,
+          responseTimeText:   settings.responseTimeText,
+          launcherSize:       settings.launcherSize,
+          borderRadius:       settings.borderRadius,
+          widgetWidth:        settings.widgetWidth,
+          headerStyle:        settings.headerStyle,
+          userBubbleColor:    settings.userBubbleColor || undefined,
+          autoOpen:           settings.autoOpen,
+          autoOpenDelay:      settings.autoOpenDelay,
+          showTypingIndicator: settings.showTypingIndicator,
+          offlineMessage:     settings.offlineMessage || undefined,
+        },
       })
       setSaved(true)
       setIsDirty(false)
@@ -211,77 +245,45 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     }
   }
 
-  // ── Embed code strings ────────────────────────────────────────────────────
+  // Embed code strings
+  const prodCode = `<!-- Tinfin Widget -->\n<script\n  src="https://cdn.tinfin.com/widget.js"\n  data-org-id="${orgId}"\n  async\n></script>`
+  const devCode = `<!-- Dev Mode -->\n<script\n  type="module"\n  src="http://localhost:3002/src/main.ts"\n  data-org-id="${orgId}"\n></script>`
+  const nextCode = `// app/layout.tsx\nimport Script from 'next/script'\n\nexport default function RootLayout({ children }) {\n  return (\n    <html>\n      <body>\n        {children}\n        <Script\n          src="https://cdn.tinfin.com/widget.js"\n          data-org-id="${orgId}"\n          strategy="lazyOnload"\n        />\n      </body>\n    </html>\n  )\n}`
+  const reactCode = `// src/App.tsx\nimport { useEffect } from 'react'\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('script')\n    s.src = 'https://cdn.tinfin.com/widget.js'\n    s.dataset.orgId = '${orgId}'\n    s.async = true\n    document.body.appendChild(s)\n    return () => s.remove()\n  }, [])\n  return <div>{/* your app */}</div>\n}`
 
-  const prodEmbedCode = `<!-- Tinfin Widget -->
-<script
-  src="https://cdn.tinfin.com/widget.js"
-  data-org-id="${orgId}"
-  async
-></script>`
-
-  const devEmbedCode = `<!-- Tinfin Widget (Development) -->
-<script
-  type="module"
-  src="http://localhost:3002/src/main.ts"
-  data-org-id="${orgId}"
-></script>`
-
-  const nextjsCode = `// app/layout.tsx
-import Script from 'next/script'
-
-export default function RootLayout({ children }) {
-  return (
-    <html lang="en">
-      <body>
-        {children}
-        <Script
-          src="https://cdn.tinfin.com/widget.js"
-          data-org-id="${orgId}"
-          strategy="lazyOnload"
-        />
-      </body>
-    </html>
-  )
-}`
-
-  const reactCode = `// src/App.tsx
-import { useEffect } from 'react'
-
-export default function App() {
-  useEffect(() => {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.tinfin.com/widget.js'
-    script.dataset.orgId = '${orgId}'
-    script.async = true
-    document.body.appendChild(script)
-    return () => script.remove()
-  }, [])
-
-  return <div>{/* your app */}</div>
-}`
-
-  const wordpressCode = `// Add to your theme's functions.php
-function tinfin_widget() {
-  echo '<script
-    src="https://cdn.tinfin.com/widget.js"
-    data-org-id="${orgId}"
-    async
-  ></script>';
-}
-add_action('wp_footer', 'tinfin_widget');`
+  const previewConfig = {
+    primaryColor:       settings.primaryColor,
+    welcomeMessage:     settings.welcomeMessage,
+    companyName:        settings.companyName,
+    logoUrl:            settings.logoUrl,
+    position:           settings.position,
+    showBranding:       settings.showBranding,
+    botName:            settings.botName,
+    inputPlaceholder:   settings.inputPlaceholder,
+    responseTimeText:   settings.responseTimeText,
+    launcherSize:       settings.launcherSize,
+    borderRadius:       settings.borderRadius,
+    widgetWidth:        settings.widgetWidth,
+    headerStyle:        settings.headerStyle,
+    userBubbleColor:    settings.userBubbleColor || settings.primaryColor,
+    autoOpen:           settings.autoOpen,
+    autoOpenDelay:      settings.autoOpenDelay,
+    showTypingIndicator: settings.showTypingIndicator,
+    offlineMessage:     settings.offlineMessage,
+  }
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
-      {/* Page Header */}
-      <div className="flex items-start justify-between gap-4">
+    <div className="flex flex-col gap-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+
+      {/* ── Page Header ── */}
+      <div className="flex items-center justify-between gap-4 shrink-0">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <ZapIcon className="size-6 text-primary" />
-            Widget
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+            <ZapIcon className="size-5 text-primary" />
+            Widget Customization
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Customize your chat widget and get the install code.
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Customize your chat widget — all changes sync live with the widget.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -295,265 +297,456 @@ add_action('wp_footer', 'tinfin_widget');`
               <CheckIcon className="size-3 mr-1" /> Saved
             </Badge>
           )}
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={saving || !isDirty}
-            className="gap-1.5"
-          >
+          <Button size="sm" onClick={handleSave} disabled={saving || !isDirty} className="gap-1.5">
             <SaveIcon className="size-3.5" />
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
       </div>
 
-      {/* Main Two-Column Layout */}
-      <div className="flex gap-6 items-start">
-        {/* Left: Settings */}
-        <div className="w-[380px] shrink-0 space-y-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="w-full grid grid-cols-3 h-8">
-              <TabsTrigger value="appearance" className="text-xs gap-1">
-                <PaletteIcon className="size-3" />
-                Style
-              </TabsTrigger>
-              <TabsTrigger value="content" className="text-xs gap-1">
-                <MessageSquareIcon className="size-3" />
-                Content
-              </TabsTrigger>
-              <TabsTrigger value="install" className="text-xs gap-1">
-                <CodeIcon className="size-3" />
-                Install
-              </TabsTrigger>
-            </TabsList>
+      {/* ── Main Layout: 50/50 ── */}
+      <div className="flex gap-0 overflow-hidden rounded-xl border bg-background shadow-sm" style={{ height: 'calc(100vh - 11rem)' }}>
 
-            {/* ── Appearance Tab ── */}
-            <TabsContent value="appearance" className="mt-4 space-y-4">
-              {/* Brand Color */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Brand Color</CardTitle>
-                  <CardDescription className="text-xs">
-                    Applied to the launcher button, header, and sent messages.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ColorPicker
-                    value={settings.primaryColor}
-                    onChange={v => update({ primaryColor: v })}
-                  />
-                </CardContent>
-              </Card>
+        {/* ── Left: Settings (50%) ── */}
+        <div className="w-1/2 shrink-0 border-r flex flex-col overflow-hidden">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+            {/* Tab triggers */}
+            <div className="border-b px-4 pt-3 pb-0 shrink-0 bg-card/50">
+              <TabsList className="h-8 gap-0 bg-transparent p-0 border-0">
+                {[
+                  { value: 'style',    icon: PaletteIcon,          label: 'Style' },
+                  { value: 'content',  icon: MessageSquareIcon,    label: 'Content' },
+                  { value: 'behavior', icon: SlidersHorizontalIcon, label: 'Behavior' },
+                  { value: 'install',  icon: CodeIcon,             label: 'Install' },
+                ].map(({ value, icon: Icon, label }) => (
+                  <button key={value}
+                    onClick={() => setActiveTab(value)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                      activeTab === value
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}>
+                    <Icon className="size-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </TabsList>
+            </div>
 
-              {/* Position */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Widget Position</CardTitle>
-                  <CardDescription className="text-xs">
-                    Where the launcher button appears on the page.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-2">
-                    {POSITIONS.map(pos => (
-                      <button
-                        key={pos.value}
-                        onClick={() => update({ position: pos.value })}
-                        className={`relative h-16 rounded-lg border-2 text-xs font-medium transition-all hover:border-primary/50 ${
-                          settings.position === pos.value
-                            ? 'border-primary bg-primary/5 text-primary'
-                            : 'border-border text-muted-foreground'
-                        }`}
-                      >
-                        {/* Dot indicator showing position */}
-                        <div className="absolute inset-2">
-                          <div
-                            className="absolute w-3 h-3 rounded-full"
-                            style={{
-                              background: settings.position === pos.value ? settings.primaryColor : '#d1d5db',
-                              bottom: pos.value.startsWith('bottom') ? 0 : 'auto',
-                              top: pos.value.startsWith('top') ? 0 : 'auto',
-                              right: pos.value.endsWith('right') ? 0 : 'auto',
-                              left: pos.value.endsWith('left') ? 0 : 'auto',
-                            }}
-                          />
+            {/* Tab content — scrollable */}
+            <div className="flex-1 overflow-y-auto">
+
+              {/* ── STYLE TAB ── */}
+              <TabsContent value="style" className="m-0 p-4 space-y-4">
+                {/* Brand Color */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Brand Color</CardTitle>
+                    <CardDescription className="text-xs">Applied to header, launcher button, and AI message accents.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ColorPicker value={settings.primaryColor} onChange={v => update({ primaryColor: v })} />
+                  </CardContent>
+                </Card>
+
+                {/* User Bubble Color */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">User Message Color</CardTitle>
+                    <CardDescription className="text-xs">Color of the visitor's outgoing message bubbles. Leave empty to use brand color.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <ColorPicker
+                      value={settings.userBubbleColor || settings.primaryColor}
+                      onChange={v => update({ userBubbleColor: v })}
+                    />
+                    {settings.userBubbleColor && (
+                      <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground"
+                        onClick={() => update({ userBubbleColor: '' })}>
+                        Reset to brand color
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Header Style */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <SettingRow
+                      label="Header Style"
+                      description="Gradient adds depth; solid is clean and minimal.">
+                      <div className="flex gap-2">
+                        {(['gradient', 'solid'] as const).map(style => (
+                          <button key={style}
+                            onClick={() => update({ headerStyle: style })}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-medium capitalize transition-all ${
+                              settings.headerStyle === style
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : 'border-border text-muted-foreground hover:border-primary/40'
+                            }`}>
+                            {style}
+                          </button>
+                        ))}
+                      </div>
+                    </SettingRow>
+                    {/* Mini color preview */}
+                    <div className="mt-2 h-8 rounded-lg overflow-hidden border border-border"
+                      style={{
+                        background: settings.headerStyle === 'gradient'
+                          ? `linear-gradient(135deg, ${settings.primaryColor}, ${settings.primaryColor}bb)`
+                          : settings.primaryColor
+                      }} />
+                  </CardContent>
+                </Card>
+
+                {/* Widget Position */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Widget Position</CardTitle>
+                    <CardDescription className="text-xs">Where the launcher button appears on your website.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {POSITIONS.map(pos => (
+                        <button key={pos.value}
+                          onClick={() => update({ position: pos.value })}
+                          className={`relative h-16 rounded-lg border-2 text-xs font-medium transition-all hover:border-primary/50 ${
+                            settings.position === pos.value
+                              ? 'border-primary bg-primary/5 text-primary'
+                              : 'border-border text-muted-foreground'
+                          }`}>
+                          <div className="absolute inset-2">
+                            <div className="absolute w-3 h-3 rounded-full"
+                              style={{
+                                background: settings.position === pos.value ? settings.primaryColor : '#d1d5db',
+                                ...pos.dot,
+                              }} />
+                          </div>
+                          {pos.label}
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Launcher Size */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium mb-1">Launcher Size</div>
+                        <div className="text-xs text-muted-foreground mb-3">Size of the chat button in the corner.</div>
+                      </div>
+                      <div className="flex gap-3">
+                        {(['sm', 'md', 'lg'] as const).map((size) => {
+                          const px = LAUNCHER_SIZES[size]
+                          return (
+                            <button key={size}
+                              onClick={() => update({ launcherSize: size })}
+                              className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                                settings.launcherSize === size
+                                  ? 'border-primary bg-primary/5'
+                                  : 'border-border hover:border-primary/40'
+                              }`}>
+                              <div className="rounded-full flex items-center justify-center text-white"
+                                style={{
+                                  width: px * 0.6,
+                                  height: px * 0.6,
+                                  background: settings.primaryColor,
+                                  fontSize: 10,
+                                }}>
+                                💬
+                              </div>
+                              <div className={`text-[10px] font-semibold uppercase ${settings.launcherSize === size ? 'text-primary' : 'text-muted-foreground'}`}>
+                                {size.toUpperCase()} · {px}px
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Border Radius */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-medium">Border Radius</div>
+                          <div className="text-xs text-muted-foreground">Roundness of the widget panel.</div>
                         </div>
-                        {pos.label}
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Branding */}
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Show "Powered by Tinfin"</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Display the Tinfin branding in the widget footer.</p>
+                        <div className="text-sm font-mono text-muted-foreground">{settings.borderRadius}px</div>
+                      </div>
+                      <Slider
+                        min={8} max={28} step={2}
+                        value={[settings.borderRadius]}
+                        onValueChange={([v]) => update({ borderRadius: v! })}
+                      />
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>8 · Sharp</span><span>28 · Very Round</span>
+                      </div>
                     </div>
-                    <Switch
-                      checked={settings.showBranding}
-                      onCheckedChange={v => update({ showBranding: v })}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                  </CardContent>
+                </Card>
 
-            {/* ── Content Tab ── */}
-            <TabsContent value="content" className="mt-4 space-y-4">
-              {/* Company Info */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Company Info</CardTitle>
-                  <CardDescription className="text-xs">
-                    Shown in the widget header.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-medium">Company Name</Label>
-                    <Input
-                      placeholder="Acme Support"
-                      value={settings.companyName}
-                      onChange={e => update({ companyName: e.target.value })}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-medium">Logo URL</Label>
-                    <Input
-                      placeholder="https://example.com/logo.png"
-                      value={settings.logoUrl}
-                      onChange={e => update({ logoUrl: e.target.value })}
-                      className="h-8 text-sm"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Square image recommended. Leave empty to use the default 💬 icon.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Welcome Message */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Welcome Message</CardTitle>
-                  <CardDescription className="text-xs">
-                    Shown on the pre-chat form before the visitor starts chatting.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
-                    value={settings.welcomeMessage}
-                    onChange={e => update({ welcomeMessage: e.target.value })}
-                    placeholder="Hi 👋 How can we help you today?"
-                    className="min-h-[80px] text-sm resize-none"
-                    maxLength={200}
-                  />
-                  <p className="text-[11px] text-muted-foreground mt-1.5 text-right">
-                    {settings.welcomeMessage.length}/200
-                  </p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ── Install Tab ── */}
-            <TabsContent value="install" className="mt-4 space-y-4">
-              <Alert>
-                <InfoIcon className="size-4" />
-                <AlertDescription className="text-xs">
-                  Your <strong>Org ID</strong> is already embedded in the snippets below. Just copy and paste.
-                </AlertDescription>
-              </Alert>
-
-              {/* Org ID display */}
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-medium">Your Organization ID</Label>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 text-xs bg-muted px-3 py-2 rounded-lg font-mono text-foreground truncate">
-                        {orgId}
-                      </code>
-                      <CopyButton text={orgId} />
+                {/* Widget Width */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-medium">Widget Width</div>
+                          <div className="text-xs text-muted-foreground">Width of the chat panel window.</div>
+                        </div>
+                        <div className="text-sm font-mono text-muted-foreground">{settings.widgetWidth}px</div>
+                      </div>
+                      <Slider
+                        min={300} max={440} step={10}
+                        value={[settings.widgetWidth]}
+                        onValueChange={([v]) => update({ widgetWidth: v! })}
+                      />
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>300 · Compact</span><span>440 · Wide</span>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-              {/* Install code sections */}
-              <Tabs defaultValue="html">
-                <TabsList className="w-full grid grid-cols-4 h-7">
-                  {['html', 'nextjs', 'react', 'wp'].map(f => (
-                    <TabsTrigger key={f} value={f} className="text-[10px]">
-                      {f === 'wp' ? 'WordPress' : f === 'nextjs' ? 'Next.js' : f === 'html' ? 'HTML' : 'React'}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                <TabsContent value="html" className="mt-3 space-y-3">
-                  <p className="text-xs text-muted-foreground">Add before the closing <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> tag:</p>
-                  <CodeBlock code={prodEmbedCode} />
-                  <Separator />
-                  <p className="text-xs text-muted-foreground">For local development:</p>
-                  <CodeBlock code={devEmbedCode} />
-                </TabsContent>
-                <TabsContent value="nextjs" className="mt-3">
-                  <CodeBlock code={nextjsCode} lang="tsx" />
-                </TabsContent>
-                <TabsContent value="react" className="mt-3">
-                  <CodeBlock code={reactCode} lang="tsx" />
-                </TabsContent>
-                <TabsContent value="wp" className="mt-3">
-                  <CodeBlock code={wordpressCode} lang="php" />
-                </TabsContent>
-              </Tabs>
-
-              {/* Live deployment note */}
-              <Card className="border-primary/20 bg-primary/5">
-                <CardContent className="pt-4">
-                  <div className="flex gap-3">
-                    <GlobeIcon className="size-4 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Going Live</p>
-                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                        Deploy your widget app (<code className="bg-muted px-1 rounded">apps/widget</code>) to Vercel or Cloudflare Pages.
-                        Then update the <code className="bg-muted px-1 rounded">src</code> in your embed code to the deployed URL.
-                        See the <strong>WIDGET_GUIDE.md</strong> in your repo for step-by-step instructions.
-                      </p>
+              {/* ── CONTENT TAB ── */}
+              <TabsContent value="content" className="m-0 p-4 space-y-4">
+                {/* Brand identity */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Brand Identity</CardTitle>
+                    <CardDescription className="text-xs">Shown in the widget header.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Company Name</Label>
+                      <Input placeholder="Acme Support" value={settings.companyName}
+                        onChange={e => update({ companyName: e.target.value })} className="h-8 text-sm" />
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Logo URL</Label>
+                      <Input placeholder="https://example.com/logo.png" value={settings.logoUrl}
+                        onChange={e => update({ logoUrl: e.target.value })} className="h-8 text-sm" />
+                      <p className="text-[11px] text-muted-foreground">Square image recommended. Leave empty for default 💬 icon.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* AI Bot Identity */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">AI Bot Identity</CardTitle>
+                    <CardDescription className="text-xs">How the AI assistant is presented to visitors.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Bot Name</Label>
+                      <Input placeholder="AI Assistant" value={settings.botName}
+                        onChange={e => update({ botName: e.target.value })} className="h-8 text-sm" />
+                      <p className="text-[11px] text-muted-foreground">Shown above AI messages in the chat.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Response Time Text</Label>
+                      <Input placeholder="AI · We reply instantly" value={settings.responseTimeText}
+                        onChange={e => update({ responseTimeText: e.target.value })} className="h-8 text-sm" />
+                      <p className="text-[11px] text-muted-foreground">Shown in header when AI is active.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Messages */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Messages</CardTitle>
+                    <CardDescription className="text-xs">Customize what visitors read.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Welcome Message</Label>
+                      <Textarea value={settings.welcomeMessage}
+                        onChange={e => update({ welcomeMessage: e.target.value })}
+                        placeholder="Hi 👋 How can we help you today?"
+                        className="min-h-[72px] text-sm resize-none" maxLength={200} />
+                      <p className="text-[11px] text-muted-foreground text-right">{settings.welcomeMessage.length}/200</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Input Placeholder</Label>
+                      <Input placeholder="Type a message..." value={settings.inputPlaceholder}
+                        onChange={e => update({ inputPlaceholder: e.target.value })} className="h-8 text-sm" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Offline Message</Label>
+                      <Input placeholder="We're offline right now. Leave a message!"
+                        value={settings.offlineMessage}
+                        onChange={e => update({ offlineMessage: e.target.value })} className="h-8 text-sm" />
+                      <p className="text-[11px] text-muted-foreground">Shown when widget can't connect.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* ── BEHAVIOR TAB ── */}
+              <TabsContent value="behavior" className="m-0 p-4 space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Display</CardTitle>
+                  </CardHeader>
+                  <CardContent className="divide-y divide-border">
+                    <SettingRow
+                      label="Show &quot;Powered by Tinfin&quot;"
+                      description="Display Tinfin branding in the widget footer.">
+                      <Switch checked={settings.showBranding}
+                        onCheckedChange={v => update({ showBranding: v })} />
+                    </SettingRow>
+                    <SettingRow
+                      label="Show Typing Indicator"
+                      description="Show animated dots when AI is generating a reply.">
+                      <Switch checked={settings.showTypingIndicator}
+                        onCheckedChange={v => update({ showTypingIndicator: v })} />
+                    </SettingRow>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Auto Open</CardTitle>
+                    <CardDescription className="text-xs">Automatically open the widget after a delay when a visitor lands on your page.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <SettingRow label="Enable Auto Open" description="Widget opens automatically on page load.">
+                      <Switch checked={settings.autoOpen}
+                        onCheckedChange={v => update({ autoOpen: v })} />
+                    </SettingRow>
+
+                    {settings.autoOpen && (
+                      <div className="space-y-2 pt-1 border-t border-border">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium">Open Delay</div>
+                            <div className="text-xs text-muted-foreground">Seconds before widget auto-opens.</div>
+                          </div>
+                          <div className="text-sm font-mono text-muted-foreground">
+                            {settings.autoOpenDelay}s
+                          </div>
+                        </div>
+                        <Slider
+                          min={0} max={60} step={1}
+                          value={[settings.autoOpenDelay]}
+                          onValueChange={([v]) => update({ autoOpenDelay: v! })}
+                        />
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span>0 · Immediate</span><span>60s</span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* ── INSTALL TAB ── */}
+              <TabsContent value="install" className="m-0 p-4 space-y-4">
+                <Alert>
+                  <InfoIcon className="size-4" />
+                  <AlertDescription className="text-xs">
+                    Your <strong>Org ID</strong> is already embedded in the snippets below. Just copy and paste.
+                  </AlertDescription>
+                </Alert>
+
+                {/* Org ID */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Your Organization ID</Label>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs bg-muted px-3 py-2 rounded-lg font-mono truncate">{orgId}</code>
+                        <CopyButton text={orgId} />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">HTML / Any Website</CardTitle>
+                    <CardDescription className="text-xs">Add before the closing <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> tag.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CodeBlock code={prodCode} />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Next.js</CardTitle>
+                    <CardDescription className="text-xs">Add to your root layout using Next.js Script component.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CodeBlock code={nextCode} lang="tsx" />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">React</CardTitle>
+                    <CardDescription className="text-xs">Dynamically inject the script via useEffect.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CodeBlock code={reactCode} lang="tsx" />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Local Development</CardTitle>
+                    <CardDescription className="text-xs">For testing the widget locally before deploying.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CodeBlock code={devCode} />
+                  </CardContent>
+                </Card>
+
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardContent className="pt-4">
+                    <div className="flex gap-3">
+                      <GlobeIcon className="size-4 text-primary shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium">Going Live</p>
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                          Deploy <code className="bg-muted px-1 rounded">apps/widget</code> to Vercel or Cloudflare Pages, then update the <code className="bg-muted px-1 rounded">src</code> in your embed snippet.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+            </div>
           </Tabs>
         </div>
 
-        {/* Right: Live Preview */}
-        <div className="flex-1 min-w-0 sticky top-4">
-          <div className="flex items-center justify-between mb-3">
+        {/* ── Right: Live Preview (50%) ── */}
+        <div className="w-1/2 flex flex-col overflow-hidden bg-muted/20">
+          <div className="flex items-center justify-between px-5 py-3 border-b bg-card/50 shrink-0">
             <div className="flex items-center gap-2">
-              <EyeIcon className="size-4 text-muted-foreground" />
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-sm font-medium">Live Preview</span>
             </div>
             <Badge variant="outline" className="text-[10px]">Updates instantly</Badge>
           </div>
-          <WidgetPreview
-            config={{
-              primaryColor: settings.primaryColor,
-              welcomeMessage: settings.welcomeMessage,
-              companyName: settings.companyName,
-              logoUrl: settings.logoUrl,
-              position: settings.position,
-              showBranding: settings.showBranding,
-            }}
-          />
-          <p className="text-center text-xs text-muted-foreground mt-2">
-            Click the launcher button to toggle the widget panel
-          </p>
+          <div className="flex-1 overflow-hidden p-4 flex items-stretch">
+            <WidgetPreview config={previewConfig} />
+          </div>
+          <div className="text-center py-2 text-xs text-muted-foreground shrink-0 border-t bg-card/30">
+            Click the launcher to toggle the widget
+          </div>
         </div>
+
       </div>
     </div>
   )

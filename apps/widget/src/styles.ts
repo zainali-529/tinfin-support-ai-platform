@@ -191,8 +191,8 @@ export const STYLES = `
     text-align: center; font-size: 12px; color: #9ca3af; font-style: italic; padding: 4px 0;
   }
 
-  .msg-row { display: flex; gap: 8px; align-items: flex-end; }
-  .msg-row.user { flex-direction: row-reverse; }
+  .msg-row { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-start; }
+  .msg-row.user { flex-direction: row-reverse; justify-content: flex-start; }
 
   .msg-avatar {
     width: 28px; height: 28px; border-radius: 50%;
@@ -200,9 +200,27 @@ export const STYLES = `
     font-size: 13px; flex-shrink: 0;
   }
 
+  .msg-bubble-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 78%;
+    min-width: 0;
+  }
+
+  .msg-row.user .msg-bubble-group { align-items: flex-end; }
+
   .bubble {
-    max-width: 78%; padding: 10px 14px; border-radius: 18px;
-    font-size: 14px; line-height: 1.5; word-break: break-word;
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+    padding: 10px 14px;
+    border-radius: 18px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .bubble.user { border-bottom-right-radius: 4px; color: #fff; }
   .bubble.bot {

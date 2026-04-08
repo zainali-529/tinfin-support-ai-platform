@@ -3,10 +3,27 @@ import type { WidgetConfig } from './types'
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
 
-export type ResolvedConfig = Required<Omit<WidgetConfig, 'logoUrl' | 'welcomeMessage' | 'companyName'>> & {
-  logoUrl: string | null
+export type ResolvedConfig = {
+  orgId: string
+  primaryColor: string
   welcomeMessage: string
   companyName: string
+  logoUrl: string | null
+  position: NonNullable<WidgetConfig['position']>
+  showBranding: boolean
+  // Advanced
+  botName: string
+  inputPlaceholder: string
+  responseTimeText: string
+  launcherSize: 'sm' | 'md' | 'lg'
+  borderRadius: number
+  widgetWidth: number
+  headerStyle: 'gradient' | 'solid'
+  userBubbleColor: string | null
+  autoOpen: boolean
+  autoOpenDelay: number
+  showTypingIndicator: boolean
+  offlineMessage: string | null
 }
 
 const DEFAULTS: Omit<ResolvedConfig, 'orgId'> = {
@@ -16,15 +33,26 @@ const DEFAULTS: Omit<ResolvedConfig, 'orgId'> = {
   logoUrl: null,
   position: 'bottom-right',
   showBranding: true,
+  botName: 'AI Assistant',
+  inputPlaceholder: 'Type a message...',
+  responseTimeText: 'AI · We reply instantly',
+  launcherSize: 'md',
+  borderRadius: 20,
+  widgetWidth: 380,
+  headerStyle: 'gradient',
+  userBubbleColor: null,
+  autoOpen: false,
+  autoOpenDelay: 5,
+  showTypingIndicator: true,
+  offlineMessage: null,
 }
 
-/**
- * Fetches widget config from the API and merges with static script-tag attributes.
- * Script-tag attributes take priority — this lets customers override per-site
- * without changing the DB config.
- *
- * Priority: script-tag-attrs > DB config > defaults
- */
+function stripUndefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  ) as Partial<T>
+}
+
 export function useWidgetConfig(orgId: string, staticOverrides: Partial<WidgetConfig>) {
   const [config, setConfig] = useState<ResolvedConfig>({
     orgId,
@@ -46,25 +74,17 @@ export function useWidgetConfig(orgId: string, staticOverrides: Partial<WidgetCo
       .then(dbConfig => {
         setConfig(prev => ({
           ...prev,
-          // Apply DB config as base
           ...dbConfig,
-          // Then re-apply any explicit script-tag overrides on top
+          // Re-apply script-tag overrides on top
           ...stripUndefined(staticOverrides),
           orgId,
         }))
       })
       .catch(err => {
-        // Silently fail — widget still works with static/default config
         console.warn('[tinfin-widget] Could not fetch remote config:', err.message)
       })
       .finally(() => setLoading(false))
   }, [orgId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return { config, loading }
-}
-
-function stripUndefined<T extends object>(obj: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== '')
-  ) as Partial<T>
 }

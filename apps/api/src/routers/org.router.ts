@@ -45,16 +45,32 @@ export const orgRouter = router({
   updateWidgetConfig: protectedProcedure
     .input(z.object({
       orgId: z.string().uuid(),
+      // Direct DB columns
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid hex color').optional(),
       welcomeMessage: z.string().max(200).optional(),
       companyName: z.string().max(80).optional(),
       logoUrl: z.string().url().optional().or(z.literal('')),
       position: z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']).optional(),
       showBranding: z.boolean().optional(),
+      // Advanced settings stored in JSONB column
+      settings: z.object({
+        botName: z.string().max(50).optional(),
+        inputPlaceholder: z.string().max(100).optional(),
+        responseTimeText: z.string().max(100).optional(),
+        launcherSize: z.enum(['sm', 'md', 'lg']).optional(),
+        borderRadius: z.number().min(8).max(28).optional(),
+        widgetWidth: z.number().min(300).max(440).optional(),
+        headerStyle: z.enum(['gradient', 'solid']).optional(),
+        userBubbleColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().or(z.literal('')),
+        autoOpen: z.boolean().optional(),
+        autoOpenDelay: z.number().min(0).max(60).optional(),
+        showTypingIndicator: z.boolean().optional(),
+        offlineMessage: z.string().max(200).optional(),
+      }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
-      const { orgId: _orgId, ...rest } = input
+      const { orgId: _orgId, settings, ...rest } = input
 
       // Build update payload — only include defined fields
       const payload: Record<string, unknown> = { org_id: orgId }
@@ -64,6 +80,18 @@ export const orgRouter = router({
       if (rest.logoUrl !== undefined) payload.logo_url = rest.logoUrl || null
       if (rest.position !== undefined) payload.position = rest.position
       if (rest.showBranding !== undefined) payload.show_branding = rest.showBranding
+
+      // Merge settings with existing JSONB — fetch first to avoid overwriting unrelated keys
+      if (settings !== undefined) {
+        const { data: existing } = await ctx.supabase
+          .from('widget_configs')
+          .select('settings')
+          .eq('org_id', orgId)
+          .maybeSingle()
+
+        const existingSettings = (existing?.settings as Record<string, unknown>) ?? {}
+        payload.settings = { ...existingSettings, ...settings }
+      }
 
       const { data, error } = await ctx.supabase
         .from('widget_configs')
@@ -81,7 +109,7 @@ export const orgRouter = router({
       if (!data) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'Widget config update did not return a row. Check table schema and permissions.',
+          message: 'Widget config update did not return a row.',
         })
       }
 
