@@ -41,12 +41,24 @@ export const organizations = pgTable('organizations', {
 export const users = pgTable('users', {
   id: uuid('id').primaryKey(),
   orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  // NEW: tracks which org the user is currently "working in"
+  activeOrgId: uuid('active_org_id').references(() => organizations.id, { onDelete: 'set null' }),
   email: text('email').notNull(),
   name: text('name'),
   role: text('role').default('agent').notNull(),
   avatarUrl: text('avatar_url'),
   isOnline: boolean('is_online').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+// NEW: many-to-many join table — one user can belong to many orgs
+export const userOrganizations = pgTable('user_organizations', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  role: text('role').default('agent').notNull(), // 'admin' | 'agent'
+  isDefault: boolean('is_default').default(false).notNull(),
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
 })
 
 export const contacts = pgTable('contacts', {

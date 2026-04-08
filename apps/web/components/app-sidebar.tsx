@@ -22,10 +22,10 @@ import {
   BookOpenIcon,
   BarChart2Icon,
   SettingsIcon,
-  ZapIcon,
   CodeIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
+import { OrgSwitcher } from '@/components/org/OrgSwitcher'
 
 type NavItem = {
   label: string
@@ -68,11 +68,16 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   user: {
     email?: string
   } | null
+  activeOrg: {
+    id: string
+    name: string
+    plan: string
+  }
 }
 
-export function AppSidebar({ user, ...props }: AppSidebarProps) {
+export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
   const pathname = usePathname()
-  
+
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? 'TF'
 
   const isActive = (href: string, exact = false) => {
@@ -82,22 +87,9 @@ export function AppSidebar({ user, ...props }: AppSidebarProps) {
 
   return (
     <Sidebar collapsible="icon" variant="sidebar" {...props}>
-      <SidebarHeader className="border-b border-sidebar-border">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Tinfin Dashboard">
-              <Link href="/dashboard">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                  <ZapIcon className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate text-sm font-semibold tracking-tight">Tinfin</span>
-                  <span className="truncate text-[11px] text-muted-foreground">Support Platform</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      {/* ── Org Switcher (top of sidebar) ── */}
+      <SidebarHeader className="border-b border-sidebar-border px-2 py-2">
+        <OrgSwitcher initialOrg={activeOrg} />
       </SidebarHeader>
 
       <SidebarContent>

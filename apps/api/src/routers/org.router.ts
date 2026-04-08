@@ -1,19 +1,21 @@
+/**
+ * ORG ROUTER — Multi-Org Fixed
+ *
+ * Same fix: use ctx.userOrgId from middleware instead of requireOrgAccess check.
+ */
+
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 
-function requireOrgAccess(userOrgId: string, requestedOrgId: string) {
-  if (requestedOrgId !== userOrgId) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Organization access denied.' })
-  }
-  return userOrgId
-}
-
 export const orgRouter = router({
   getOrg: protectedProcedure
-    .input(z.object({ orgId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
+    .input(z.object({
+      orgId: z.string().uuid().optional(), // kept for backward compat
+    }).optional())
+    .query(async ({ ctx }) => {
+      const orgId = ctx.userOrgId
+
       const { data } = await ctx.supabase
         .from('organizations')
         .select('*')
@@ -23,9 +25,12 @@ export const orgRouter = router({
     }),
 
   getWidgetConfig: protectedProcedure
-    .input(z.object({ orgId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
+    .input(z.object({
+      orgId: z.string().uuid().optional(), // kept for backward compat
+    }).optional())
+    .query(async ({ ctx }) => {
+      const orgId = ctx.userOrgId
+
       const { data, error } = await ctx.supabase
         .from('widget_configs')
         .select('*')
@@ -44,15 +49,13 @@ export const orgRouter = router({
 
   updateWidgetConfig: protectedProcedure
     .input(z.object({
-      orgId: z.string().uuid(),
-      // Direct DB columns
+      orgId: z.string().uuid().optional(), // kept for backward compat
       primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid hex color').optional(),
       welcomeMessage: z.string().max(200).optional(),
       companyName: z.string().max(80).optional(),
       logoUrl: z.string().url().optional().or(z.literal('')),
       position: z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']).optional(),
       showBranding: z.boolean().optional(),
-      // Advanced settings stored in JSONB column
       settings: z.object({
         botName: z.string().max(50).optional(),
         inputPlaceholder: z.string().max(100).optional(),
@@ -69,10 +72,10 @@ export const orgRouter = router({
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
-      const { orgId: _orgId, settings, ...rest } = input
+      // Use the middleware-resolved active org — not the (potentially stale) input.orgId
+      const orgId = ctx.userOrgId
+      const { settings, ...rest } = input
 
-      // Build update payload — only include defined fields
       const payload: Record<string, unknown> = { org_id: orgId }
       if (rest.primaryColor !== undefined) payload.primary_color = rest.primaryColor
       if (rest.welcomeMessage !== undefined) payload.welcome_message = rest.welcomeMessage
@@ -81,7 +84,6 @@ export const orgRouter = router({
       if (rest.position !== undefined) payload.position = rest.position
       if (rest.showBranding !== undefined) payload.show_branding = rest.showBranding
 
-      // Merge settings with existing JSONB — fetch first to avoid overwriting unrelated keys
       if (settings !== undefined) {
         const { data: existing } = await ctx.supabase
           .from('widget_configs')

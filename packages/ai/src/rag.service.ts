@@ -41,34 +41,15 @@ interface MatchedChunk {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_SEARCH_THRESHOLD = 0.3
-const HANDOFF_THRESHOLD = 0.4
-const DEFAULT_MAX_CHUNKS = 5
+const DEFAULT_SEARCH_THRESHOLD = 0.25
+const KB_RELEVANCE_THRESHOLD = 0.38
+const DEFAULT_MAX_CHUNKS = 6
 const GPT_MODEL = 'gpt-4o-mini'
 const KB_SCOPE_SEARCH_FACTOR = 8
 const KB_SCOPE_MIN_COUNT = 50
 const KB_SCOPE_MAX_COUNT = 200
 
-// ─── Intent Detection ─────────────────────────────────────────────────────────
-
-type Intent =
-  | 'greeting'        // Hi, Hello, Hey, Assalam o Alaikum
-  | 'thanks'          // Thank you, Got it, Okay thanks, Shukriya
-  | 'goodbye'         // Bye, Take care, Allah hafiz
-  | 'human_request'   // I want human, connect me to agent
-  | 'question'        // Actual support question
-
-const GREETING_PATTERNS = [
-  /^(hi|hello|hey|hiya|howdy|salam|assalam|assalamualaikum|walaikum|good\s?(morning|afternoon|evening|day)|what'?s\s?up|sup)\b/i,
-]
-
-const THANKS_PATTERNS = [
-  /^(thanks?|thank\s?you|thx|got\s?it|okay|ok|alright|noted|understood|great|perfect|awesome|shukriya|شکریہ|jazak)\b/i,
-]
-
-const GOODBYE_PATTERNS = [
-  /^(bye|goodbye|see\s?ya|take\s?care|allah\s?hafiz|khuda\s?hafiz|cya|later)\b/i,
-]
+// ─── Human Handoff Detection ──────────────────────────────────────────────────
 
 const HUMAN_REQUEST_PATTERNS = [
   /human\s?agent/i,
@@ -82,33 +63,18 @@ const HUMAN_REQUEST_PATTERNS = [
   /escalate/i,
 ]
 
-function detectIntent(query: string): Intent {
-  const trimmed = query.trim()
-
-  if (HUMAN_REQUEST_PATTERNS.some(p => p.test(trimmed))) return 'human_request'
-  if (GREETING_PATTERNS.some(p => p.test(trimmed))) return 'greeting'
-  if (GOODBYE_PATTERNS.some(p => p.test(trimmed))) return 'goodbye'
-  if (THANKS_PATTERNS.some(p => p.test(trimmed))) return 'thanks'
-
-  return 'question'
+function isExplicitHumanRequest(query: string): boolean {
+  return HUMAN_REQUEST_PATTERNS.some(p => p.test(query.trim()))
 }
 
-// ─── Casual Response Generator ────────────────────────────────────────────────
+// ─── Handoff Confirmation ─────────────────────────────────────────────────────
 
-function getCasualResponse(intent: Intent): string {
-  switch (intent) {
-    case 'greeting':
-      return "Hello! 👋 I'm here to help. What can I assist you with today?"
+const CONFIRM_YES_PATTERNS = [
+  /^(yes|yeah|yep|yup|sure|ok|okay|please|haan|ha|ji|ji\s?haan|please\s?do|go\s?ahead)\b/i,
+]
 
-    case 'thanks':
-      return "You're welcome! 😊 Is there anything else I can help you with?"
-
-    case 'goodbye':
-      return "Goodbye! Have a great day. Feel free to reach out anytime you need help. 👋"
-
-    default:
-      return "I'm here to help! What would you like to know?"
-  }
+export function isHandoffConfirmation(query: string): boolean {
+  return CONFIRM_YES_PATTERNS.some(p => p.test(query.trim()))
 }
 
 // ─── Vector Search ────────────────────────────────────────────────────────────
@@ -128,7 +94,6 @@ async function searchSimilarChunks(
   let data: MatchedChunk[] | null = null
   let error: { message: string } | null = null
 
-  // Prefer db-side kb filter if RPC supports it.
   const scopedRpc = await supabase.rpc('match_kb_chunks', {
     query_embedding: embedding,
     match_org_id: orgId,
@@ -140,7 +105,7 @@ async function searchSimilarChunks(
   data = (scopedRpc.data as MatchedChunk[] | null) ?? null
   error = scopedRpc.error ? { message: scopedRpc.error.message } : null
 
-  // Fallback for deployments where RPC signature does not accept match_kb_id yet.
+  // Fallback for deployments where RPC signature does not accept match_kb_id yet
   if (error && kbId) {
     const fallbackRpc = await supabase.rpc('match_kb_chunks', {
       query_embedding: embedding,
@@ -183,14 +148,14 @@ async function searchSimilarChunks(
 function calculateConfidence(chunks: MatchedChunk[]): number {
   if (chunks.length === 0) return 0
   const topSimilarity = chunks[0]?.similarity ?? 0
-  const avgSimilarity =
-    chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length
+  const avgSimilarity = chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length
   return topSimilarity * 0.6 + avgSimilarity * 0.4
 }
 
 // ─── Context Builder ──────────────────────────────────────────────────────────
 
 function buildContext(chunks: MatchedChunk[]): string {
+  if (chunks.length === 0) return ''
   return chunks
     .map((chunk, i) => {
       const source = chunk.source_title ?? chunk.source_url ?? 'Knowledge Base'
@@ -199,47 +164,92 @@ function buildContext(chunks: MatchedChunk[]): string {
     .join('\n\n---\n\n')
 }
 
-// ─── System Prompt ────────────────────────────────────────────────────────────
+// ─── Topics Hint (derived from KB results, used for greetings/capability Q's) ─
 
-function buildSystemPrompt(context: string): string {
-  return `You are a friendly and professional customer support assistant.
-
-Your job is to answer questions using the Knowledge Base Context below.
-
-## Rules:
-1. Answer ONLY from the context provided. Do not use outside knowledge.
-2. If the answer is NOT in the context, respond with exactly this phrase:
-   "OUT_OF_SCOPE"
-3. Be warm, concise, and professional — like a real support agent.
-4. Do NOT mention "context", "sources", or "[Source X]" in your reply.
-5. Respond in the same language as the user.
-6. Keep answers to 1-3 sentences unless more detail is needed.
-
-## Knowledge Base Context:
-${context}`
+function deriveTopicsHint(chunks: MatchedChunk[]): string {
+  if (chunks.length === 0) return ''
+  const sources = [...new Set(
+    chunks
+      .map(c => c.source_title ?? c.source_url)
+      .filter((s): s is string => !!s)
+  )].slice(0, 4)
+  return sources.length > 0 ? `Topics available in knowledge base: ${sources.join(', ')}` : ''
 }
 
-// ─── Out-of-scope response ────────────────────────────────────────────────────
+// ─── Master System Prompt ─────────────────────────────────────────────────────
 
-const OUT_OF_SCOPE_MESSAGES = [
-  "I don't have specific information about that in my knowledge base. Would you like me to connect you with a human agent who can help further? (Reply **yes** to connect)",
-  "That's a bit outside what I have information on right now. Would you like me to transfer you to a human agent? (Reply **yes** to connect)",
-  "I'm not able to find a good answer for that one. Can I connect you to one of our human agents for better assistance? (Reply **yes** to connect)",
-]
+function buildMasterPrompt(
+  context: string,
+  topicsHint: string,
+  hasStrongContext: boolean
+): string {
+  const kbSection = context
+    ? `## Knowledge Base Context\n${context}`
+    : `## Knowledge Base Context\n(No relevant articles found for this specific query)`
 
-function getOutOfScopeMessage(): string {
-  const index = Math.floor(Math.random() * OUT_OF_SCOPE_MESSAGES.length)
-  return OUT_OF_SCOPE_MESSAGES[index] ?? OUT_OF_SCOPE_MESSAGES[0]!
+  return `You are a professional, intelligent, and warm customer support assistant.
+
+Your entire knowledge comes from the company's knowledge base provided below. You do not have access to external information, the internet, or any knowledge outside of what is in this knowledge base.
+
+${kbSection}
+
+${topicsHint ? `## Topics You Have Knowledge On\n${topicsHint}\n` : ''}
+
+---
+
+## Response Guidelines
+
+**For greetings, pleasantries, or "how are you" type messages:**
+Respond naturally and warmly, as a knowledgeable human assistant would. Briefly introduce what you can help with based on the topics above. Do not be robotic. Keep it natural and inviting.
+
+**For questions about your capabilities ("what can you do", "what do you help with"):**
+Explain specifically what topics and information you have available, derived from the knowledge base above. Be specific — tell them exactly what you know, not vague platitudes.
+
+**For domain-specific questions answerable from the knowledge base:**
+Answer accurately and professionally using ONLY the knowledge base context provided. Be thorough, clear, and naturally appreciative where appropriate. Never fabricate facts, prices, features, or policies not present in the context. Match the user's language.
+
+**For questions that are completely unrelated to your knowledge base** (other companies, entertainment, anime, coding help unrelated to KB, world news, unrelated topics):
+Respond with exactly this token and nothing else: OUT_OF_DOMAIN
+
+**For questions that seem relevant but the knowledge base doesn't contain enough specific information:**
+${hasStrongContext
+  ? 'The context has relevant information — use it to answer as completely as you can.'
+  : 'Respond with exactly this token and nothing else: OUT_OF_SCOPE'
 }
 
-// ─── User confirming handoff ──────────────────────────────────────────────────
+---
 
-const CONFIRM_YES_PATTERNS = [
-  /^(yes|yeah|yep|yup|sure|ok|okay|please|haan|ha|ji|ji\s?haan|please\s?do|go\s?ahead)\b/i,
-]
+## Hard Rules
+1. Never reveal source tags [Source N:] in your reply.
+2. Never mention "knowledge base", "context", "chunks", or internal system details.
+3. Never answer questions about topics outside your knowledge base — not even partially.
+4. Always respond in the same language the user is writing in.
+5. Be warm, professional, and human. Acknowledge feelings if the user seems frustrated or confused.
+6. Keep responses concise but complete: 2–4 sentences for simple queries, more detail for complex ones.`.trim()
+}
 
-export function isHandoffConfirmation(query: string): boolean {
-  return CONFIRM_YES_PATTERNS.some(p => p.test(query.trim()))
+// ─── LLM Call Helper ─────────────────────────────────────────────────────────
+
+async function generateContextualResponse(
+  client: ReturnType<typeof createOpenAIClient>,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens = 120,
+  temperature = 0.5
+): Promise<{ text: string; tokens: number }> {
+  const completion = await client.chat.completions.create({
+    model: GPT_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+    max_tokens: maxTokens,
+    temperature,
+  })
+  return {
+    text: completion.choices[0]?.message?.content?.trim() ?? '',
+    tokens: completion.usage?.total_tokens ?? 0,
+  }
 }
 
 // ─── Main RAG Function ────────────────────────────────────────────────────────
@@ -255,43 +265,47 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   } = params
 
   const trimmedQuery = query.trim()
+  const client = createOpenAIClient(openaiApiKey)
 
+  // ── Empty message: generate a natural greeting ────────────────────────────
   if (!trimmedQuery) {
+    const { text, tokens } = await generateContextualResponse(
+      client,
+      'You are a friendly customer support assistant. The user just opened the chat. Greet them warmly and ask how you can help them today. Keep it to 1–2 sentences, natural and inviting.',
+      '(user opened the chat)',
+      100,
+      0.7
+    )
     return {
       type: 'casual',
-      message: "Hello! How can I help you today? 😊",
+      message: text || "Hello! 👋 How can I help you today?",
       confidence: 1,
       sources: [],
+      tokensUsed: tokens,
     }
   }
 
-  // ── Step 1: Detect intent ─────────────────────────────────────────────────
-  const intent = detectIntent(trimmedQuery)
-
-  // ── Step 2: Handle non-question intents immediately (no RAG needed) ───────
-  if (intent === 'greeting' || intent === 'thanks' || intent === 'goodbye') {
-    return {
-      type: 'casual',
-      message: getCasualResponse(intent),
-      confidence: 1,
-      sources: [],
-    }
-  }
-
-  // ── Step 3: Explicit human agent request ─────────────────────────────────
-  if (intent === 'human_request') {
+  // ── Explicit human agent request ──────────────────────────────────────────
+  if (isExplicitHumanRequest(trimmedQuery)) {
+    const { text, tokens } = await generateContextualResponse(
+      client,
+      'The user wants to speak to a human agent. Respond warmly and professionally, confirming you are connecting them now. Be reassuring and brief — 1–2 sentences.',
+      trimmedQuery,
+      100,
+      0.5
+    )
     return {
       type: 'handoff',
-      message: "Sure! Let me connect you with a human agent right away. Please hold on. 🙏",
+      message: text || "Of course! Let me connect you with a human agent right away. Please hold on for a moment. 🙏",
       confidence: 1,
       sources: [],
+      tokensUsed: tokens,
     }
   }
 
-  // ── Step 4: Embed query ───────────────────────────────────────────────────
+  // ── Embed query and search knowledge base ─────────────────────────────────
   const queryEmbedding = await generateEmbedding(trimmedQuery, openaiApiKey)
 
-  // ── Step 5: Vector search ─────────────────────────────────────────────────
   const matchedChunks = await searchSimilarChunks(
     queryEmbedding,
     orgId,
@@ -300,8 +314,8 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     kbId
   )
 
-  // ── Step 6: Score confidence ──────────────────────────────────────────────
   const confidence = calculateConfidence(matchedChunks)
+  const hasStrongContext = confidence >= KB_RELEVANCE_THRESHOLD
 
   const sources: RAGSource[] = matchedChunks.map(c => ({
     title: c.source_title,
@@ -309,52 +323,67 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     similarity: parseFloat(c.similarity.toFixed(4)),
   }))
 
-  // ── Step 7: No chunks or low confidence → ask user if they want handoff ──
-  if (matchedChunks.length === 0 || confidence < HANDOFF_THRESHOLD) {
-    return {
-      type: 'ask_handoff',
-      message: getOutOfScopeMessage(),
-      confidence,
-      sources,
-    }
-  }
-
-  // ── Step 8: Build context + prompt ───────────────────────────────────────
   const context = buildContext(matchedChunks)
-  const systemPrompt = buildSystemPrompt(context)
+  const topicsHint = deriveTopicsHint(matchedChunks)
 
-  // ── Step 9: Call GPT-4o-mini ─────────────────────────────────────────────
-  const client = createOpenAIClient(openaiApiKey)
+  // ── Single intelligent LLM call ───────────────────────────────────────────
+  const systemPrompt = buildMasterPrompt(context, topicsHint, hasStrongContext)
 
-  const completion = await client.chat.completions.create({
+  const mainCompletion = await client.chat.completions.create({
     model: GPT_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: trimmedQuery },
     ],
-    max_tokens: 600,
-    temperature: 0.3,
+    max_tokens: 700,
+    temperature: 0.4,
   })
 
-  const answer = completion.choices[0]?.message?.content?.trim() ?? ''
-  const tokensUsed = completion.usage?.total_tokens
+  const rawAnswer = mainCompletion.choices[0]?.message?.content?.trim() ?? ''
+  const mainTokens = mainCompletion.usage?.total_tokens ?? 0
 
-  // ── Step 10: Model said OUT_OF_SCOPE → ask user ──────────────────────────
-  if (!answer || answer === 'OUT_OF_SCOPE' || answer.includes('OUT_OF_SCOPE')) {
+  // ── OUT_OF_SCOPE: KB-adjacent but not enough info → offer handoff ─────────
+  if (!rawAnswer || rawAnswer === 'OUT_OF_SCOPE' || rawAnswer.includes('OUT_OF_SCOPE')) {
+    const { text, tokens } = await generateContextualResponse(
+      client,
+      `You are a professional support assistant. The user asked something within your general domain, but you don't have the specific information to answer it well. Apologize briefly and professionally, then ask if they'd like to be connected with a human agent who can help further. Include "(Reply **yes** to connect)" naturally at the end. Keep it to 2–3 sentences.`,
+      trimmedQuery,
+      150,
+      0.5
+    )
     return {
       type: 'ask_handoff',
-      message: getOutOfScopeMessage(),
+      message: text || "I'm sorry, I don't have specific information about that at the moment. Would you like me to connect you with a human agent who can help further? (Reply **yes** to connect)",
       confidence,
       sources,
-      tokensUsed,
+      tokensUsed: mainTokens + tokens,
     }
   }
 
+  // ── OUT_OF_DOMAIN: completely off-topic → politely decline ────────────────
+  if (rawAnswer === 'OUT_OF_DOMAIN' || rawAnswer.includes('OUT_OF_DOMAIN')) {
+    const { text, tokens } = await generateContextualResponse(
+      client,
+      `You are a professional support assistant with expertise limited to your company's specific knowledge base. The user asked something completely outside your domain of expertise. Politely and warmly let them know you can only help with your specific area. Be kind, not dismissive. Keep it to 2 sentences.`,
+      trimmedQuery,
+      120,
+      0.5
+    )
+    return {
+      type: 'casual',
+      message: text || "That's a bit outside my area of expertise! I'm best equipped to help with questions related to our specific services — feel free to ask me anything in that space.",
+      confidence: 0,
+      sources: [],
+      tokensUsed: mainTokens + tokens,
+    }
+  }
+
+  // ── Successful answer ─────────────────────────────────────────────────────
   return {
-    type: 'answer',
-    message: answer,
+    type: hasStrongContext ? 'answer' : 'casual',
+    message: rawAnswer,
     confidence,
     sources,
-    tokensUsed,
+    tokensUsed: mainTokens,
   }
 }

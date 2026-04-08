@@ -1,19 +1,21 @@
-import { z } from 'zod'
-import { TRPCError } from '@trpc/server'
-import { router, protectedProcedure } from '../trpc/trpc'
+/**
+ * KNOWLEDGE ROUTER — Multi-Org Fixed
+ *
+ * Same fix as chat.router.ts: use ctx.userOrgId from middleware instead of
+ * requireOrgAccess(ctx.userOrgId, input.orgId) which caused 403 on org switch.
+ */
 
-function requireOrgAccess(userOrgId: string, requestedOrgId: string) {
-  if (requestedOrgId !== userOrgId) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Organization access denied.' })
-  }
-  return userOrgId
-}
+import { z } from 'zod'
+import { router, protectedProcedure } from '../trpc/trpc'
 
 export const knowledgeRouter = router({
   getKnowledgeBases: protectedProcedure
-    .input(z.object({ orgId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
+    .input(z.object({
+      orgId: z.string().uuid().optional(), // kept for backward compat
+    }).optional())
+    .query(async ({ ctx }) => {
+      const orgId = ctx.userOrgId // middleware-validated active org
+
       const { data } = await ctx.supabase
         .from('knowledge_bases')
         .select('*')
@@ -22,9 +24,14 @@ export const knowledgeRouter = router({
     }),
 
   createKnowledgeBase: protectedProcedure
-    .input(z.object({ orgId: z.string().uuid(), name: z.string().min(1), sourceType: z.string() }))
+    .input(z.object({
+      orgId: z.string().uuid().optional(), // kept for backward compat
+      name: z.string().min(1),
+      sourceType: z.string(),
+    }))
     .mutation(async ({ ctx, input }) => {
-      const orgId = requireOrgAccess(ctx.userOrgId, input.orgId)
+      const orgId = ctx.userOrgId
+
       const { data } = await ctx.supabase
         .from('knowledge_bases')
         .insert({ org_id: orgId, name: input.name, source_type: input.sourceType })
@@ -36,11 +43,13 @@ export const knowledgeRouter = router({
   deleteKnowledgeBase: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      const orgId = ctx.userOrgId
+
       await ctx.supabase
         .from('knowledge_bases')
         .delete()
         .eq('id', input.id)
-        .eq('org_id', ctx.userOrgId)
+        .eq('org_id', orgId) // ensures we only delete from active org
       return { success: true }
     }),
 })

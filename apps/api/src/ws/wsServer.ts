@@ -74,12 +74,12 @@ async function authenticateAgentSocket(params: {
       return null
     }
 
-    const { data: member } = await supabase
-      .from('users')
-      .select('id')
-      .eq('id', user.id)
-      .eq('org_id', params.orgId)
-      .maybeSingle()
+const { data: member } = await supabase
+  .from('user_organizations')
+  .select('id')
+  .eq('user_id', user.id)
+  .eq('org_id', params.orgId)
+  .maybeSingle()
 
     if (!member) return null
 
