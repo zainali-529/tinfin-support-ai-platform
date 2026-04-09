@@ -24,6 +24,11 @@ export type ResolvedConfig = {
   autoOpenDelay: number
   showTypingIndicator: boolean
   offlineMessage: string | null
+  // ── Voice / Vapi ────────────────────────────────────────────────────────
+  vapiPublicKey: string | null
+  vapiAssistantId: string | null
+  voiceEnabled: boolean
+  callButtonLabel: string
 }
 
 const DEFAULTS: Omit<ResolvedConfig, 'orgId'> = {
@@ -45,6 +50,11 @@ const DEFAULTS: Omit<ResolvedConfig, 'orgId'> = {
   autoOpenDelay: 5,
   showTypingIndicator: true,
   offlineMessage: null,
+  // Voice defaults
+  vapiPublicKey: null,
+  vapiAssistantId: null,
+  voiceEnabled: false,
+  callButtonLabel: 'Talk to AI',
 }
 
 function stripUndefined<T extends object>(obj: T): Partial<T> {
@@ -81,7 +91,7 @@ export function useWidgetConfig(orgId: string, staticOverrides: Partial<WidgetCo
         }))
       })
       .catch(err => {
-        console.warn('[tinfin-widget] Could not fetch remote config:', err.message)
+        console.warn('[tinfin-widget] Could not fetch remote config:', (err as Error).message)
       })
       .finally(() => setLoading(false))
   }, [orgId]) // eslint-disable-line react-hooks/exhaustive-deps

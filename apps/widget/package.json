@@ -9,6 +9,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@vapi-ai/web": "^2.0.0",
     "@workspace/types": "workspace:*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

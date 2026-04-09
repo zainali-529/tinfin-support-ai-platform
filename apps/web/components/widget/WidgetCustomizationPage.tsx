@@ -14,21 +14,20 @@ import { Tabs, TabsContent, TabsList } from '@workspace/ui/components/tabs'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import {
   CheckIcon, CopyIcon, SaveIcon, ZapIcon, GlobeIcon, InfoIcon,
-  PaletteIcon, MessageSquareIcon, CodeIcon, SlidersHorizontalIcon,
+  PaletteIcon, MessageSquareIcon, CodeIcon, SlidersHorizontalIcon, MicIcon,
 } from 'lucide-react'
 import { WidgetPreview } from './WidgetPreview'
+import { VoiceSettingsPanel } from '@/components/voice/VoiceSettingsPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface WidgetSettings {
-  // Direct DB columns
   primaryColor: string
   welcomeMessage: string
   companyName: string
   logoUrl: string
   position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
   showBranding: boolean
-  // Advanced — stored in settings JSONB
   botName: string
   inputPlaceholder: string
   responseTimeText: string
@@ -177,7 +176,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   )
   const updateConfig = trpc.org.updateWidgetConfig.useMutation()
 
-  // Load existing config
   useEffect(() => {
     if (!existingConfig) return
     const s = (existingConfig.settings ?? {}) as Record<string, unknown>
@@ -245,31 +243,30 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     }
   }
 
-  // Embed code strings
   const prodCode = `<!-- Tinfin Widget -->\n<script\n  src="https://cdn.tinfin.com/widget.js"\n  data-org-id="${orgId}"\n  async\n></script>`
   const devCode = `<!-- Dev Mode -->\n<script\n  type="module"\n  src="http://localhost:3002/src/main.ts"\n  data-org-id="${orgId}"\n></script>`
   const nextCode = `// app/layout.tsx\nimport Script from 'next/script'\n\nexport default function RootLayout({ children }) {\n  return (\n    <html>\n      <body>\n        {children}\n        <Script\n          src="https://cdn.tinfin.com/widget.js"\n          data-org-id="${orgId}"\n          strategy="lazyOnload"\n        />\n      </body>\n    </html>\n  )\n}`
   const reactCode = `// src/App.tsx\nimport { useEffect } from 'react'\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('script')\n    s.src = 'https://cdn.tinfin.com/widget.js'\n    s.dataset.orgId = '${orgId}'\n    s.async = true\n    document.body.appendChild(s)\n    return () => s.remove()\n  }, [])\n  return <div>{/* your app */}</div>\n}`
 
   const previewConfig = {
-    primaryColor:       settings.primaryColor,
-    welcomeMessage:     settings.welcomeMessage,
-    companyName:        settings.companyName,
-    logoUrl:            settings.logoUrl,
-    position:           settings.position,
-    showBranding:       settings.showBranding,
-    botName:            settings.botName,
-    inputPlaceholder:   settings.inputPlaceholder,
-    responseTimeText:   settings.responseTimeText,
-    launcherSize:       settings.launcherSize,
-    borderRadius:       settings.borderRadius,
-    widgetWidth:        settings.widgetWidth,
-    headerStyle:        settings.headerStyle,
-    userBubbleColor:    settings.userBubbleColor || settings.primaryColor,
-    autoOpen:           settings.autoOpen,
-    autoOpenDelay:      settings.autoOpenDelay,
+    primaryColor:        settings.primaryColor,
+    welcomeMessage:      settings.welcomeMessage,
+    companyName:         settings.companyName,
+    logoUrl:             settings.logoUrl,
+    position:            settings.position,
+    showBranding:        settings.showBranding,
+    botName:             settings.botName,
+    inputPlaceholder:    settings.inputPlaceholder,
+    responseTimeText:    settings.responseTimeText,
+    launcherSize:        settings.launcherSize,
+    borderRadius:        settings.borderRadius,
+    widgetWidth:         settings.widgetWidth,
+    headerStyle:         settings.headerStyle,
+    userBubbleColor:     settings.userBubbleColor || settings.primaryColor,
+    autoOpen:            settings.autoOpen,
+    autoOpenDelay:       settings.autoOpenDelay,
     showTypingIndicator: settings.showTypingIndicator,
-    offlineMessage:     settings.offlineMessage,
+    offlineMessage:      settings.offlineMessage,
   }
 
   return (
@@ -283,7 +280,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
             Widget Customization
           </h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Customize your chat widget — all changes sync live with the widget.
+            Customize your chat widget and configure AI voice calling.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -297,10 +294,12 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               <CheckIcon className="size-3 mr-1" /> Saved
             </Badge>
           )}
-          <Button size="sm" onClick={handleSave} disabled={saving || !isDirty} className="gap-1.5">
-            <SaveIcon className="size-3.5" />
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
+          {activeTab !== 'voice' && (
+            <Button size="sm" onClick={handleSave} disabled={saving || !isDirty} className="gap-1.5">
+              <SaveIcon className="size-3.5" />
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -308,7 +307,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
       <div className="flex gap-0 overflow-hidden rounded-xl border bg-background shadow-sm" style={{ height: 'calc(100vh - 11rem)' }}>
 
         {/* ── Left: Settings (50%) ── */}
-        <div className="w-1/2 shrink-0 border-r flex flex-col overflow-hidden">
+        <div className={`${activeTab === 'voice' ? 'w-full' : 'w-1/2'} shrink-0 border-r flex flex-col overflow-hidden transition-all`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
             {/* Tab triggers */}
             <div className="border-b px-4 pt-3 pb-0 shrink-0 bg-card/50">
@@ -317,6 +316,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   { value: 'style',    icon: PaletteIcon,          label: 'Style' },
                   { value: 'content',  icon: MessageSquareIcon,    label: 'Content' },
                   { value: 'behavior', icon: SlidersHorizontalIcon, label: 'Behavior' },
+                  { value: 'voice',    icon: MicIcon,              label: 'Voice' },
                   { value: 'install',  icon: CodeIcon,             label: 'Install' },
                 ].map(({ value, icon: Icon, label }) => (
                   <button key={value}
@@ -328,6 +328,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     }`}>
                     <Icon className="size-3.5" />
                     {label}
+                    {value === 'voice' && (
+                      <span className="ml-0.5 text-[9px] font-bold px-1 py-0.5 rounded bg-primary/10 text-primary leading-none">NEW</span>
+                    )}
                   </button>
                 ))}
               </TabsList>
@@ -338,7 +341,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
 
               {/* ── STYLE TAB ── */}
               <TabsContent value="style" className="m-0 p-4 space-y-4">
-                {/* Brand Color */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Brand Color</CardTitle>
@@ -349,11 +351,10 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardContent>
                 </Card>
 
-                {/* User Bubble Color */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">User Message Color</CardTitle>
-                    <CardDescription className="text-xs">Color of the visitor's outgoing message bubbles. Leave empty to use brand color.</CardDescription>
+                    <CardDescription className="text-xs">Color of visitor's outgoing message bubbles. Leave empty to use brand color.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <ColorPicker
@@ -369,12 +370,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardContent>
                 </Card>
 
-                {/* Header Style */}
                 <Card>
                   <CardContent className="pt-4">
-                    <SettingRow
-                      label="Header Style"
-                      description="Gradient adds depth; solid is clean and minimal.">
+                    <SettingRow label="Header Style" description="Gradient adds depth; solid is clean and minimal.">
                       <div className="flex gap-2">
                         {(['gradient', 'solid'] as const).map(style => (
                           <button key={style}
@@ -389,7 +387,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                         ))}
                       </div>
                     </SettingRow>
-                    {/* Mini color preview */}
                     <div className="mt-2 h-8 rounded-lg overflow-hidden border border-border"
                       style={{
                         background: settings.headerStyle === 'gradient'
@@ -399,7 +396,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardContent>
                 </Card>
 
-                {/* Widget Position */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Widget Position</CardTitle>
@@ -429,7 +425,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardContent>
                 </Card>
 
-                {/* Launcher Size */}
                 <Card>
                   <CardContent className="pt-4">
                     <div className="space-y-3">
@@ -468,7 +463,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardContent>
                 </Card>
 
-                {/* Border Radius */}
                 <Card>
                   <CardContent className="pt-4">
                     <div className="space-y-3">
@@ -479,11 +473,8 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                         </div>
                         <div className="text-sm font-mono text-muted-foreground">{settings.borderRadius}px</div>
                       </div>
-                      <Slider
-                        min={8} max={28} step={2}
-                        value={[settings.borderRadius]}
-                        onValueChange={([v]) => update({ borderRadius: v! })}
-                      />
+                      <Slider min={8} max={28} step={2} value={[settings.borderRadius]}
+                        onValueChange={([v]) => update({ borderRadius: v! })} />
                       <div className="flex justify-between text-[10px] text-muted-foreground">
                         <span>8 · Sharp</span><span>28 · Very Round</span>
                       </div>
@@ -491,7 +482,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardContent>
                 </Card>
 
-                {/* Widget Width */}
                 <Card>
                   <CardContent className="pt-4">
                     <div className="space-y-3">
@@ -502,11 +492,8 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                         </div>
                         <div className="text-sm font-mono text-muted-foreground">{settings.widgetWidth}px</div>
                       </div>
-                      <Slider
-                        min={300} max={440} step={10}
-                        value={[settings.widgetWidth]}
-                        onValueChange={([v]) => update({ widgetWidth: v! })}
-                      />
+                      <Slider min={300} max={440} step={10} value={[settings.widgetWidth]}
+                        onValueChange={([v]) => update({ widgetWidth: v! })} />
                       <div className="flex justify-between text-[10px] text-muted-foreground">
                         <span>300 · Compact</span><span>440 · Wide</span>
                       </div>
@@ -517,7 +504,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
 
               {/* ── CONTENT TAB ── */}
               <TabsContent value="content" className="m-0 p-4 space-y-4">
-                {/* Brand identity */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Brand Identity</CardTitle>
@@ -533,38 +519,31 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                       <Label className="text-xs text-muted-foreground font-medium">Logo URL</Label>
                       <Input placeholder="https://example.com/logo.png" value={settings.logoUrl}
                         onChange={e => update({ logoUrl: e.target.value })} className="h-8 text-sm" />
-                      <p className="text-[11px] text-muted-foreground">Square image recommended. Leave empty for default 💬 icon.</p>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* AI Bot Identity */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">AI Bot Identity</CardTitle>
-                    <CardDescription className="text-xs">How the AI assistant is presented to visitors.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-medium">Bot Name</Label>
                       <Input placeholder="AI Assistant" value={settings.botName}
                         onChange={e => update({ botName: e.target.value })} className="h-8 text-sm" />
-                      <p className="text-[11px] text-muted-foreground">Shown above AI messages in the chat.</p>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-medium">Response Time Text</Label>
                       <Input placeholder="AI · We reply instantly" value={settings.responseTimeText}
                         onChange={e => update({ responseTimeText: e.target.value })} className="h-8 text-sm" />
-                      <p className="text-[11px] text-muted-foreground">Shown in header when AI is active.</p>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Messages */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Messages</CardTitle>
-                    <CardDescription className="text-xs">Customize what visitors read.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="space-y-1.5">
@@ -582,10 +561,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-medium">Offline Message</Label>
-                      <Input placeholder="We're offline right now. Leave a message!"
+                      <Input placeholder="We're offline right now."
                         value={settings.offlineMessage}
                         onChange={e => update({ offlineMessage: e.target.value })} className="h-8 text-sm" />
-                      <p className="text-[11px] text-muted-foreground">Shown when widget can't connect.</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -594,21 +572,13 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               {/* ── BEHAVIOR TAB ── */}
               <TabsContent value="behavior" className="m-0 p-4 space-y-4">
                 <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Display</CardTitle>
-                  </CardHeader>
+                  <CardHeader className="pb-3"><CardTitle className="text-sm">Display</CardTitle></CardHeader>
                   <CardContent className="divide-y divide-border">
-                    <SettingRow
-                      label="Show &quot;Powered by Tinfin&quot;"
-                      description="Display Tinfin branding in the widget footer.">
-                      <Switch checked={settings.showBranding}
-                        onCheckedChange={v => update({ showBranding: v })} />
+                    <SettingRow label="Show &quot;Powered by Tinfin&quot;" description="Display Tinfin branding in the widget footer.">
+                      <Switch checked={settings.showBranding} onCheckedChange={v => update({ showBranding: v })} />
                     </SettingRow>
-                    <SettingRow
-                      label="Show Typing Indicator"
-                      description="Show animated dots when AI is generating a reply.">
-                      <Switch checked={settings.showTypingIndicator}
-                        onCheckedChange={v => update({ showTypingIndicator: v })} />
+                    <SettingRow label="Show Typing Indicator" description="Show animated dots when AI is generating a reply.">
+                      <Switch checked={settings.showTypingIndicator} onCheckedChange={v => update({ showTypingIndicator: v })} />
                     </SettingRow>
                   </CardContent>
                 </Card>
@@ -616,14 +586,12 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Auto Open</CardTitle>
-                    <CardDescription className="text-xs">Automatically open the widget after a delay when a visitor lands on your page.</CardDescription>
+                    <CardDescription className="text-xs">Automatically open the widget after a delay.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <SettingRow label="Enable Auto Open" description="Widget opens automatically on page load.">
-                      <Switch checked={settings.autoOpen}
-                        onCheckedChange={v => update({ autoOpen: v })} />
+                      <Switch checked={settings.autoOpen} onCheckedChange={v => update({ autoOpen: v })} />
                     </SettingRow>
-
                     {settings.autoOpen && (
                       <div className="space-y-2 pt-1 border-t border-border">
                         <div className="flex items-center justify-between">
@@ -631,15 +599,10 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                             <div className="text-sm font-medium">Open Delay</div>
                             <div className="text-xs text-muted-foreground">Seconds before widget auto-opens.</div>
                           </div>
-                          <div className="text-sm font-mono text-muted-foreground">
-                            {settings.autoOpenDelay}s
-                          </div>
+                          <div className="text-sm font-mono text-muted-foreground">{settings.autoOpenDelay}s</div>
                         </div>
-                        <Slider
-                          min={0} max={60} step={1}
-                          value={[settings.autoOpenDelay]}
-                          onValueChange={([v]) => update({ autoOpenDelay: v! })}
-                        />
+                        <Slider min={0} max={60} step={1} value={[settings.autoOpenDelay]}
+                          onValueChange={([v]) => update({ autoOpenDelay: v! })} />
                         <div className="flex justify-between text-[10px] text-muted-foreground">
                           <span>0 · Immediate</span><span>60s</span>
                         </div>
@@ -647,6 +610,11 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              {/* ── VOICE TAB ── */}
+              <TabsContent value="voice" className="m-0">
+                <VoiceSettingsPanel />
               </TabsContent>
 
               {/* ── INSTALL TAB ── */}
@@ -658,7 +626,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </AlertDescription>
                 </Alert>
 
-                {/* Org ID */}
                 <Card>
                   <CardContent className="pt-4">
                     <div className="space-y-1.5">
@@ -676,9 +643,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     <CardTitle className="text-sm">HTML / Any Website</CardTitle>
                     <CardDescription className="text-xs">Add before the closing <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> tag.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <CodeBlock code={prodCode} />
-                  </CardContent>
+                  <CardContent><CodeBlock code={prodCode} /></CardContent>
                 </Card>
 
                 <Card>
@@ -686,9 +651,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     <CardTitle className="text-sm">Next.js</CardTitle>
                     <CardDescription className="text-xs">Add to your root layout using Next.js Script component.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <CodeBlock code={nextCode} lang="tsx" />
-                  </CardContent>
+                  <CardContent><CodeBlock code={nextCode} lang="tsx" /></CardContent>
                 </Card>
 
                 <Card>
@@ -696,19 +659,14 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     <CardTitle className="text-sm">React</CardTitle>
                     <CardDescription className="text-xs">Dynamically inject the script via useEffect.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <CodeBlock code={reactCode} lang="tsx" />
-                  </CardContent>
+                  <CardContent><CodeBlock code={reactCode} lang="tsx" /></CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Local Development</CardTitle>
-                    <CardDescription className="text-xs">For testing the widget locally before deploying.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <CodeBlock code={devCode} />
-                  </CardContent>
+                  <CardContent><CodeBlock code={devCode} /></CardContent>
                 </Card>
 
                 <Card className="border-primary/20 bg-primary/5">
@@ -730,22 +688,24 @@ export function WidgetCustomizationPage({ orgId }: Props) {
           </Tabs>
         </div>
 
-        {/* ── Right: Live Preview (50%) ── */}
-        <div className="w-1/2 flex flex-col overflow-hidden bg-muted/20">
-          <div className="flex items-center justify-between px-5 py-3 border-b bg-card/50 shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-sm font-medium">Live Preview</span>
+        {/* ── Right: Live Preview (50%) — hidden on Voice tab ── */}
+        {activeTab !== 'voice' && (
+          <div className="w-1/2 flex flex-col overflow-hidden bg-muted/20">
+            <div className="flex items-center justify-between px-5 py-3 border-b bg-card/50 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-sm font-medium">Live Preview</span>
+              </div>
+              <Badge variant="outline" className="text-[10px]">Updates instantly</Badge>
             </div>
-            <Badge variant="outline" className="text-[10px]">Updates instantly</Badge>
+            <div className="flex-1 overflow-hidden p-4 flex items-stretch">
+              <WidgetPreview config={previewConfig} />
+            </div>
+            <div className="text-center py-2 text-xs text-muted-foreground shrink-0 border-t bg-card/30">
+              Click the launcher to toggle the widget
+            </div>
           </div>
-          <div className="flex-1 overflow-hidden p-4 flex items-stretch">
-            <WidgetPreview config={previewConfig} />
-          </div>
-          <div className="text-center py-2 text-xs text-muted-foreground shrink-0 border-t bg-card/30">
-            Click the launcher to toggle the widget
-          </div>
-        </div>
+        )}
 
       </div>
     </div>

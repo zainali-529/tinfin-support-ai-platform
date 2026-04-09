@@ -5,6 +5,7 @@ import { knowledgeRouter } from '../routers/knowledge.router'
 import { orgRouter } from '../routers/org.router'
 import { ingestRouter } from '../routers/ingest.router'
 import { orgMembershipRouter } from '../routers/org-membership.router'
+import { vapiRouter } from '../routers/vapi.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   org: orgRouter,
   ingest: ingestRouter,
   orgMembership: orgMembershipRouter,
+  vapi: vapiRouter,
 })
 
 export type AppRouter = typeof appRouter

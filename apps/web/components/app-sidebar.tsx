@@ -23,6 +23,7 @@ import {
   BarChart2Icon,
   SettingsIcon,
   CodeIcon,
+  PhoneCallIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
 import { OrgSwitcher } from '@/components/org/OrgSwitcher'
@@ -30,7 +31,7 @@ import { OrgSwitcher } from '@/components/org/OrgSwitcher'
 type NavItem = {
   label: string
   href: string
-  icon: any
+  icon: React.ComponentType<{ className?: string }>
   exact?: boolean
   badge?: string
 }
@@ -46,6 +47,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboardIcon, exact: true },
       { label: 'Inbox',     href: '/inbox',     icon: InboxIcon, badge: '3' },
+      { label: 'Calls',     href: '/calls',     icon: PhoneCallIcon },
     ]
   },
   {

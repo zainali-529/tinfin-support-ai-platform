@@ -40,6 +40,15 @@ export interface WidgetConfig {
   autoOpenDelay?: number
   showTypingIndicator?: boolean
   offlineMessage?: string | null
+  // ── Voice / Vapi ────────────────────────────────────────────────────────
+  /** Vapi PUBLIC key — safe to bundle in widget */
+  vapiPublicKey?: string | null
+  /** Vapi assistant ID for this org */
+  vapiAssistantId?: string | null
+  /** Whether voice calling is enabled for this org */
+  voiceEnabled?: boolean
+  /** Label shown on the call button */
+  callButtonLabel?: string
 }
 
 export interface VisitorInfo {

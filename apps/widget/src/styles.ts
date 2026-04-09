@@ -12,6 +12,12 @@ export const STYLES = `
   .launcher:hover { transform: scale(1.08); box-shadow: 0 8px 32px rgba(0,0,0,0.22); }
   .launcher.left { right: auto; left: 24px; }
   .launcher.top { bottom: auto; top: 24px; }
+  .launcher-call-active { animation: pulse-ring 2s cubic-bezier(0.455,0.03,0.515,0.955) infinite; }
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
+    70% { box-shadow: 0 0 0 12px rgba(22,163,74,0); }
+    100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+  }
 
   .window {
     position: fixed; bottom: 96px; right: 24px; width: 380px; height: 580px;
@@ -54,7 +60,7 @@ export const STYLES = `
 
   /* ── Tabs ── */
   .tabs {
-    display: grid; grid-template-columns: 1fr 1fr;
+    display: grid;
     border-bottom: 1px solid #f0f0f0; background: #fff;
   }
   .tab-btn {
@@ -64,6 +70,7 @@ export const STYLES = `
   }
   .tab-btn:hover { color: #111827; }
   .tab-btn.active { color: #111827; }
+  .tab-active-call { color: #16a34a !important; }
 
   /* ── Inbox ── */
   .inbox-list {
@@ -76,6 +83,8 @@ export const STYLES = `
   .inbox-start-btn {
     flex: 1; border: none; border-radius: 10px; color: #fff;
     padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: opacity 0.15s;
   }
   .inbox-start-btn:hover { opacity: 0.9; }
   .inbox-refresh-btn {
@@ -104,9 +113,7 @@ export const STYLES = `
     font-size: 13px; font-weight: 700; color: #111827; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
   }
-  .inbox-item-time {
-    font-size: 11px; color: #9ca3af; flex-shrink: 0;
-  }
+  .inbox-item-time { font-size: 11px; color: #9ca3af; flex-shrink: 0; }
   .inbox-item-preview {
     font-size: 12px; color: #6b7280; line-height: 1.35;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -201,26 +208,14 @@ export const STYLES = `
   }
 
   .msg-bubble-group {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-width: 78%;
-    min-width: 0;
+    display: flex; flex-direction: column; gap: 2px; max-width: 78%; min-width: 0;
   }
-
   .msg-row.user .msg-bubble-group { align-items: flex-end; }
 
   .bubble {
-    width: fit-content;
-    max-width: 100%;
-    min-width: 0;
-    padding: 10px 14px;
-    border-radius: 18px;
-    font-size: 14px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    width: fit-content; max-width: 100%; min-width: 0;
+    padding: 10px 14px; border-radius: 18px;
+    font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
   }
   .bubble.user { border-bottom-right-radius: 4px; color: #fff; }
   .bubble.bot {
@@ -264,6 +259,90 @@ export const STYLES = `
   }
   .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
   .send-btn:not(:disabled):hover { opacity: 0.88; transform: scale(1.05); }
+
+  /* ── Voice Call Panel ── */
+  .call-panel {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 20px; padding: 24px 20px; background: #f8f9fb;
+    overflow-y: auto;
+  }
+  .call-avatar-wrapper {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .call-avatar {
+    width: 80px; height: 80px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px; transition: all 0.3s;
+  }
+  .call-avatar-pulse {
+    animation: avatar-pulse 2s ease-in-out infinite;
+  }
+  @keyframes avatar-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  .call-volume-bars {
+    display: flex; align-items: center; gap: 3px; height: 20px;
+  }
+  .call-volume-bar {
+    width: 4px; border-radius: 2px; transition: background 0.1s;
+  }
+  .call-volume-bar:nth-child(1) { height: 8px; }
+  .call-volume-bar:nth-child(2) { height: 14px; }
+  .call-volume-bar:nth-child(3) { height: 20px; }
+  .call-volume-bar:nth-child(4) { height: 14px; }
+  .call-volume-bar:nth-child(5) { height: 8px; }
+
+  .call-status { text-align: center; }
+  .call-status-name { font-size: 18px; font-weight: 700; color: #111827; }
+  .call-status-label { font-size: 14px; color: #6b7280; margin-top: 4px; font-weight: 500; }
+
+  .call-transcript {
+    width: 100%; background: #fff; border-radius: 12px; padding: 12px;
+    border: 1px solid #e5e7eb; max-height: 140px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .call-transcript-entry {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .call-transcript-role {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #9ca3af;
+  }
+  .call-transcript-entry.user .call-transcript-role { color: #6366f1; }
+  .call-transcript-text { font-size: 13px; color: #374151; line-height: 1.4; }
+
+  .call-controls {
+    display: flex; gap: 12px; align-items: center; justify-content: center;
+  }
+  .call-start-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 28px; border: none; border-radius: 999px; color: #fff;
+    font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.15s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .call-start-btn:hover { opacity: 0.88; transform: scale(1.02); }
+  .call-control-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 16px; background: #fff;
+    color: #374151; font-size: 11px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s; min-width: 72px;
+  }
+  .call-control-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .call-control-btn:not(:disabled):hover { border-color: #d1d5db; background: #f9fafb; }
+  .call-control-active { border-color: #fca5a5 !important; }
+  .call-end-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 12px 16px; border: none; border-radius: 16px;
+    background: #dc2626; color: #fff;
+    font-size: 11px; font-weight: 600; cursor: pointer; min-width: 72px;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .call-end-btn:hover { opacity: 0.9; transform: scale(1.03); }
+
+  .call-disclaimer {
+    font-size: 10px; color: #d1d5db; text-align: center; line-height: 1.4;
+  }
 
   .branding { text-align: center; padding: 7px; font-size: 11px; color: #d1d5db; flex-shrink: 0; }
   .branding a { color: inherit; text-decoration: none; }

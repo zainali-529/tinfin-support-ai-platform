@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useChat } from './useChat'
 import { useWidgetConfig } from './useWidgetConfig'
-import { SendIcon, CloseIcon, ChatIcon, BotIcon, AgentIcon, NewChatIcon } from './icons'
+import { useVapiCall, formatDuration } from './useVapiCall'
+import {
+  SendIcon, CloseIcon, ChatIcon, BotIcon, AgentIcon, NewChatIcon,
+  PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon,
+} from './icons'
 import { STYLES } from './styles'
 import type { WidgetConfig, VisitorInfo } from './types'
 
@@ -28,11 +32,13 @@ function formatRelativeTimestamp(value?: string | null) {
 
 const LAUNCHER_PX: Record<string, number> = { sm: 48, md: 56, lg: 64 }
 
+type ActiveTab = 'inbox' | 'chat' | 'call'
+
 export default function Widget({ config: staticConfig }: { config: WidgetConfig }) {
   const { config } = useWidgetConfig(staticConfig.orgId, staticConfig)
 
   const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState<'inbox' | 'chat'>('inbox')
+  const [tab, setTab] = useState<ActiveTab>('inbox')
   const [input, setInput] = useState('')
   const [showNewChatConfirm, setShowNewChatConfirm] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -45,6 +51,32 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     typing, connected, agentActive, visitorInfo,
     sendMessage, sendTyping, startNewChat, openConversation, refreshInbox, initWithVisitorInfo,
   } = useChat(config.orgId)
+
+  // ── Vapi Voice Call ────────────────────────────────────────────────────────
+  const vapiCallOptions = (config.voiceEnabled && config.vapiPublicKey && config.vapiAssistantId)
+    ? {
+        publicKey: config.vapiPublicKey,
+        assistantId: config.vapiAssistantId,
+        orgId: config.orgId,
+        visitorId: visitorInfo ? undefined : undefined, // set after visitor identified
+        visitorName: visitorInfo?.name,
+        visitorEmail: visitorInfo?.email,
+      }
+    : null
+
+  const {
+    callState,
+    isMuted,
+    volumeLevel,
+    transcript: callTranscript,
+    errorMessage: callError,
+    callDurationSeconds,
+    startCall,
+    endCall,
+    toggleMute,
+  } = useVapiCall(vapiCallOptions)
+
+  const isCallActive = callState === 'active' || callState === 'connecting' || callState === 'ending'
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -75,7 +107,13 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     return () => clearTimeout(timer)
   }, [config.autoOpen, config.autoOpenDelay])
 
-  // Dynamic CSS overrides from config
+  // When call ends, switch back to chat tab
+  useEffect(() => {
+    if (callState === 'ended' || callState === 'error') {
+      if (tab === 'call') setTimeout(() => setTab('chat'), 1500)
+    }
+  }, [callState, tab])
+
   const dynamicStyles = `
     .launcher {
       width: ${launcherPx}px !important;
@@ -95,6 +133,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     .prechat-submit { border-radius: ${Math.max(borderRadius - 6, 8)}px; }
     .inbox-start-btn { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
     .inbox-refresh-btn { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
+    .call-btn { border-radius: ${Math.max(borderRadius - 8, 8)}px; }
     @media (max-width: 440px) {
       .window { width: calc(100vw - 16px) !important; }
     }
@@ -130,6 +169,11 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setTab('chat')
   }, [startNewChat])
 
+  const handleStartCall = useCallback(async () => {
+    setTab('call')
+    await startCall()
+  }, [startCall])
+
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
@@ -157,6 +201,10 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const statusColor = !connected ? '#f87171' : agentActive ? '#34d399' : '#4ade80'
   const isResolvedConversation = activeConversation?.status === 'resolved' || activeConversation?.status === 'closed'
   const companyName = config.companyName || 'Support'
+  const voiceEnabled = config.voiceEnabled && config.vapiPublicKey && config.vapiAssistantId
+
+  // Tab count for dynamic rendering
+  const tabCount = voiceEnabled ? 3 : 2
 
   return (
     <>
@@ -176,7 +224,10 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
             <div className="header-name">{companyName}</div>
             <div className="header-status">
               <span className="status-dot" style={{ background: statusColor }} />
-              {statusText}
+              {isCallActive
+                ? `🎙️ Call · ${formatDuration(callDurationSeconds)}`
+                : statusText
+              }
             </div>
           </div>
           <div className="header-actions">
@@ -235,27 +286,65 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
           </div>
         ) : (
           <>
-            <div className="tabs">
-              <button className={`tab-btn ${tab === 'inbox' ? 'active' : ''}`}
+            {/* Tabs */}
+            <div className="tabs" style={{ gridTemplateColumns: `repeat(${tabCount}, 1fr)` }}>
+              <button
+                className={`tab-btn ${tab === 'inbox' ? 'active' : ''}`}
                 style={tab === 'inbox' ? { borderBottomColor: color, color } : {}}
-                onClick={() => setTab('inbox')}>Inbox</button>
-              <button className={`tab-btn ${tab === 'chat' ? 'active' : ''}`}
+                onClick={() => setTab('inbox')}>
+                Inbox
+              </button>
+              <button
+                className={`tab-btn ${tab === 'chat' ? 'active' : ''}`}
                 style={tab === 'chat' ? { borderBottomColor: color, color } : {}}
-                onClick={() => setTab('chat')}>Chat</button>
+                onClick={() => setTab('chat')}>
+                Chat
+              </button>
+              {voiceEnabled && (
+                <button
+                  className={`tab-btn ${tab === 'call' ? 'active' : ''} ${isCallActive ? 'tab-active-call' : ''}`}
+                  style={tab === 'call' ? { borderBottomColor: color, color } : {}}
+                  onClick={() => setTab('call')}>
+                  {isCallActive ? `📞 ${formatDuration(callDurationSeconds)}` : '📞 Call'}
+                </button>
+              )}
             </div>
 
-            {tab === 'inbox' ? (
+            {/* Inbox Tab */}
+            {tab === 'inbox' && (
               <div className="inbox-list">
                 <div className="inbox-top-actions">
                   <button className="inbox-start-btn" style={{ background: color }} onClick={handleStartChat}>
-                    Start Chat
+                    💬 Chat
                   </button>
+                  {voiceEnabled && (
+                    <button
+                      className="inbox-start-btn call-btn"
+                      style={{
+                        background: isCallActive ? '#16a34a' : '#059669',
+                        flex: '0 0 auto',
+                        padding: '10px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                      }}
+                      onClick={isCallActive ? () => setTab('call') : handleStartCall}
+                    >
+                      <PhoneIcon />
+                      {isCallActive ? `Active · ${formatDuration(callDurationSeconds)}` : (config.callButtonLabel || 'Talk to AI')}
+                    </button>
+                  )}
                   <button className="inbox-refresh-btn" onClick={refreshInbox}>Refresh</button>
                 </div>
                 {conversations.length === 0 ? (
                   <div className="inbox-empty">
                     <div className="welcome-title">No conversations yet</div>
-                    <div className="welcome-sub">Start a chat and it will appear here.</div>
+                    <div className="welcome-sub">
+                      {voiceEnabled
+                        ? 'Start a chat or call our AI assistant.'
+                        : 'Start a chat and it will appear here.'
+                      }
+                    </div>
                   </div>
                 ) : (
                   conversations.map((conversation) => {
@@ -279,13 +368,21 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                   })
                 )}
               </div>
-            ) : (
+            )}
+
+            {/* Chat Tab */}
+            {tab === 'chat' && (
               <>
                 <div className="messages">
                   {!activeConversationId ? (
                     <div className="welcome">
                       <div className="welcome-title">Hi {visitorInfo?.name?.split(' ')[0]}! 👋</div>
-                      <div className="welcome-sub">Start a chat from Inbox to begin messaging.</div>
+                      <div className="welcome-sub">
+                        {voiceEnabled
+                          ? 'Send a message or click 📞 Call to talk to our AI.'
+                          : 'Start a chat from Inbox to begin messaging.'
+                        }
+                      </div>
                     </div>
                   ) : messages.length === 0 ? (
                     <div className="welcome">
@@ -354,7 +451,6 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                         !activeConversationId ? 'Start a chat from Inbox...'
                         : isResolvedConversation ? 'This conversation is resolved'
                         : !connected ? (config.offlineMessage || 'Reconnecting...')
-                        : agentActive ? inputPlaceholder
                         : inputPlaceholder
                       }
                       value={input}
@@ -372,6 +468,24 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                 </div>
               </>
             )}
+
+            {/* Voice Call Tab */}
+            {tab === 'call' && voiceEnabled && (
+              <VoiceCallPanel
+                color={color}
+                callState={callState}
+                isMuted={isMuted}
+                volumeLevel={volumeLevel}
+                callDurationSeconds={callDurationSeconds}
+                callTranscript={callTranscript}
+                callError={callError}
+                botName={botName}
+                onStartCall={handleStartCall}
+                onEndCall={endCall}
+                onToggleMute={toggleMute}
+                callButtonLabel={config.callButtonLabel || 'Talk to AI'}
+              />
+            )}
           </>
         )}
 
@@ -384,13 +498,145 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
 
       {/* Launcher */}
       <button
-        className={`launcher ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''}`}
-        style={{ background: headerBg }}
+        className={`launcher ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''} ${isCallActive ? 'launcher-call-active' : ''}`}
+        style={{ background: isCallActive ? '#16a34a' : headerBg }}
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Close chat' : 'Open chat'}
       >
-        {open ? <CloseIcon /> : <ChatIcon />}
+        {isCallActive ? <PhoneIcon /> : open ? <CloseIcon /> : <ChatIcon />}
       </button>
     </>
+  )
+}
+
+// ─── Voice Call Panel ─────────────────────────────────────────────────────────
+
+interface VoiceCallPanelProps {
+  color: string
+  callState: ReturnType<typeof useVapiCall>['callState']
+  isMuted: boolean
+  volumeLevel: number
+  callDurationSeconds: number
+  callTranscript: ReturnType<typeof useVapiCall>['transcript']
+  callError: string | null
+  botName: string
+  callButtonLabel: string
+  onStartCall: () => Promise<void>
+  onEndCall: () => void
+  onToggleMute: () => void
+}
+
+function VoiceCallPanel({
+  color, callState, isMuted, volumeLevel, callDurationSeconds,
+  callTranscript, callError, botName, callButtonLabel,
+  onStartCall, onEndCall, onToggleMute,
+}: VoiceCallPanelProps) {
+  const isActive = callState === 'active'
+  const isConnecting = callState === 'connecting' || callState === 'ending'
+  const isIdle = callState === 'idle' || callState === 'ended' || callState === 'error'
+
+  // Volume animation bars
+  const barCount = 5
+  const bars = Array.from({ length: barCount }, (_, i) => {
+    const threshold = (i + 1) / barCount
+    return volumeLevel >= threshold
+  })
+
+  return (
+    <div className="call-panel">
+      {/* AI Avatar with pulse animation during call */}
+      <div className="call-avatar-wrapper">
+        <div
+          className={`call-avatar ${isActive ? 'call-avatar-pulse' : ''}`}
+          style={{
+            background: isActive ? `${color}22` : '#f3f4f6',
+            border: `2px solid ${isActive ? color : '#e5e7eb'}`,
+          }}
+        >
+          🤖
+        </div>
+
+        {/* Volume level indicator */}
+        {isActive && (
+          <div className="call-volume-bars">
+            {bars.map((active, i) => (
+              <div
+                key={i}
+                className="call-volume-bar"
+                style={{ background: active ? color : '#e5e7eb' }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Status */}
+      <div className="call-status">
+        <div className="call-status-name">{botName}</div>
+        <div className="call-status-label">
+          {callState === 'idle' && callButtonLabel}
+          {callState === 'connecting' && 'Connecting...'}
+          {callState === 'active' && `🎙️ ${formatDuration(callDurationSeconds)}`}
+          {callState === 'ending' && 'Ending call...'}
+          {callState === 'ended' && '✅ Call ended'}
+          {callState === 'error' && `❌ ${callError ?? 'Call failed'}`}
+        </div>
+      </div>
+
+      {/* Transcript */}
+      {callTranscript.length > 0 && (
+        <div className="call-transcript">
+          {callTranscript.slice(-4).map((entry, i) => (
+            <div key={i} className={`call-transcript-entry ${entry.role}`}>
+              <span className="call-transcript-role">{entry.role === 'user' ? 'You' : botName}</span>
+              <span className="call-transcript-text">{entry.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="call-controls">
+        {isIdle && (
+          <button
+            className="call-start-btn"
+            style={{ background: color }}
+            onClick={onStartCall}
+          >
+            <PhoneIcon />
+            {callState === 'error' ? 'Try Again' : callButtonLabel}
+          </button>
+        )}
+
+        {(isActive || isConnecting) && (
+          <>
+            <button
+              className={`call-control-btn ${isMuted ? 'call-control-active' : ''}`}
+              style={isMuted ? { background: '#fee2e2', color: '#dc2626' } : {}}
+              onClick={onToggleMute}
+              disabled={!isActive}
+              title={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted ? <MicOffIcon /> : <MicIcon />}
+              <span>{isMuted ? 'Unmuted' : 'Mute'}</span>
+            </button>
+
+            <button
+              className="call-end-btn"
+              onClick={onEndCall}
+              title="End call"
+            >
+              <PhoneOffIcon />
+              <span>End Call</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Disclaimer */}
+      <p className="call-disclaimer">
+        This call may be recorded for quality purposes.
+      </p>
+    </div>
   )
 }
