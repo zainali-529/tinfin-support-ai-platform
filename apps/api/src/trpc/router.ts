@@ -9,6 +9,7 @@ import { vapiRouter } from '../routers/vapi.router'
 import { teamRouter } from '../routers/team.router'
 import { billingRouter } from '../routers/billing.router'
 import { usageRouter } from '../routers/usage.router'
+import { analyticsRouter } from '../routers/analytics.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -21,6 +22,7 @@ export const appRouter = router({
   team: teamRouter,
   billing: billingRouter,
   usage: usageRouter,
+  analytics: analyticsRouter,
 })
 
 export type AppRouter = typeof appRouter

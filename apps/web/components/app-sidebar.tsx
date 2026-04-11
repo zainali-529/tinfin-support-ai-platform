@@ -55,7 +55,7 @@ const navGroups: NavGroup[] = [
       { label: 'Widget',         href: '/widget',    icon: CodeIcon, adminOnly: true },
       { label: 'Embedding',      href: '/embedding', icon: Link2Icon, adminOnly: true },
       { label: 'Voice Assistant', href: '/voice-assistant', icon: MicIcon, adminOnly: true },
-      { label: 'Analytics',      href: '/dashboard/analytics', icon: BarChart2Icon },
+      { label: 'Analytics',      href: '/analytics', icon: BarChart2Icon },
     ]
   },
   {
