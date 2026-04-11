@@ -12,46 +12,39 @@ import { createWsServer } from './ws/wsServer'
 import { widgetConfigRoute } from './routes/widget-config.route'
 import { vapiWebhookRoute } from './routes/vapi-webhook.route'
 import { voicePreviewRoute } from './routes/voice-preview.route'
+import { stripeWebhookRoute } from './routes/stripe-webhook.route'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
 const WS_PORT = Number(process.env.WS_PORT || 3003)
 
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-}))
-
-// Dashboard/web app CORS (credentialed)
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
 app.use(cors({ origin: process.env.WEB_URL || 'http://localhost:3000', credentials: true }))
 
-// ── Raw body capture for Vapi webhook signature verification ──────────────────
-// MUST come before express.json() so we get the raw bytes.
+// ── Raw body routes (BEFORE express.json) ─────────────────────────────────────
+
+// Vapi webhook
 app.use(
   '/api/vapi-webhook',
   express.raw({ type: 'application/json', limit: '2mb' }),
   (req: Request & { rawBody?: string }, _res: Response, next: NextFunction) => {
     if (Buffer.isBuffer(req.body)) {
       req.rawBody = req.body.toString('utf8')
-      try {
-        req.body = JSON.parse(req.rawBody) as Record<string, unknown>
-      } catch {
-        req.body = {}
-      }
+      try { req.body = JSON.parse(req.rawBody) as Record<string, unknown> } catch { req.body = {} }
     }
     next()
   },
   vapiWebhookRoute
 )
 
+// Stripe webhook — raw body required for signature verification
+app.use('/api/stripe-webhook', express.raw({ type: 'application/json', limit: '2mb' }), stripeWebhookRoute)
+
+// ── JSON body for everything else ─────────────────────────────────────────────
 app.use(express.json())
 
-// Public widget config — wildcard CORS, no credentials
 app.use('/api/widget-config', widgetConfigRoute)
-
-// Voice preview — authenticated, generates TTS audio
 app.use('/api/voice-preview', voicePreviewRoute)
-
-// tRPC — all dashboard/web queries and mutations
 app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))

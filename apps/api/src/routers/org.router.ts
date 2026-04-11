@@ -1,56 +1,60 @@
 /**
- * ORG ROUTER — Multi-Org Fixed
+ * apps/api/src/routers/org.router.ts  (Updated)
  *
- * Same fix: use ctx.userOrgId from middleware instead of requireOrgAccess check.
+ * Fix: updateWidgetConfig now requires admin role.
+ * getOrg and getWidgetConfig remain available to all members.
  */
 
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
+import { requireFeature } from '../lib/plan-guards'
+
+async function assertOrgAdmin(supabase: any, userId: string, orgId: string): Promise<void> {
+  const { data } = await supabase
+    .from('user_organizations')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+  if (!data || data.role !== 'admin') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can perform this action.' })
+  }
+}
 
 export const orgRouter = router({
   getOrg: protectedProcedure
-    .input(z.object({
-      orgId: z.string().uuid().optional(), // kept for backward compat
-    }).optional())
+    .input(z.object({ orgId: z.string().uuid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const orgId = ctx.userOrgId
-
       const { data } = await ctx.supabase
         .from('organizations')
         .select('*')
-        .eq('id', orgId)
+        .eq('id', ctx.userOrgId)
         .single()
       return data
     }),
 
   getWidgetConfig: protectedProcedure
-    .input(z.object({
-      orgId: z.string().uuid().optional(), // kept for backward compat
-    }).optional())
+    .input(z.object({ orgId: z.string().uuid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const orgId = ctx.userOrgId
-
       const { data, error } = await ctx.supabase
         .from('widget_configs')
         .select('*')
-        .eq('org_id', orgId)
+        .eq('org_id', ctx.userOrgId)
         .maybeSingle()
 
       if (error) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to load widget config: ${error.message}`,
-        })
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to load widget config: ${error.message}` })
       }
-
       return data
     }),
 
+  // ── ADMIN ONLY ────────────────────────────────────────────────────────────
+
   updateWidgetConfig: protectedProcedure
     .input(z.object({
-      orgId: z.string().uuid().optional(), // kept for backward compat
-      primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid hex color').optional(),
+      orgId: z.string().uuid().optional(),
+      primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       welcomeMessage: z.string().max(200).optional(),
       companyName: z.string().max(80).optional(),
       logoUrl: z.string().url().optional().or(z.literal('')),
@@ -72,7 +76,10 @@ export const orgRouter = router({
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Use the middleware-resolved active org — not the (potentially stale) input.orgId
+      // ← ADMIN GUARD
+      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      await requireFeature(ctx.supabase, ctx.userOrgId, 'widgetCustomization')
+
       const orgId = ctx.userOrgId
       const { settings, ...rest } = input
 
@@ -101,19 +108,8 @@ export const orgRouter = router({
         .select()
         .maybeSingle()
 
-      if (error) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to update widget config: ${error.message}`,
-        })
-      }
-
-      if (!data) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Widget config update did not return a row.',
-        })
-      }
+      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to update widget config: ${error.message}` })
+      if (!data) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Widget config update did not return a row.' })
 
       return data
     }),

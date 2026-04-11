@@ -3,16 +3,16 @@
 /**
  * OrgContext — single source of truth for the active organization on the client side.
  *
- * The layout server component resolves `active_org_id` from the DB and passes it
- * to <OrgProvider>. Every client component reads from here instead of querying
- * Supabase directly, which was causing stale-org bugs after switching.
+ * The layout server component resolves `active_org_id` and the user's role
+ * from the DB and passes them to <OrgProvider>. Every client component reads
+ * from here instead of querying Supabase directly.
  *
  * After an org switch:
  *   1. switchOrg mutation updates users.active_org_id in the DB
  *   2. utils.invalidate() clears all React Query / tRPC caches
  *   3. router.refresh() causes Next.js to re-render server components
  *   4. layout.tsx re-reads active_org_id → passes new org to OrgProvider
- *   5. All consumers of useActiveOrg() automatically get the new org
+ *   5. All consumers of useActiveOrg() automatically get the new org + role
  */
 
 import * as React from 'react'
@@ -23,6 +23,8 @@ export interface ActiveOrg {
   id: string
   name: string
   plan: string
+  /** The current user's role in this organization */
+  role: 'admin' | 'agent'
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -36,11 +38,6 @@ interface OrgProviderProps {
   children: React.ReactNode
 }
 
-/**
- * Wrap your dashboard layout with this provider.
- * Receives the server-resolved active org and makes it available to all
- * client components without any additional DB queries.
- */
 export function OrgProvider({ org, children }: OrgProviderProps) {
   return (
     <OrgContext.Provider value={org}>
@@ -49,15 +46,8 @@ export function OrgProvider({ org, children }: OrgProviderProps) {
   )
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// ─── Hooks ────────────────────────────────────────────────────────────────────
 
-/**
- * Returns the currently active organization.
- * Must be used inside <OrgProvider>.
- *
- * @example
- * const { id: orgId, name, plan } = useActiveOrg()
- */
 export function useActiveOrg(): ActiveOrg {
   const ctx = React.useContext(OrgContext)
   if (!ctx) {
@@ -66,13 +56,11 @@ export function useActiveOrg(): ActiveOrg {
   return ctx
 }
 
-/**
- * Returns the active orgId string directly — convenience shorthand.
- *
- * @example
- * const orgId = useActiveOrgId()
- * trpc.chat.getConversations.useQuery({ orgId })
- */
 export function useActiveOrgId(): string {
   return useActiveOrg().id
+}
+
+/** Returns true if the current user is an admin in the active org. */
+export function useIsAdmin(): boolean {
+  return useActiveOrg().role === 'admin'
 }

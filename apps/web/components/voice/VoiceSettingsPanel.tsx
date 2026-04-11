@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
 import { Button } from '@workspace/ui/components/button'
 import { Input } from '@workspace/ui/components/input'
@@ -10,6 +11,16 @@ import { Switch } from '@workspace/ui/components/switch'
 import { Slider } from '@workspace/ui/components/slider'
 import { Badge } from '@workspace/ui/components/badge'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@workspace/ui/components/alert-dialog'
 import { Spinner } from '@workspace/ui/components/spinner'
 import { cn } from '@workspace/ui/lib/utils'
 import {
@@ -23,10 +34,12 @@ import {
   PlayCircleIcon,
   PauseCircleIcon,
   ZapIcon,
+  LockIcon,
 } from 'lucide-react'
 import { useVapiAssistantConfig } from '@/hooks/useCalls'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
+import { usePlan } from '@/hooks/usePlan'
 
 // ─── Voice Catalogue (mirrors vapi.service.ts) ────────────────────────────────
 // These are the ONLY voices that work reliably on Vapi without credentials.
@@ -254,6 +267,7 @@ function VoiceCard({
       {/* Preview button */}
       <button
         type="button"
+        data-free-allow="true"
         onClick={onPreview}
         disabled={previewState === 'loading'}
         title="Preview voice"
@@ -290,6 +304,8 @@ export function VoiceSettingsPanel() {
   const { data: hasKeyData } = trpc.vapi.hasCustomVapiKey.useQuery()
   const utils = trpc.useUtils()
   const { previewStates, playPreview } = useVoicePreview()
+  const { planId } = usePlan()
+  const isReadOnly = planId === 'free'
 
   const saveKey    = trpc.vapi.saveOrgVapiKey.useMutation({ onSuccess: () => utils.vapi.hasCustomVapiKey.invalidate() })
   const removeKey  = trpc.vapi.removeOrgVapiKey.useMutation({ onSuccess: () => utils.vapi.hasCustomVapiKey.invalidate() })
@@ -306,6 +322,7 @@ export function VoiceSettingsPanel() {
   const [vapiKey,      setVapiKey]      = useState('')
   const [saved,        setSaved]        = useState(false)
   const [genderFilter, setGenderFilter] = useState<'All' | 'Female' | 'Male' | 'Neutral'>('All')
+  const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
 
   // Sync form from DB config when loaded
   useEffect(() => {
@@ -320,7 +337,31 @@ export function VoiceSettingsPanel() {
     setIsActive(    (assistantConfig.is_active     as boolean) ?? true)
   }, [assistantConfig])
 
+  const openUpgradeDialog = useCallback(() => {
+    setIsUpgradeDialogOpen(true)
+  }, [])
+
+  const handleRestrictedInteractCapture = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (!isReadOnly) return
+
+    const target = event.target as HTMLElement | null
+    if (!target) return
+
+    const editableTarget = target.closest('input, textarea, select, button, [role="switch"], [role="slider"], [role="button"]')
+    if (!editableTarget) return
+    if (editableTarget.closest('[data-free-allow="true"]')) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    openUpgradeDialog()
+  }, [isReadOnly, openUpgradeDialog])
+
   const handleSave = async () => {
+    if (isReadOnly) {
+      openUpgradeDialog()
+      return
+    }
+
     await upsert.mutateAsync({
       name,
       firstMessage,
@@ -336,6 +377,11 @@ export function VoiceSettingsPanel() {
   }
 
   const handleSaveKey = async () => {
+    if (isReadOnly) {
+      openUpgradeDialog()
+      return
+    }
+
     if (!vapiKey.trim()) return
     await saveKey.mutateAsync({ vapiPrivateKey: vapiKey.trim() })
     setVapiKey('')
@@ -356,7 +402,21 @@ export function VoiceSettingsPanel() {
   }
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4" onPointerDownCapture={handleRestrictedInteractCapture}>
+
+      {isReadOnly && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+          <LockIcon className="size-4 text-amber-600" />
+          <AlertDescription className="flex flex-col gap-2 text-xs text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Preview mode on Free plan: voice assistant settings are visible, but editing and saving are locked.
+            </span>
+            <Button size="sm" className="h-7" asChild data-free-allow="true">
+              <Link href="/billing">Upgrade to Pro</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* ── Status Banner ── */}
       <div className={cn(
@@ -465,6 +525,7 @@ export function VoiceSettingsPanel() {
             {(['All', 'Female', 'Male', 'Neutral'] as const).map(g => (
               <button
                 key={g}
+                data-free-allow="true"
                 onClick={() => setGenderFilter(g)}
                 className={cn(
                   'px-2.5 py-1 rounded-lg border text-xs font-medium transition-all',
@@ -486,7 +547,13 @@ export function VoiceSettingsPanel() {
                 voice={voice}
                 isSelected={voiceId === voice.id}
                 previewState={previewStates[voice.id] ?? 'idle'}
-                onSelect={() => setVoiceId(voice.id)}
+                onSelect={() => {
+                  if (isReadOnly) {
+                    openUpgradeDialog()
+                    return
+                  }
+                  setVoiceId(voice.id)
+                }}
                 onPreview={e => {
                   e.stopPropagation()
                   void playPreview(voice.id)
@@ -621,8 +688,15 @@ export function VoiceSettingsPanel() {
               <AlertDescription className="text-xs">
                 Custom Vapi key is configured.{' '}
                 <button
+                  data-free-allow={isReadOnly ? 'true' : undefined}
                   className="text-destructive underline underline-offset-2"
-                  onClick={() => removeKey.mutate()}
+                  onClick={() => {
+                    if (isReadOnly) {
+                      openUpgradeDialog()
+                      return
+                    }
+                    removeKey.mutate()
+                  }}
                   disabled={removeKey.isPending}
                 >
                   {removeKey.isPending ? 'Removing...' : 'Remove'}
@@ -660,7 +734,13 @@ export function VoiceSettingsPanel() {
             variant="destructive"
             size="sm"
             className="gap-1.5 text-xs h-7"
-            onClick={() => remove.mutate()}
+            onClick={() => {
+              if (isReadOnly) {
+                openUpgradeDialog()
+                return
+              }
+              remove.mutate()
+            }}
             disabled={remove.isPending}
           >
             {remove.isPending ? <Spinner className="size-3" /> : <Trash2Icon className="size-3" />}
@@ -689,6 +769,23 @@ export function VoiceSettingsPanel() {
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={isUpgradeDialogOpen} onOpenChange={setIsUpgradeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Upgrade Required for Voice Configuration</AlertDialogTitle>
+            <AlertDialogDescription>
+              You're currently in preview mode on the Free plan. Upgrade to Pro to configure and save voice assistant settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Maybe Later</AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Link href="/billing">Upgrade to Pro</Link>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

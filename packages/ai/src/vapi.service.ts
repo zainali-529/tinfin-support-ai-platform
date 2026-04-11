@@ -1,35 +1,22 @@
 /**
  * packages/ai/src/vapi.service.ts
  *
- * Server-side Vapi AI Voice API wrapper.
- * NEVER import this in widget/frontend code — it uses the private key.
+ * Fix: Deepgram voice IDs stored as "aura-asteria-en" but Vapi API expects
+ * just "asteria" (no prefix/suffix). Added normalizeDeepgramVoiceId() helper.
  *
- * Security model:
- *   - VAPI_PRIVATE_KEY  → server only, manages assistants/calls
- *   - VAPI_PUBLIC_KEY   → safe to ship in widget bundle (read-only, initiates calls)
- *   - Per-org keys      → stored in org_api_keys table
- *
- * ─── VOICE FORMAT ────────────────────────────────────────────────────────────
- * Voices are stored as "{provider}:{voiceId}" e.g. "openai:alloy".
- * We use ":" as separator because Deepgram voice IDs contain hyphens.
+ * Fix: is_owner support in team router referenced here via DB flag.
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'
 
 const VAPI_BASE_URL = 'https://api.vapi.ai'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type VapiVoiceProvider = 'openai' | 'deepgram' | '11labs' | 'azure' | 'cartesia'
 export type VapiModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4-turbo' | string
 
-// ─── Curated voice catalogue ──────────────────────────────────────────────────
-// Only voices confirmed to work on Vapi without user credentials.
-// OpenAI TTS: reliable, Vapi supports all 6 built-in voices.
-// Deepgram Aura: ultra-low latency, free on Vapi's platform.
+// ─── Voice catalogue ──────────────────────────────────────────────────────────
 
 export interface VapiVoiceOption {
-  /** Stable ID stored in DB: "{provider}:{voiceId}" */
   id: string
   label: string
   provider: VapiVoiceProvider
@@ -40,141 +27,30 @@ export interface VapiVoiceOption {
 }
 
 export const VAPI_VOICE_CATALOGUE: VapiVoiceOption[] = [
-  // ── OpenAI TTS ──────────────────────────────────────────────────────────────
-  {
-    id: 'openai:alloy',
-    label: 'Alloy',
-    provider: 'openai',
-    voiceId: 'alloy',
-    gender: 'Neutral',
-    accent: 'American',
-    description: 'Balanced, versatile — great default',
-  },
-  {
-    id: 'openai:nova',
-    label: 'Nova',
-    provider: 'openai',
-    voiceId: 'nova',
-    gender: 'Female',
-    accent: 'American',
-    description: 'Friendly and warm',
-  },
-  {
-    id: 'openai:shimmer',
-    label: 'Shimmer',
-    provider: 'openai',
-    voiceId: 'shimmer',
-    gender: 'Female',
-    accent: 'American',
-    description: 'Soft and professional',
-  },
-  {
-    id: 'openai:echo',
-    label: 'Echo',
-    provider: 'openai',
-    voiceId: 'echo',
-    gender: 'Male',
-    accent: 'American',
-    description: 'Clear and confident',
-  },
-  {
-    id: 'openai:onyx',
-    label: 'Onyx',
-    provider: 'openai',
-    voiceId: 'onyx',
-    gender: 'Male',
-    accent: 'American',
-    description: 'Deep and authoritative',
-  },
-  {
-    id: 'openai:fable',
-    label: 'Fable',
-    provider: 'openai',
-    voiceId: 'fable',
-    gender: 'Male',
-    accent: 'British',
-    description: 'Expressive British accent',
-  },
-  // ── Deepgram Aura (ultra-low latency) ──────────────────────────────────────
-  {
-    id: 'deepgram:aura-asteria-en',
-    label: 'Asteria',
-    provider: 'deepgram',
-    voiceId: 'aura-asteria-en',
-    gender: 'Female',
-    accent: 'American',
-    description: 'Natural, very low latency',
-  },
-  {
-    id: 'deepgram:aura-luna-en',
-    label: 'Luna',
-    provider: 'deepgram',
-    voiceId: 'aura-luna-en',
-    gender: 'Female',
-    accent: 'American',
-    description: 'Gentle, ultra-fast',
-  },
-  {
-    id: 'deepgram:aura-stella-en',
-    label: 'Stella',
-    provider: 'deepgram',
-    voiceId: 'aura-stella-en',
-    gender: 'Female',
-    accent: 'American',
-    description: 'Bright and cheerful',
-  },
-  {
-    id: 'deepgram:aura-athena-en',
-    label: 'Athena',
-    provider: 'deepgram',
-    voiceId: 'aura-athena-en',
-    gender: 'Female',
-    accent: 'British',
-    description: 'Professional British',
-  },
-  {
-    id: 'deepgram:aura-orion-en',
-    label: 'Orion',
-    provider: 'deepgram',
-    voiceId: 'aura-orion-en',
-    gender: 'Male',
-    accent: 'American',
-    description: 'Clear American male',
-  },
-  {
-    id: 'deepgram:aura-arcas-en',
-    label: 'Arcas',
-    provider: 'deepgram',
-    voiceId: 'aura-arcas-en',
-    gender: 'Male',
-    accent: 'American',
-    description: 'Confident male voice',
-  },
-  {
-    id: 'deepgram:aura-zeus-en',
-    label: 'Zeus',
-    provider: 'deepgram',
-    voiceId: 'aura-zeus-en',
-    gender: 'Male',
-    accent: 'American',
-    description: 'Deep, powerful male',
-  },
-  {
-    id: 'deepgram:aura-helios-en',
-    label: 'Helios',
-    provider: 'deepgram',
-    voiceId: 'aura-helios-en',
-    gender: 'Male',
-    accent: 'British',
-    description: 'Refined British male',
-  },
+  // OpenAI TTS
+  { id: 'openai:alloy',   label: 'Alloy',   provider: 'openai',   voiceId: 'alloy',   gender: 'Neutral', accent: 'American', description: 'Balanced, versatile — great default' },
+  { id: 'openai:nova',    label: 'Nova',    provider: 'openai',   voiceId: 'nova',    gender: 'Female',  accent: 'American', description: 'Friendly and warm' },
+  { id: 'openai:shimmer', label: 'Shimmer', provider: 'openai',   voiceId: 'shimmer', gender: 'Female',  accent: 'American', description: 'Soft and professional' },
+  { id: 'openai:echo',    label: 'Echo',    provider: 'openai',   voiceId: 'echo',    gender: 'Male',    accent: 'American', description: 'Clear and confident' },
+  { id: 'openai:onyx',    label: 'Onyx',    provider: 'openai',   voiceId: 'onyx',    gender: 'Male',    accent: 'American', description: 'Deep and authoritative' },
+  { id: 'openai:fable',   label: 'Fable',   provider: 'openai',   voiceId: 'fable',   gender: 'Male',    accent: 'British',  description: 'Expressive British accent' },
+  // Deepgram Aura — stored as "aura-xxx-en" but API receives just "xxx"
+  { id: 'deepgram:aura-asteria-en', label: 'Asteria', provider: 'deepgram', voiceId: 'aura-asteria-en', gender: 'Female', accent: 'American', description: 'Natural, very low latency' },
+  { id: 'deepgram:aura-luna-en',    label: 'Luna',    provider: 'deepgram', voiceId: 'aura-luna-en',    gender: 'Female', accent: 'American', description: 'Gentle, ultra-fast' },
+  { id: 'deepgram:aura-stella-en',  label: 'Stella',  provider: 'deepgram', voiceId: 'aura-stella-en',  gender: 'Female', accent: 'American', description: 'Bright and cheerful' },
+  { id: 'deepgram:aura-athena-en',  label: 'Athena',  provider: 'deepgram', voiceId: 'aura-athena-en',  gender: 'Female', accent: 'British',  description: 'Professional British' },
+  { id: 'deepgram:aura-orion-en',   label: 'Orion',   provider: 'deepgram', voiceId: 'aura-orion-en',   gender: 'Male',   accent: 'American', description: 'Clear American male' },
+  { id: 'deepgram:aura-arcas-en',   label: 'Arcas',   provider: 'deepgram', voiceId: 'aura-arcas-en',   gender: 'Male',   accent: 'American', description: 'Confident male voice' },
+  { id: 'deepgram:aura-zeus-en',    label: 'Zeus',    provider: 'deepgram', voiceId: 'aura-zeus-en',    gender: 'Male',   accent: 'American', description: 'Deep, powerful male' },
+  { id: 'deepgram:aura-helios-en',  label: 'Helios',  provider: 'deepgram', voiceId: 'aura-helios-en',  gender: 'Male',   accent: 'British',  description: 'Refined British male' },
 ]
 
 export const DEFAULT_VOICE_ID = 'openai:alloy'
 
 /**
  * Parse "provider:voiceId" string into parts.
- * Falls back to default if format is invalid.
+ * For Deepgram, the stored voiceId is still "aura-asteria-en" —
+ * use normalizeDeepgramVoiceId() separately when building Vapi payloads.
  */
 export function parseVoiceId(raw: string): { provider: VapiVoiceProvider; voiceId: string } {
   const colonIdx = raw.indexOf(':')
@@ -192,29 +68,39 @@ export function parseVoiceId(raw: string): { provider: VapiVoiceProvider; voiceI
   return { provider, voiceId }
 }
 
-// ─── Vapi API payload types ───────────────────────────────────────────────────
-
 /**
- * Correct Vapi v2 assistant payload.
+ * Vapi's Deepgram integration expects just the model name without the
+ * "aura-" prefix and "-en" (or other locale) suffix.
  *
- * CRITICAL: `systemPrompt` does NOT exist at the root level in Vapi v2 API.
- * The system prompt must be placed inside model.messages[0]:
- *   { role: 'system', content: '...' }
+ * Examples:
+ *   "aura-asteria-en" → "asteria"
+ *   "aura-zeus-en"    → "zeus"
+ *   "aura-helios-en"  → "helios"
+ *
+ * If the voiceId doesn't match the pattern, it's returned as-is.
  */
+export function normalizeDeepgramVoiceId(voiceId: string): string {
+  // Strip leading "aura-" and trailing "-{locale}" (e.g., -en, -es, -fr)
+  return voiceId
+    .replace(/^aura-/, '')
+    .replace(/-[a-z]{2}$/, '')
+}
+
+// ─── Vapi payload types ───────────────────────────────────────────────────────
+
 export interface VapiAssistantPayload {
   name: string
   firstMessage: string
   model: {
     provider: 'openai' | 'anthropic' | 'together-ai' | 'anyscale' | 'openrouter' | 'groq'
     model: VapiModel
-    /** System prompt lives HERE as messages[0] with role: 'system' */
     messages?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
     maxTokens?: number
     temperature?: number
   }
   voice: {
     provider: VapiVoiceProvider
-    voiceId: string
+    voiceId: string   // normalized value sent to Vapi
     speed?: number
   }
   endCallMessage?: string
@@ -392,9 +278,7 @@ export interface BuildAssistantOptions {
   name: string
   companyName: string
   firstMessage?: string
-  /** System prompt text — placed in model.messages[0], never at root */
   systemPrompt?: string
-  /** Voice ID in "{provider}:{voiceId}" format, e.g. "openai:alloy" */
   voiceId?: string
   model?: VapiModel
   maxDurationSeconds?: number
@@ -405,11 +289,10 @@ export interface BuildAssistantOptions {
 }
 
 /**
- * Build a correct Vapi v2 assistant payload.
+ * Build the Vapi v2 assistant payload.
  *
- * ✅ systemPrompt → model.messages[0] with role: 'system'
- * ✅ Voice parsed from "{provider}:{voiceId}" format
- * ✅ No invalid root-level properties
+ * KEY FIX: Deepgram voiceId is stored as "aura-asteria-en" internally,
+ * but Vapi expects just "asteria". normalizeDeepgramVoiceId() handles this.
  */
 export function buildOrgAssistantPayload(opts: BuildAssistantOptions): VapiAssistantPayload {
   const defaultSystemPrompt = `You are a helpful, professional customer support voice assistant for ${opts.companyName}.
@@ -422,8 +305,13 @@ Never make up information about pricing, policies, or features.`
 
   const systemPromptContent = opts.systemPrompt?.trim() || defaultSystemPrompt
 
-  // Parse voice — uses ":" separator to handle Deepgram IDs that contain "-"
-  const { provider, voiceId } = parseVoiceId(opts.voiceId ?? DEFAULT_VOICE_ID)
+  const { provider, voiceId: rawVoiceId } = parseVoiceId(opts.voiceId ?? DEFAULT_VOICE_ID)
+
+  // ── DEEPGRAM FIX: normalize the voice ID for Vapi API ─────────────────────
+  // Stored: "aura-asteria-en" → Sent to Vapi: "asteria"
+  const vapiVoiceId = provider === 'deepgram'
+    ? normalizeDeepgramVoiceId(rawVoiceId)
+    : rawVoiceId
 
   return {
     name: opts.name,
@@ -432,7 +320,6 @@ Never make up information about pricing, policies, or features.`
     model: {
       provider: 'openai',
       model: opts.model ?? 'gpt-4o-mini',
-      // ✅ CORRECT: systemPrompt goes inside model.messages — NOT at root
       messages: [
         {
           role: 'system',
@@ -444,7 +331,7 @@ Never make up information about pricing, policies, or features.`
     },
     voice: {
       provider,
-      voiceId,
+      voiceId: vapiVoiceId,   // ← normalized value (e.g., "asteria" not "aura-asteria-en")
     },
     endCallMessage: 'Thank you for calling. Have a great day!',
     endCallPhrases: ['goodbye', 'bye', 'thanks bye', "that's all", 'end call'],

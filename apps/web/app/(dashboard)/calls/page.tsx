@@ -67,7 +67,7 @@ export default function CallsPage() {
   )
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-6 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
 
       {/* Page Header */}
       <div className="flex items-start justify-between gap-4">
@@ -81,7 +81,7 @@ export default function CallsPage() {
           </p>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5 shrink-0" asChild>
-          <Link href="/widget">Configure Voice</Link>
+          <Link href="/voice-assistant">Configure Voice</Link>
         </Button>
       </div>
 
@@ -116,13 +116,13 @@ export default function CallsPage() {
               <p className={`text-xs mt-0.5 ${voiceIsConfigured ? 'text-emerald-700/80 dark:text-emerald-300/80' : 'text-amber-700/80 dark:text-amber-300/80'}`}>
                 {voiceIsConfigured
                   ? `Calls will appear here automatically via webhook. ${calls.length === 0 ? 'No calls yet — share your widget with visitors!' : ''}`
-                  : 'Go to Widget Settings → Voice tab to create your AI voice assistant.'
+                  : 'Go to Voice Assistant settings to create your AI voice assistant.'
                 }
               </p>
             </div>
             {!voiceIsConfigured && (
               <Button size="sm" variant="outline" className="shrink-0 border-amber-300" asChild>
-                <Link href="/widget">Set Up Voice</Link>
+                <Link href="/voice-assistant">Set Up Voice</Link>
               </Button>
             )}
             {voiceIsConfigured && (
@@ -135,9 +135,9 @@ export default function CallsPage() {
       )}
 
       {/* Main Layout */}
-      <div className="flex h-[calc(100vh-22rem)] overflow-hidden rounded-xl border bg-background shadow-sm">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
         {/* Left: Call List */}
-        <div className="w-[300px] xl:w-[340px] shrink-0 border-r overflow-hidden flex flex-col">
+        <div className="w-[300px] xl:w-[340px] shrink-0 min-h-0 border-r overflow-hidden flex flex-col">
           <CallLogList
             calls={calls}
             loading={isLoading}
@@ -149,7 +149,7 @@ export default function CallsPage() {
         </div>
 
         {/* Right: Call Detail */}
-        <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
           <CallDetailPanel callId={selectedCallId} orgId={activeOrg.id} />
         </div>
       </div>

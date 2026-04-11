@@ -72,9 +72,9 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4.5rem)] overflow-hidden rounded-xl border bg-background shadow-sm">
+    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
       {/* Left: Conversation List */}
-      <div className="w-[300px] xl:w-[340px] shrink-0 border-r overflow-hidden flex flex-col">
+      <div className="w-[300px] xl:w-[340px] shrink-0 min-h-0 border-r overflow-hidden flex flex-col">
         <ConversationList
           conversations={conversations}
           loading={loading}
@@ -84,7 +84,7 @@ export default function InboxPage() {
       </div>
 
       {/* Right: Conversation View */}
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
         {selected ? (
           <ConversationView
             conversation={selected}

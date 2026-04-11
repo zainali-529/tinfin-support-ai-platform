@@ -425,7 +425,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
   }, [])
 
   return (
-    <div className="flex flex-col gap-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
       {/* Page Header */}
       <div className="flex items-center justify-between gap-4 mb-5">
         <div>
@@ -444,9 +444,9 @@ export function KnowledgeBasePage({ orgId }: Props) {
       </div>
 
       {/* Main Layout */}
-      <div className="flex h-[calc(100vh-11rem)] overflow-hidden rounded-xl border bg-background shadow-sm">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
         {/* Left: KB List */}
-        <div className="w-[280px] xl:w-[320px] shrink-0 border-r flex flex-col overflow-hidden bg-card">
+        <div className="w-[280px] xl:w-[320px] shrink-0 min-h-0 border-r flex flex-col overflow-hidden bg-card">
           {/* List Header */}
           <div className="flex items-center justify-between border-b px-4 py-3.5 shrink-0">
             <div>
@@ -476,7 +476,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
           )}
 
           {/* KB List */}
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             {isLoading ? (
               <div className="p-2 space-y-1">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -518,7 +518,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
         </div>
 
         {/* Right: Detail Panel */}
-        <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
           {selectedKB ? (
             <KBDetailPanel
               key={`${selectedKB.id}-${sourcesKey}`}

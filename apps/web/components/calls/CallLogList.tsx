@@ -119,7 +119,7 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
   })
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3.5 shrink-0">
         <div>
@@ -155,7 +155,7 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
       </div>
 
       {/* List */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         {loading ? (
           <div className="flex flex-col gap-0.5 p-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -333,7 +333,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
   const cfg = getStatusCfg(call.status)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Call Header */}
       <div className="flex items-start gap-4 border-b bg-card/50 px-6 py-4 shrink-0">
         <Avatar className="size-12">
@@ -374,7 +374,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
       </div>
 
       {/* Body */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 p-6">
           {/* Summary */}
           {call.summary && (

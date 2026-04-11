@@ -74,7 +74,7 @@ export function ConversationList({ conversations, loading, selectedId, onSelect 
   }
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3.5 shrink-0">
         <div>
@@ -132,7 +132,7 @@ export function ConversationList({ conversations, loading, selectedId, onSelect 
       </div>
 
       {/* List */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         {loading ? (
           <div className="flex flex-col gap-0.5 p-2">
             {Array.from({ length: 6 }).map((_, i) => (

@@ -25,7 +25,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   // ── Fetch user record including active_org_id ───────────────────────────────
-  // IMPORTANT: select BOTH columns. active_org_id may be null for legacy accounts.
   const { data: userRecord } = await supabase
     .from('users')
     .select('org_id, active_org_id')
@@ -34,8 +33,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!userRecord?.org_id) redirect('/login')
 
-  // active_org_id = currently selected org.
-  // Fall back to org_id for accounts created before multi-org was added.
   const activeOrgId = userRecord.active_org_id ?? userRecord.org_id
 
   // ── Fetch active org details ─────────────────────────────────────────────────
@@ -45,20 +42,31 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('id', activeOrgId)
     .single()
 
-  // Safety net — should never happen, but protects against corrupt state
   if (!activeOrg) redirect('/login')
+
+  // ── Fetch user's role in the active org ───────────────────────────────────
+  const { data: membership } = await supabase
+    .from('user_organizations')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('org_id', activeOrgId)
+    .maybeSingle()
+
+  const userRole = (membership?.role ?? 'agent') as 'admin' | 'agent'
+
+  // Combine org + role into one object for the context
+  const activeOrgWithRole = {
+    id: activeOrg.id,
+    name: activeOrg.name,
+    plan: activeOrg.plan,
+    role: userRole,
+  }
 
   return (
     <TooltipProvider delayDuration={0}>
-      {/*
-        OrgProvider makes the resolved active org available to ALL client components
-        via useActiveOrg() / useActiveOrgId() — no extra DB round-trips needed.
-        When the user switches org, router.refresh() re-runs this layout, which
-        picks up the new active_org_id and re-provides it here.
-      */}
-      <OrgProvider org={activeOrg}>
+      <OrgProvider org={activeOrgWithRole}>
         <SidebarProvider>
-          <AppSidebar user={user} activeOrg={activeOrg} />
+          <AppSidebar user={user} activeOrg={activeOrgWithRole} />
           <SidebarInset>
             <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
               <SidebarTrigger className="-ml-1" />
@@ -73,7 +81,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
                   <BreadcrumbItem>
-                    {/* Shows active org name in breadcrumb — updates on switch */}
                     <BreadcrumbPage>{activeOrg.name}</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
@@ -82,7 +89,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 <ThemeToggle />
               </div>
             </header>
-            <div className="flex flex-1 flex-col gap-4 p-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
               {children}
             </div>
           </SidebarInset>

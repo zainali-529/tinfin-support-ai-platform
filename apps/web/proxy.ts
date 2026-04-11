@@ -2,7 +2,13 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC_ROUTES = ['/login', '/signup', '/auth/callback']
+// Routes that don't require authentication
+const PUBLIC_ROUTES = [
+  '/login',
+  '/signup',
+  '/auth/callback',
+  '/invite',   // ← ADDED: invite accept pages are public
+]
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -32,7 +38,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && isPublic && pathname !== '/auth/callback') {
+  if (user && isPublic && pathname !== '/auth/callback' && !pathname.startsWith('/invite')) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 

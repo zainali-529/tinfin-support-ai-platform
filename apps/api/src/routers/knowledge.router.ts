@@ -7,6 +7,7 @@
 
 import { z } from 'zod'
 import { router, protectedProcedure } from '../trpc/trpc'
+import { requireLimit } from '../lib/plan-guards'
 
 export const knowledgeRouter = router({
   getKnowledgeBases: protectedProcedure
@@ -31,6 +32,12 @@ export const knowledgeRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.userOrgId
+
+      const { count: kbCount } = await ctx.supabase
+        .from('knowledge_bases')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+      await requireLimit(ctx.supabase, orgId, 'knowledgeBases', kbCount ?? 0)
 
       const { data } = await ctx.supabase
         .from('knowledge_bases')

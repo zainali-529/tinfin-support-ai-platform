@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { ingestUrl, ingestFile, queryRAG } from '@workspace/ai'
+import { requireLimit } from '../lib/plan-guards'
 
 const SUPPORTED_MIME_TYPES = [
   'application/pdf',
@@ -45,6 +46,12 @@ export const ingestRouter = router({
       const orgId = ctx.userOrgId // use middleware-resolved org
       await assertKnowledgeBaseAccess(ctx.supabase, orgId, input.kbId)
 
+      const { count: chunkCount } = await ctx.supabase
+        .from('kb_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+      await requireLimit(ctx.supabase, orgId, 'kbChunks', chunkCount ?? 0)
+
       const result = await ingestUrl({
         url: input.url,
         kbId: input.kbId,
@@ -66,6 +73,12 @@ export const ingestRouter = router({
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.userOrgId
       await assertKnowledgeBaseAccess(ctx.supabase, orgId, input.kbId)
+
+      const { count: chunkCount } = await ctx.supabase
+        .from('kb_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+      await requireLimit(ctx.supabase, orgId, 'kbChunks', chunkCount ?? 0)
 
       const buffer = Buffer.from(input.fileBase64, 'base64')
 

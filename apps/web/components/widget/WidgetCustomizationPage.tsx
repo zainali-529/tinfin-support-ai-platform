@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { trpc } from '@/lib/trpc'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
 import { Button } from '@workspace/ui/components/button'
@@ -10,14 +11,25 @@ import { Textarea } from '@workspace/ui/components/textarea'
 import { Switch } from '@workspace/ui/components/switch'
 import { Slider } from '@workspace/ui/components/slider'
 import { Badge } from '@workspace/ui/components/badge'
-import { Tabs, TabsContent, TabsList } from '@workspace/ui/components/tabs'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import {
-  CheckIcon, CopyIcon, SaveIcon, ZapIcon, GlobeIcon, InfoIcon,
-  PaletteIcon, MessageSquareIcon, CodeIcon, SlidersHorizontalIcon, MicIcon,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@workspace/ui/components/alert-dialog'
+import { Tabs, TabsContent, TabsList } from '@workspace/ui/components/tabs'
+import { usePlan } from '@/hooks/usePlan'
+import {
+  AlertCircleIcon,
+  CheckIcon, SaveIcon, ZapIcon, LockIcon,
+  PaletteIcon, MessageSquareIcon, SlidersHorizontalIcon,
 } from 'lucide-react'
 import { WidgetPreview } from './WidgetPreview'
-import { VoiceSettingsPanel } from '@/components/voice/VoiceSettingsPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,31 +135,6 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (v: string)
   )
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button variant="ghost" size="icon-sm" onClick={() => {
-      navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }}>
-      {copied ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
-    </Button>
-  )
-}
-
-function CodeBlock({ code, lang = 'html' }: { code: string; lang?: string }) {
-  return (
-    <div className="relative rounded-lg bg-zinc-950 border border-zinc-800">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
-        <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wide">{lang}</span>
-        <CopyButton text={code} />
-      </div>
-      <pre className="px-4 py-3 text-xs text-zinc-300 overflow-x-auto leading-relaxed font-mono whitespace-pre-wrap">{code}</pre>
-    </div>
-  )
-}
-
 function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-3">
@@ -162,7 +149,9 @@ function SettingRow({ label, description, children }: { label: string; descripti
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-interface Props { orgId: string }
+interface Props {
+  orgId: string
+}
 
 export function WidgetCustomizationPage({ orgId }: Props) {
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS)
@@ -170,6 +159,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   const [saved, setSaved] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [activeTab, setActiveTab] = useState('style')
+  const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
+  const { planId } = usePlan()
+  const isReadOnly = planId === 'free'
 
   const { data: existingConfig, isLoading } = trpc.org.getWidgetConfig.useQuery(
     { orgId }, { retry: false }
@@ -207,7 +199,31 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     setIsDirty(true)
   }, [])
 
+  const openUpgradeDialog = useCallback(() => {
+    setIsUpgradeDialogOpen(true)
+  }, [])
+
+  const handleRestrictedInteractCapture = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (!isReadOnly) return
+
+    const target = event.target as HTMLElement | null
+    if (!target) return
+
+    const editableTarget = target.closest('input, textarea, select, button, [role="switch"], [role="slider"], [role="button"]')
+    if (!editableTarget) return
+    if (editableTarget.closest('[data-free-allow="true"]')) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    openUpgradeDialog()
+  }, [isReadOnly, openUpgradeDialog])
+
   const handleSave = async () => {
+    if (isReadOnly) {
+      openUpgradeDialog()
+      return
+    }
+
     setSaving(true)
     try {
       await updateConfig.mutateAsync({
@@ -243,11 +259,6 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     }
   }
 
-  const prodCode = `<!-- Tinfin Widget -->\n<script\n  src="https://cdn.tinfin.com/widget.js"\n  data-org-id="${orgId}"\n  async\n></script>`
-  const devCode = `<!-- Dev Mode -->\n<script\n  type="module"\n  src="http://localhost:3002/src/main.ts"\n  data-org-id="${orgId}"\n></script>`
-  const nextCode = `// app/layout.tsx\nimport Script from 'next/script'\n\nexport default function RootLayout({ children }) {\n  return (\n    <html>\n      <body>\n        {children}\n        <Script\n          src="https://cdn.tinfin.com/widget.js"\n          data-org-id="${orgId}"\n          strategy="lazyOnload"\n        />\n      </body>\n    </html>\n  )\n}`
-  const reactCode = `// src/App.tsx\nimport { useEffect } from 'react'\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('script')\n    s.src = 'https://cdn.tinfin.com/widget.js'\n    s.dataset.orgId = '${orgId}'\n    s.async = true\n    document.body.appendChild(s)\n    return () => s.remove()\n  }, [])\n  return <div>{/* your app */}</div>\n}`
-
   const previewConfig = {
     primaryColor:        settings.primaryColor,
     welcomeMessage:      settings.welcomeMessage,
@@ -280,7 +291,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
             Widget Customization
           </h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Customize your chat widget and configure AI voice calling.
+            Customize your chat widget appearance, content, and behavior.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -294,7 +305,12 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               <CheckIcon className="size-3 mr-1" /> Saved
             </Badge>
           )}
-          {activeTab !== 'voice' && (
+          {isReadOnly ? (
+            <Button size="sm" onClick={openUpgradeDialog} className="gap-1.5" variant="outline">
+              <LockIcon className="size-3.5" />
+              Unlock Editing
+            </Button>
+          ) : (
             <Button size="sm" onClick={handleSave} disabled={saving || !isDirty} className="gap-1.5">
               <SaveIcon className="size-3.5" />
               {saving ? 'Saving...' : 'Save Changes'}
@@ -303,11 +319,25 @@ export function WidgetCustomizationPage({ orgId }: Props) {
         </div>
       </div>
 
+      {isReadOnly && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+          <AlertCircleIcon className="size-4 text-amber-600" />
+          <AlertDescription className="flex flex-col gap-2 text-xs text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Preview mode on Free plan: all customization controls are visible for exploration, but editing is locked.
+            </span>
+            <Button size="sm" className="h-7 gap-1.5" asChild>
+              <Link href="/billing">Upgrade to Pro</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* ── Main Layout: 50/50 ── */}
       <div className="flex gap-0 overflow-hidden rounded-xl border bg-background shadow-sm" style={{ height: 'calc(100vh - 11rem)' }}>
 
         {/* ── Left: Settings (50%) ── */}
-        <div className={`${activeTab === 'voice' ? 'w-full' : 'w-1/2'} shrink-0 border-r flex flex-col overflow-hidden transition-all`}>
+        <div className="w-1/2 shrink-0 border-r flex flex-col overflow-hidden transition-all">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
             {/* Tab triggers */}
             <div className="border-b px-4 pt-3 pb-0 shrink-0 bg-card/50">
@@ -316,10 +346,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   { value: 'style',    icon: PaletteIcon,          label: 'Style' },
                   { value: 'content',  icon: MessageSquareIcon,    label: 'Content' },
                   { value: 'behavior', icon: SlidersHorizontalIcon, label: 'Behavior' },
-                  { value: 'voice',    icon: MicIcon,              label: 'Voice' },
-                  { value: 'install',  icon: CodeIcon,             label: 'Install' },
                 ].map(({ value, icon: Icon, label }) => (
                   <button key={value}
+                    data-free-allow="true"
                     onClick={() => setActiveTab(value)}
                     className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
                       activeTab === value
@@ -328,16 +357,13 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     }`}>
                     <Icon className="size-3.5" />
                     {label}
-                    {value === 'voice' && (
-                      <span className="ml-0.5 text-[9px] font-bold px-1 py-0.5 rounded bg-primary/10 text-primary leading-none">NEW</span>
-                    )}
                   </button>
                 ))}
               </TabsList>
             </div>
 
             {/* Tab content — scrollable */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto" onPointerDownCapture={handleRestrictedInteractCapture}>
 
               {/* ── STYLE TAB ── */}
               <TabsContent value="style" className="m-0 p-4 space-y-4">
@@ -612,102 +638,45 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                 </Card>
               </TabsContent>
 
-              {/* ── VOICE TAB ── */}
-              <TabsContent value="voice" className="m-0">
-                <VoiceSettingsPanel />
-              </TabsContent>
-
-              {/* ── INSTALL TAB ── */}
-              <TabsContent value="install" className="m-0 p-4 space-y-4">
-                <Alert>
-                  <InfoIcon className="size-4" />
-                  <AlertDescription className="text-xs">
-                    Your <strong>Org ID</strong> is already embedded in the snippets below. Just copy and paste.
-                  </AlertDescription>
-                </Alert>
-
-                <Card>
-                  <CardContent className="pt-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground font-medium">Your Organization ID</Label>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 text-xs bg-muted px-3 py-2 rounded-lg font-mono truncate">{orgId}</code>
-                        <CopyButton text={orgId} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">HTML / Any Website</CardTitle>
-                    <CardDescription className="text-xs">Add before the closing <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> tag.</CardDescription>
-                  </CardHeader>
-                  <CardContent><CodeBlock code={prodCode} /></CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Next.js</CardTitle>
-                    <CardDescription className="text-xs">Add to your root layout using Next.js Script component.</CardDescription>
-                  </CardHeader>
-                  <CardContent><CodeBlock code={nextCode} lang="tsx" /></CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">React</CardTitle>
-                    <CardDescription className="text-xs">Dynamically inject the script via useEffect.</CardDescription>
-                  </CardHeader>
-                  <CardContent><CodeBlock code={reactCode} lang="tsx" /></CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Local Development</CardTitle>
-                  </CardHeader>
-                  <CardContent><CodeBlock code={devCode} /></CardContent>
-                </Card>
-
-                <Card className="border-primary/20 bg-primary/5">
-                  <CardContent className="pt-4">
-                    <div className="flex gap-3">
-                      <GlobeIcon className="size-4 text-primary shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium">Going Live</p>
-                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                          Deploy <code className="bg-muted px-1 rounded">apps/widget</code> to Vercel or Cloudflare Pages, then update the <code className="bg-muted px-1 rounded">src</code> in your embed snippet.
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
             </div>
           </Tabs>
         </div>
 
-        {/* ── Right: Live Preview (50%) — hidden on Voice tab ── */}
-        {activeTab !== 'voice' && (
-          <div className="w-1/2 flex flex-col overflow-hidden bg-muted/20">
-            <div className="flex items-center justify-between px-5 py-3 border-b bg-card/50 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-sm font-medium">Live Preview</span>
-              </div>
-              <Badge variant="outline" className="text-[10px]">Updates instantly</Badge>
+        {/* ── Right: Live Preview (50%) ── */}
+        <div className="w-1/2 flex flex-col overflow-hidden bg-muted/20">
+          <div className="flex items-center justify-between px-5 py-3 border-b bg-card/50 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-sm font-medium">Live Preview</span>
             </div>
-            <div className="flex-1 overflow-hidden p-4 flex items-stretch">
-              <WidgetPreview config={previewConfig} />
-            </div>
-            <div className="text-center py-2 text-xs text-muted-foreground shrink-0 border-t bg-card/30">
-              Click the launcher to toggle the widget
-            </div>
+            <Badge variant="outline" className="text-[10px]">Updates instantly</Badge>
           </div>
-        )}
+          <div className="flex-1 overflow-hidden p-4 flex items-stretch">
+            <WidgetPreview config={previewConfig} />
+          </div>
+          <div className="text-center py-2 text-xs text-muted-foreground shrink-0 border-t bg-card/30">
+            Click the launcher to toggle the widget
+          </div>
+        </div>
 
       </div>
+
+      <AlertDialog open={isUpgradeDialogOpen} onOpenChange={setIsUpgradeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Upgrade Required for Editing</AlertDialogTitle>
+            <AlertDialogDescription>
+              You're currently in preview mode on the Free plan. Upgrade to Pro to unlock widget customization and save changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Maybe Later</AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Link href="/billing">Upgrade to Pro</Link>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
