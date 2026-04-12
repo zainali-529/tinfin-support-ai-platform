@@ -4,7 +4,13 @@ import cors from 'cors'
 
 export const widgetConfigRoute: Router = Router()
 
-const publicCors = cors({ origin: '*', methods: ['GET'], credentials: false })
+const publicCors = cors({ origin: '*', methods: ['GET', 'OPTIONS'], credentials: false })
+
+// Apply CORS to all routes in this router
+widgetConfigRoute.use(publicCors)
+
+// Explicit OPTIONS handler for preflight
+widgetConfigRoute.options('*', publicCors)
 
 function getSupabase() {
   return createClient(
@@ -41,7 +47,7 @@ const DEFAULT_CONFIG = {
   callButtonLabel: 'Talk to AI',
 }
 
-widgetConfigRoute.get('/:orgId', publicCors, async (req: Request, res: Response) => {
+widgetConfigRoute.get('/:orgId', async (req: Request, res: Response) => {
   try {
     const { orgId } = req.params
 

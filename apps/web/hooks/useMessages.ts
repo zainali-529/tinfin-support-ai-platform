@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRealtimeTable } from './useRealtime'
-import type { Message } from '@/types/database'
+import type { Message, Attachment } from '@/types/database'
 
 export function useMessages(conversationId: string, orgId: string) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -25,7 +25,7 @@ export function useMessages(conversationId: string, orgId: string) {
 
   useEffect(() => { fetch() }, [fetch])
 
-  // Real-time: new messages
+  // Real-time: new messages (including attachments from realtime payload)
   useRealtimeTable<Message>('messages', orgId, 'INSERT', useCallback((payload) => {
     if (payload.new.conversation_id === conversationId) {
       setMessages(prev => {
@@ -35,8 +35,8 @@ export function useMessages(conversationId: string, orgId: string) {
     }
   }, [conversationId]))
 
-  // Agent sends a message (updates DB directly, also marks conversation open)
-  const sendMessage = useCallback(async (content: string, agentId: string) => {
+  // Agent sends a message (DB directly — attachments included via agent WS flow)
+  const sendMessage = useCallback(async (content: string, agentId: string, attachments?: Attachment[]) => {
     setSending(true)
     const supabase = createClient()
     await supabase.from('messages').insert({
@@ -44,6 +44,7 @@ export function useMessages(conversationId: string, orgId: string) {
       org_id: orgId,
       role: 'agent',
       content,
+      attachments: attachments ?? [],
     })
     await supabase
       .from('conversations')

@@ -1,8 +1,20 @@
+// ── Attachment ────────────────────────────────────────────────────────────────
+
+export interface Attachment {
+  url: string
+  name: string
+  size: number   // bytes
+  type: string   // MIME type
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'agent'
   content: string
   createdAt: Date
+  attachments?: Attachment[]
 }
 
 export type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
@@ -40,14 +52,10 @@ export interface WidgetConfig {
   autoOpenDelay?: number
   showTypingIndicator?: boolean
   offlineMessage?: string | null
-  // ── Voice / Vapi ────────────────────────────────────────────────────────
-  /** Vapi PUBLIC key — safe to bundle in widget */
+  // ── Voice / Vapi ────────────────────────────────────────────────────────────
   vapiPublicKey?: string | null
-  /** Vapi assistant ID for this org */
   vapiAssistantId?: string | null
-  /** Whether voice calling is enabled for this org */
   voiceEnabled?: boolean
-  /** Label shown on the call button */
   callButtonLabel?: string
 }
 
@@ -66,6 +74,7 @@ export interface StoredChat {
     role: 'user' | 'assistant' | 'agent'
     content: string
     createdAt: string
+    attachments?: Attachment[]
   }>>
   // Backward compatibility
   conversationId?: string | null
@@ -74,5 +83,6 @@ export interface StoredChat {
     role: 'user' | 'assistant' | 'agent'
     content: string
     createdAt: string
+    attachments?: Attachment[]
   }>
 }

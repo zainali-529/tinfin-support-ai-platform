@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import type { Message, StoredChat, VisitorInfo, WidgetConversation, ConversationStatus } from './types'
+import type { Message, StoredChat, VisitorInfo, WidgetConversation, ConversationStatus, Attachment } from './types'
 
 const WS_URL = (import.meta as any).env?.VITE_API_WS_URL || 'ws://localhost:3003'
+const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -17,7 +18,6 @@ function loadStoredChat(orgId: string): StoredChat {
     if (raw) {
       const parsed = JSON.parse(raw) as StoredChat
 
-      // Backward compatibility with old storage shape.
       if (!parsed.messagesByConversation) {
         const legacyConversationId = parsed.activeConversationId ?? parsed.conversationId ?? null
         const legacyMessages = parsed.messages ?? []
@@ -66,12 +66,19 @@ export function useChat(orgId: string) {
   const activeConversationIdRef = useRef<string | null>(stored.current.activeConversationId)
   const pendingUserMessagesRef = useRef<Message[]>([])
 
-  const normalizeMessages = useCallback((items: Array<{ id: string; role: 'user' | 'assistant' | 'agent'; content: string; createdAt: string }>) => {
+  const normalizeMessages = useCallback((items: Array<{
+    id: string
+    role: 'user' | 'assistant' | 'agent'
+    content: string
+    createdAt: string
+    attachments?: Attachment[]
+  }>) => {
     return items.map((message) => ({
       id: message.id,
       role: message.role,
       content: message.content,
       createdAt: new Date(message.createdAt),
+      attachments: message.attachments ?? [],
     }))
   }, [])
 
@@ -119,6 +126,7 @@ export function useChat(orgId: string) {
             role: message.role,
             content: message.content,
             createdAt: message.createdAt.toISOString(),
+            attachments: message.attachments ?? [],
           })),
         ])
       ),
@@ -155,8 +163,7 @@ export function useChat(orgId: string) {
     const next = [...current]
     const existing = next[idx]
     if (!existing) return
-    const updated: WidgetConversation = { ...existing, ...patch }
-    next[idx] = updated
+    next[idx] = { ...existing, ...patch }
     setConversationList(next)
   }, [setConversationList])
 
@@ -179,8 +186,12 @@ export function useChat(orgId: string) {
       return next
     })
 
+    const preview = msg.attachments?.length
+      ? `📎 ${msg.attachments[0]?.name ?? 'File'}`
+      : msg.content
+
     updateConversation(conversationId, {
-      lastMessage: msg.content,
+      lastMessage: preview,
       lastMessageAt: msg.createdAt.toISOString(),
     })
   }, [persist, updateConversation])
@@ -217,7 +228,6 @@ export function useChat(orgId: string) {
         setConnected(true)
         requestInbox()
 
-        // Restore active conversation if we have one.
         if (activeConversationIdRef.current) {
           ws.send(JSON.stringify({
             type: 'conversation:select',
@@ -225,7 +235,6 @@ export function useChat(orgId: string) {
           }))
         }
 
-        // Re-identify after reconnect/page load to avoid contact race conditions.
         if (stored.current.visitorInfo) {
           ws.send(JSON.stringify({
             type: 'visitor:identify',
@@ -297,12 +306,16 @@ export function useChat(orgId: string) {
                 role: (item.role as 'user' | 'assistant' | 'agent') || 'assistant',
                 content: (item.content as string) || '',
                 createdAt: new Date((item.created_at as string) || Date.now()),
+                attachments: (item.attachments as Attachment[] | undefined) ?? [],
               }))
               setConversationMessages(cid, history)
               const latest = history[history.length - 1]
               if (!latest) break
+              const preview = latest.attachments?.length
+                ? `📎 ${latest.attachments[0]?.name ?? 'File'}`
+                : latest.content
               updateConversation(cid, {
-                lastMessage: latest.content,
+                lastMessage: preview,
                 lastMessageAt: latest.createdAt.toISOString(),
               })
               break
@@ -319,8 +332,7 @@ export function useChat(orgId: string) {
               break
             }
 
-            case 'ai:response':
-            {
+            case 'ai:response': {
               const cid = (msg.conversationId as string | undefined) ?? activeConversationIdRef.current
               if (!cid) break
               if (cid === activeConversationIdRef.current) setTyping(false)
@@ -329,27 +341,26 @@ export function useChat(orgId: string) {
                 role: 'assistant',
                 content: msg.content as string,
                 createdAt: new Date(),
+                attachments: [],
               })
               break
             }
 
-            // ← THIS IS THE FIX: agent:message must update widget
-            case 'agent:message':
-            {
+            case 'agent:message': {
               const cid = (msg.conversationId as string | undefined) ?? activeConversationIdRef.current
               if (!cid) break
               if (cid === activeConversationIdRef.current) setTyping(false)
               addMessage(cid, {
                 id: uid(),
                 role: 'agent',
-                content: msg.content as string,
+                content: (msg.content as string) || '',
                 createdAt: new Date(),
+                attachments: (msg.attachments as Attachment[] | undefined) ?? [],
               })
               break
             }
 
-            case 'agent:joined':
-            {
+            case 'agent:joined': {
               const cid = (msg.conversationId as string | undefined) ?? activeConversationIdRef.current
               if (!cid) break
               if (cid === activeConversationIdRef.current) setAgentActive(true)
@@ -359,12 +370,12 @@ export function useChat(orgId: string) {
                 role: 'assistant',
                 content: '— A support agent has joined the chat —',
                 createdAt: new Date(),
+                attachments: [],
               })
               break
             }
 
-            case 'bot:resumed':
-            {
+            case 'bot:resumed': {
               const cid = (msg.conversationId as string | undefined) ?? activeConversationIdRef.current
               if (!cid) break
               if (cid === activeConversationIdRef.current) setAgentActive(false)
@@ -374,12 +385,12 @@ export function useChat(orgId: string) {
                 role: 'assistant',
                 content: msg.content as string,
                 createdAt: new Date(),
+                attachments: [],
               })
               break
             }
 
-            case 'conversation:resolved':
-            {
+            case 'conversation:resolved': {
               const cid = (msg.conversationId as string | undefined) ?? activeConversationIdRef.current
               if (!cid) break
               if (cid === activeConversationIdRef.current) {
@@ -392,6 +403,7 @@ export function useChat(orgId: string) {
                 role: 'assistant',
                 content: (msg.content as string) || '— This conversation has been resolved. Thank you! 😊 —',
                 createdAt: new Date(),
+                attachments: [],
               })
               break
             }
@@ -410,8 +422,16 @@ export function useChat(orgId: string) {
     }
   }, [orgId, addMessage, persist, requestInbox, setConversationList, setConversationMessages, updateConversation])
 
-  const sendMessage = useCallback((content: string) => {
-    const message: Message = { id: uid(), role: 'user', content, createdAt: new Date() }
+  // ── Send text message ─────────────────────────────────────────────────────
+
+  const sendMessage = useCallback((content: string, attachments?: Attachment[]) => {
+    const message: Message = {
+      id: uid(),
+      role: 'user',
+      content,
+      createdAt: new Date(),
+      attachments: attachments ?? [],
+    }
     const conversationId = activeConversationIdRef.current
 
     if (conversationId) {
@@ -433,6 +453,7 @@ export function useChat(orgId: string) {
       content,
       conversationId,
       visitorId: visitorIdRef.current,
+      attachments: attachments ?? [],
       ...(visitor ? {
         name: visitor.name,
         email: visitor.email,
@@ -440,6 +461,45 @@ export function useChat(orgId: string) {
       } : {}),
     }))
   }, [addMessage])
+
+  // ── Upload file to storage ────────────────────────────────────────────────
+
+  const uploadFile = useCallback(async (file: File): Promise<Attachment> => {
+    const conversationId = activeConversationIdRef.current
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string
+
+          const res = await fetch(`${API_URL}/api/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              file: base64,
+              filename: file.name,
+              mimeType: file.type,
+              orgId,
+              conversationId: conversationId ?? undefined,
+            }),
+          })
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Upload failed' })) as { error?: string }
+            throw new Error(err.error ?? 'Upload failed')
+          }
+
+          const data = await res.json() as Attachment
+          resolve(data)
+        } catch (err) {
+          reject(err)
+        }
+      }
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsDataURL(file)
+    })
+  }, [orgId])
 
   const sendTyping = useCallback((isTyping: boolean) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -456,13 +516,11 @@ export function useChat(orgId: string) {
     wsRef.current?.send(JSON.stringify({ type: 'conversation:new' }))
   }, [persist])
 
-  // Called after pre-chat form submission
   const initWithVisitorInfo = useCallback((info: VisitorInfo) => {
     setVisitorInfo(info)
     visitorInfoRef.current = info
     stored.current.visitorInfo = info
     persist()
-    // Send visitor info to server so contact gets updated
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'visitor:identify',
@@ -494,6 +552,7 @@ export function useChat(orgId: string) {
     agentActive,
     visitorInfo,
     sendMessage,
+    uploadFile,
     sendTyping,
     startNewChat,
     openConversation,

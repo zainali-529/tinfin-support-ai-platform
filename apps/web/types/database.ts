@@ -1,3 +1,10 @@
+export interface Attachment {
+  url: string
+  name: string
+  size: number   // bytes
+  type: string   // MIME type
+}
+
 export interface Conversation {
   id: string
   org_id: string
@@ -19,6 +26,7 @@ export interface Message {
   content: string
   created_at: string
   ai_metadata?: Record<string, unknown> | null
+  attachments?: Attachment[]
 }
 
 export interface Contact {

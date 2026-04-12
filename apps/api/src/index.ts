@@ -13,12 +13,23 @@ import { widgetConfigRoute } from './routes/widget-config.route'
 import { vapiWebhookRoute } from './routes/vapi-webhook.route'
 import { voicePreviewRoute } from './routes/voice-preview.route'
 import { stripeWebhookRoute } from './routes/stripe-webhook.route'
+import { uploadRoute } from './routes/upload.route'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
 const WS_PORT = Number(process.env.WS_PORT || 3003)
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+
+// ── Custom CORS routes MUST be registered before global cors middleware ──────
+
+// File upload — larger JSON limit (base64-encoded files up to ~14MB decode to ~10MB)
+// MUST be registered before global express.json()
+app.use('/api/upload', express.json({ limit: '15mb' }), uploadRoute)
+
+app.use('/api/widget-config', widgetConfigRoute)
+
+// ── Global CORS (for dashboard/web app) ───────────────────────────────────────
 app.use(cors({ origin: process.env.WEB_URL || 'http://localhost:3000', credentials: true }))
 
 // ── Raw body routes (BEFORE express.json) ─────────────────────────────────────
@@ -43,7 +54,6 @@ app.use('/api/stripe-webhook', express.raw({ type: 'application/json', limit: '2
 // ── JSON body for everything else ─────────────────────────────────────────────
 app.use(express.json())
 
-app.use('/api/widget-config', widgetConfigRoute)
 app.use('/api/voice-preview', voicePreviewRoute)
 app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }))
 

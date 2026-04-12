@@ -15,7 +15,17 @@ function resolveWidgetScript() {
   ) as HTMLScriptElement | undefined
 }
 
+function injectFonts() {
+  if (document.getElementById('tinfin-widget-fonts')) return
+  const link = document.createElement('link')
+  link.id = 'tinfin-widget-fonts'
+  link.rel = 'stylesheet'
+  link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700&display=swap'
+  document.head.appendChild(link)
+}
+
 function initWidget(config: WidgetConfig) {
+  injectFonts()
   const host = document.createElement('div')
   host.id = 'tinfin-widget-host'
   document.body.appendChild(host)

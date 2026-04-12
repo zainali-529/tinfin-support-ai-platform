@@ -1,15 +1,28 @@
+// ── Key changes vs original:
+// 1. handleVisitorMessage now reads msg.attachments and passes to persistMessage
+// 2. handleAgentMessage now reads msg.attachments and passes to visitor + persistMessage
+// 3. persistMessage accepts optional attachments param
+// 4. broadcast messages now carry attachments to relevant sockets
+
 import { WebSocketServer, WebSocket } from 'ws'
 import { IncomingMessage } from 'http'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { queryRAG, isHandoffConfirmation } from '@workspace/ai'
 import { getPlan } from '../lib/plans'
 
-// ─── Socket type ──────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface Attachment {
+  url: string
+  name: string
+  size: number
+  type: string
+}
 
 interface TinfinSocket extends WebSocket {
   orgId?: string
   visitorId?: string
-  conversationId?: string        // ← key: visitor socket tracks its own convId
+  conversationId?: string
   isAlive?: boolean
   isAgent?: boolean
   agentId?: string
@@ -32,7 +45,7 @@ interface VisitorConversationSummary {
 // orgId → all sockets in that org
 const rooms = new Map<string, Set<TinfinSocket>>()
 
-// ─── Utils ────────────────────────────────────────────────────────────────────
+// ── Utils ──────────────────────────────────────────────────────────────────────
 
 function getSupabase(): SupabaseClient {
   return createClient(
@@ -55,7 +68,6 @@ function getBillingPeriodStart(currentPeriodEnd: string | null): Date {
     start.setMonth(start.getMonth() - 1)
     return start
   }
-
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), 1)
 }
@@ -77,25 +89,20 @@ async function authenticateAgentSocket(params: {
   if (!token) return null
 
   const supabase = getSupabase()
-
   try {
     const { data: authData, error: authError } = await supabase.auth.getUser(token)
     const user = authData?.user
     if (authError || !user) return null
+    if (params.requestedAgentId && params.requestedAgentId !== user.id) return null
 
-    if (params.requestedAgentId && params.requestedAgentId !== user.id) {
-      return null
-    }
-
-const { data: member } = await supabase
-  .from('user_organizations')
-  .select('id')
-  .eq('user_id', user.id)
-  .eq('org_id', params.orgId)
-  .maybeSingle()
+    const { data: member } = await supabase
+      .from('user_organizations')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('org_id', params.orgId)
+      .maybeSingle()
 
     if (!member) return null
-
     return user.id
   } catch (e) {
     console.error('[ws] authenticateAgentSocket:', e)
@@ -103,26 +110,19 @@ const { data: member } = await supabase
   }
 }
 
-/** Deliver a message to the visitor who owns this conversationId */
 async function getConversationVisitorId(orgId: string, conversationId: string): Promise<string | null> {
   const supabase = getSupabase()
   try {
     const { data: conversation } = await supabase
-      .from('conversations')
-      .select('contact_id')
-      .eq('id', conversationId)
-      .eq('org_id', orgId)
-      .maybeSingle()
+      .from('conversations').select('contact_id')
+      .eq('id', conversationId).eq('org_id', orgId).maybeSingle()
 
     const contactId = conversation?.contact_id as string | null | undefined
     if (!contactId) return null
 
     const { data: contact } = await supabase
-      .from('contacts')
-      .select('meta')
-      .eq('org_id', orgId)
-      .eq('id', contactId)
-      .maybeSingle()
+      .from('contacts').select('meta')
+      .eq('org_id', orgId).eq('id', contactId).maybeSingle()
 
     const visitorId = (contact?.meta as { visitorId?: string } | null | undefined)?.visitorId
     return typeof visitorId === 'string' && visitorId.length > 0 ? visitorId : null
@@ -138,7 +138,6 @@ async function sendToVisitor(orgId: string, conversationId: string, data: unknow
     console.warn(`[ws] No visitor found for conv ${conversationId}`)
     return
   }
-
   let delivered = false
   rooms.get(orgId)?.forEach(s => {
     if (!s.isAgent && s.visitorId === visitorId && s.readyState === WebSocket.OPEN) {
@@ -151,16 +150,13 @@ async function sendToVisitor(orgId: string, conversationId: string, data: unknow
   }
 }
 
-// ─── DB helpers ───────────────────────────────────────────────────────────────
+// ── DB helpers ─────────────────────────────────────────────────────────────────
 
 async function getConversationStatus(orgId: string, conversationId: string): Promise<ConversationStatus | null> {
   try {
     const { data } = await getSupabase()
-      .from('conversations')
-      .select('status')
-      .eq('id', conversationId)
-      .eq('org_id', orgId)
-      .maybeSingle()
+      .from('conversations').select('status')
+      .eq('id', conversationId).eq('org_id', orgId).maybeSingle()
     return (data?.status as ConversationStatus) ?? null
   } catch { return null }
 }
@@ -168,25 +164,17 @@ async function getConversationStatus(orgId: string, conversationId: string): Pro
 async function conversationExistsInOrg(orgId: string, conversationId: string): Promise<boolean> {
   try {
     const { data } = await getSupabase()
-      .from('conversations')
-      .select('id')
-      .eq('id', conversationId)
-      .eq('org_id', orgId)
-      .maybeSingle()
+      .from('conversations').select('id')
+      .eq('id', conversationId).eq('org_id', orgId).maybeSingle()
     return Boolean(data)
-  } catch {
-    return false
-  }
+  } catch { return false }
 }
 
 async function getVisitorContactIds(orgId: string, visitorId: string): Promise<string[]> {
   try {
     const { data } = await getSupabase()
-      .from('contacts')
-      .select('id')
-      .eq('org_id', orgId)
-      .eq('meta->>visitorId', visitorId)
-
+      .from('contacts').select('id')
+      .eq('org_id', orgId).eq('meta->>visitorId', visitorId)
     return (data ?? []).map((contact: { id: string }) => contact.id)
   } catch (e) {
     console.error('[ws] getVisitorContactIds:', e)
@@ -196,29 +184,23 @@ async function getVisitorContactIds(orgId: string, visitorId: string): Promise<s
 
 async function fetchVisitorConversations(orgId: string, visitorId: string): Promise<VisitorConversationSummary[]> {
   const supabase = getSupabase()
-
   try {
     const contactIds = await getVisitorContactIds(orgId, visitorId)
     if (!contactIds.length) return []
 
     const { data: conversations } = await supabase
-      .from('conversations')
-      .select('id, status, started_at, resolved_at, contact_id')
-      .eq('org_id', orgId)
-      .in('contact_id', contactIds)
-      .order('started_at', { ascending: false })
-      .limit(80)
+      .from('conversations').select('id, status, started_at, resolved_at, contact_id')
+      .eq('org_id', orgId).in('contact_id', contactIds)
+      .order('started_at', { ascending: false }).limit(80)
 
     const list = conversations ?? []
     if (!list.length) return []
 
-    const conversationIds = list.map((conversation: { id: string }) => conversation.id)
+    const conversationIds = list.map((c: { id: string }) => c.id)
 
     const { data: contacts } = await supabase
-      .from('contacts')
-      .select('id, name, email')
-      .eq('org_id', orgId)
-      .in('id', contactIds)
+      .from('contacts').select('id, name, email')
+      .eq('org_id', orgId).in('id', contactIds)
 
     const contactById = new Map<string, { name: string | null; email: string | null }>()
     for (const contact of contacts ?? []) {
@@ -229,18 +211,17 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
     }
 
     const { data: messages } = await supabase
-      .from('messages')
-      .select('conversation_id, content, created_at')
-      .eq('org_id', orgId)
-      .in('conversation_id', conversationIds)
+      .from('messages').select('conversation_id, content, attachments, created_at')
+      .eq('org_id', orgId).in('conversation_id', conversationIds)
       .order('created_at', { ascending: false })
 
-    const latestMessageByConversation = new Map<string, { content: string; created_at: string }>()
+    const latestMsgByConv = new Map<string, { content: string; attachments: Attachment[]; created_at: string }>()
     for (const message of messages ?? []) {
-      const conversationId = (message as { conversation_id: string }).conversation_id
-      if (!latestMessageByConversation.has(conversationId)) {
-        latestMessageByConversation.set(conversationId, {
+      const cid = (message as { conversation_id: string }).conversation_id
+      if (!latestMsgByConv.has(cid)) {
+        latestMsgByConv.set(cid, {
           content: (message as { content: string }).content,
+          attachments: (message as { attachments?: Attachment[] }).attachments ?? [],
           created_at: (message as { created_at: string }).created_at,
         })
       }
@@ -249,7 +230,10 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
     return list
       .map((conversation) => {
         const contact = contactById.get((conversation as { contact_id: string | null }).contact_id ?? '')
-        const last = latestMessageByConversation.get(conversation.id)
+        const last = latestMsgByConv.get(conversation.id)
+        const lastContent = last?.attachments?.length
+          ? `📎 ${last.attachments[0]?.name ?? 'File'}`
+          : (last?.content ?? '')
 
         return {
           id: conversation.id,
@@ -258,7 +242,7 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
           resolvedAt: conversation.resolved_at,
           contactName: contact?.name ?? null,
           contactEmail: contact?.email ?? null,
-          lastMessage: last?.content ?? '',
+          lastMessage: lastContent,
           lastMessageAt: last?.created_at ?? conversation.started_at,
         }
       })
@@ -271,25 +255,17 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
 
 async function visitorOwnsConversation(orgId: string, visitorId: string, conversationId: string): Promise<boolean> {
   const supabase = getSupabase()
-
   try {
     const { data: conversation } = await supabase
-      .from('conversations')
-      .select('contact_id')
-      .eq('id', conversationId)
-      .eq('org_id', orgId)
-      .maybeSingle()
+      .from('conversations').select('contact_id')
+      .eq('id', conversationId).eq('org_id', orgId).maybeSingle()
 
     const contactId = conversation?.contact_id as string | null | undefined
     if (!contactId) return false
 
     const { data: contact } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('org_id', orgId)
-      .eq('id', contactId)
-      .eq('meta->>visitorId', visitorId)
-      .maybeSingle()
+      .from('contacts').select('id')
+      .eq('org_id', orgId).eq('id', contactId).eq('meta->>visitorId', visitorId).maybeSingle()
 
     return Boolean(contact)
   } catch (e) {
@@ -302,11 +278,9 @@ async function fetchConversationMessages(orgId: string, conversationId: string) 
   try {
     const { data } = await getSupabase()
       .from('messages')
-      .select('id, role, content, created_at, ai_metadata')
-      .eq('org_id', orgId)
-      .eq('conversation_id', conversationId)
+      .select('id, role, content, attachments, created_at, ai_metadata')
+      .eq('org_id', orgId).eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
-
     return data ?? []
   } catch (e) {
     console.error('[ws] fetchConversationMessages:', e)
@@ -321,12 +295,8 @@ async function updateConversation(
 ): Promise<boolean> {
   try {
     const { data } = await getSupabase()
-      .from('conversations')
-      .update(fields)
-      .eq('id', conversationId)
-      .eq('org_id', orgId)
-      .select('id')
-      .maybeSingle()
+      .from('conversations').update(fields)
+      .eq('id', conversationId).eq('org_id', orgId).select('id').maybeSingle()
     return Boolean(data)
   } catch (e) {
     console.error('[ws] updateConversation:', e)
@@ -339,6 +309,7 @@ async function persistMessage(params: {
   orgId: string
   role: 'user' | 'assistant' | 'agent'
   content: string
+  attachments?: Attachment[]
   aiMetadata?: Record<string, unknown>
 }) {
   if (!params.conversationId) return
@@ -354,10 +325,15 @@ async function persistMessage(params: {
       org_id: params.orgId,
       role: params.role,
       content: params.content,
+      attachments: params.attachments && params.attachments.length > 0
+        ? params.attachments
+        : [],
       ai_metadata: params.aiMetadata ?? null,
     })
   } catch (e) { console.error('[ws] persistMessage:', e) }
 }
+
+// ── Contact helpers (unchanged from original) ──────────────────────────────────
 
 interface ContactIdentityRow {
   id: string
@@ -389,118 +365,67 @@ function pickCanonicalContact(
   email?: string
 ): ContactIdentityRow | null {
   if (!contacts.length) return null
-
-  const withBoth = contacts.find(contact =>
-    readVisitorId(contact.meta) === visitorId &&
-    Boolean(email) &&
-    contact.email === email
-  )
+  const withBoth = contacts.find(c => readVisitorId(c.meta) === visitorId && Boolean(email) && c.email === email)
   if (withBoth) return withBoth
-
-  const byVisitor = contacts.find(contact => readVisitorId(contact.meta) === visitorId)
+  const byVisitor = contacts.find(c => readVisitorId(c.meta) === visitorId)
   if (byVisitor) return byVisitor
-
-  if (email) {
-    const byEmail = contacts.find(contact => contact.email === email)
-    if (byEmail) return byEmail
-  }
-
+  if (email) { const byEmail = contacts.find(c => c.email === email); if (byEmail) return byEmail }
   return contacts[0] ?? null
 }
 
 async function fetchContactsByVisitor(orgId: string, visitorId: string): Promise<ContactIdentityRow[]> {
   const { data } = await getSupabase()
-    .from('contacts')
-    .select('id, name, email, meta, created_at')
-    .eq('org_id', orgId)
-    .eq('meta->>visitorId', visitorId)
+    .from('contacts').select('id, name, email, meta, created_at')
+    .eq('org_id', orgId).eq('meta->>visitorId', visitorId)
     .order('created_at', { ascending: true })
-
   return (data as ContactIdentityRow[] | null) ?? []
 }
 
 async function fetchContactsByEmail(orgId: string, email?: string): Promise<ContactIdentityRow[]> {
   if (!email) return []
-
   const { data } = await getSupabase()
-    .from('contacts')
-    .select('id, name, email, meta, created_at')
-    .eq('org_id', orgId)
-    .eq('email', email)
-    .order('created_at', { ascending: true })
-
+    .from('contacts').select('id, name, email, meta, created_at')
+    .eq('org_id', orgId).eq('email', email).order('created_at', { ascending: true })
   return (data as ContactIdentityRow[] | null) ?? []
 }
 
 async function relinkDuplicateContacts(orgId: string, canonicalId: string, duplicateIds: string[]) {
   if (!duplicateIds.length) return
-
   try {
-    await getSupabase()
-      .from('conversations')
-      .update({ contact_id: canonicalId })
-      .eq('org_id', orgId)
-      .in('contact_id', duplicateIds)
-  } catch (e) {
-    console.error('[ws] relinkDuplicateContacts:', e)
-  }
+    await getSupabase().from('conversations').update({ contact_id: canonicalId })
+      .eq('org_id', orgId).in('contact_id', duplicateIds)
+  } catch (e) { console.error('[ws] relinkDuplicateContacts:', e) }
 }
 
-async function upsertContact(params: {
-  orgId: string
-  visitorId: string
-  name?: string
-  email?: string
-}): Promise<string | null> {
+async function upsertContact(params: { orgId: string; visitorId: string; name?: string; email?: string }): Promise<string | null> {
   const email = normalizeEmail(params.email)
-
   try {
     const [visitorContacts, emailContacts] = await Promise.all([
       fetchContactsByVisitor(params.orgId, params.visitorId),
       fetchContactsByEmail(params.orgId, email),
     ])
-
     const map = new Map<string, ContactIdentityRow>()
-    for (const contact of [...visitorContacts, ...emailContacts]) {
-      map.set(contact.id, contact)
-    }
-    const candidates = [...map.values()].sort((a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    )
-
+    for (const c of [...visitorContacts, ...emailContacts]) map.set(c.id, c)
+    const candidates = [...map.values()].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     const canonical = pickCanonicalContact(candidates, params.visitorId, email)
 
     if (canonical) {
       const nextName = params.name?.trim() || canonical.name || null
       const nextEmail = email || canonical.email || null
       const nextMeta = mergeMeta(canonical.meta, params.visitorId)
-
-      await getSupabase()
-        .from('contacts')
-        .update({ name: nextName, email: nextEmail, meta: nextMeta })
-        .eq('id', canonical.id)
-        .eq('org_id', params.orgId)
-
-      const duplicateIds = candidates
-        .filter(contact => contact.id !== canonical.id)
-        .map(contact => contact.id)
+      await getSupabase().from('contacts').update({ name: nextName, email: nextEmail, meta: nextMeta })
+        .eq('id', canonical.id).eq('org_id', params.orgId)
+      const duplicateIds = candidates.filter(c => c.id !== canonical.id).map(c => c.id)
       await relinkDuplicateContacts(params.orgId, canonical.id, duplicateIds)
-
       return canonical.id
     }
 
     const { data: created } = await getSupabase().from('contacts').insert({
-      org_id: params.orgId,
-      name: params.name?.trim() || null,
-      email: email || null,
-      meta: { visitorId: params.visitorId },
+      org_id: params.orgId, name: params.name?.trim() || null,
+      email: email || null, meta: { visitorId: params.visitorId },
     }).select('id').maybeSingle()
-
     return created?.id ?? null
-  } catch (e) {
-    console.error('[ws] upsertContact:', e)
-    return null
-  }
+  } catch (e) { console.error('[ws] upsertContact:', e); return null }
 }
 
 async function getOrCreateContactForVisitor(orgId: string, visitorId: string): Promise<string | null> {
@@ -508,167 +433,110 @@ async function getOrCreateContactForVisitor(orgId: string, visitorId: string): P
     const contacts = await fetchContactsByVisitor(orgId, visitorId)
     const canonical = pickCanonicalContact(contacts, visitorId)
     if (canonical) {
-      const duplicates = contacts.filter(contact => contact.id !== canonical.id).map(contact => contact.id)
+      const duplicates = contacts.filter(c => c.id !== canonical.id).map(c => c.id)
       await relinkDuplicateContacts(orgId, canonical.id, duplicates)
       return canonical.id
     }
-
-    const { data: created } = await getSupabase()
-      .from('contacts')
-      .insert({ org_id: orgId, meta: { visitorId } })
-      .select('id')
-      .maybeSingle()
-
+    const { data: created } = await getSupabase().from('contacts')
+      .insert({ org_id: orgId, meta: { visitorId } }).select('id').maybeSingle()
     return created?.id ?? null
-  } catch (e) {
-    console.error('[ws] getOrCreateContactForVisitor:', e)
-    return null
-  }
+  } catch (e) { console.error('[ws] getOrCreateContactForVisitor:', e); return null }
 }
 
-async function getOrCreateConversation(params: {
-  orgId: string
-  visitorId: string
-  conversationId?: string | null
-}): Promise<{ conversationId: string; isNew: boolean }> {
+async function getOrCreateConversation(params: { orgId: string; visitorId: string; conversationId?: string | null }): Promise<{ conversationId: string; isNew: boolean }> {
   const supabase = getSupabase()
 
   if (params.conversationId) {
-    const { data } = await supabase
-      .from('conversations').select('id, status')
+    const { data } = await supabase.from('conversations').select('id, status')
       .eq('id', params.conversationId).eq('org_id', params.orgId).maybeSingle()
-
     if (data && data.status !== 'resolved' && data.status !== 'closed') {
       return { conversationId: data.id, isNew: false }
     }
   }
 
-  // Find/create canonical contact for this visitor.
   let contactId = await getOrCreateContactForVisitor(params.orgId, params.visitorId)
-
   if (!contactId) {
-    const { data: newContact } = await supabase
-      .from('contacts')
+    const { data: newContact } = await supabase.from('contacts')
       .insert({ org_id: params.orgId, meta: { visitorId: params.visitorId } })
       .select('id').maybeSingle()
     contactId = newContact?.id ?? null
   }
 
-  // Enforce conversation limits for the org's current billing period.
-  const { data: sub } = await supabase
-    .from('subscriptions')
-    .select('plan, current_period_end')
-    .eq('org_id', params.orgId)
-    .maybeSingle()
-
+  const { data: sub } = await supabase.from('subscriptions').select('plan, current_period_end')
+    .eq('org_id', params.orgId).maybeSingle()
   const periodStart = getBillingPeriodStart((sub?.current_period_end as string | null) ?? null)
-  const { count: convCount } = await supabase
-    .from('conversations')
-    .select('id', { count: 'exact', head: true })
-    .eq('org_id', params.orgId)
-    .gte('started_at', periodStart.toISOString())
+  const { count: convCount } = await supabase.from('conversations').select('id', { count: 'exact', head: true })
+    .eq('org_id', params.orgId).gte('started_at', periodStart.toISOString())
 
   const plan = getPlan((sub?.plan as string | null) ?? 'free')
   const limit = plan.limits.conversationsPerMonth
-  if (limit !== -1 && (convCount ?? 0) >= limit) {
-    throw new Error('CHAT_LIMIT_REACHED')
-  }
+  if (limit !== -1 && (convCount ?? 0) >= limit) throw new Error('CHAT_LIMIT_REACHED')
 
-  const { data: newConv } = await supabase
-    .from('conversations')
+  const { data: newConv } = await supabase.from('conversations')
     .insert({ org_id: params.orgId, contact_id: contactId, status: 'bot', channel: 'chat' })
     .select('id').maybeSingle()
-
-  if (!newConv?.id) {
-    throw new Error('[ws] Failed to create conversation')
-  }
-
+  if (!newConv?.id) throw new Error('[ws] Failed to create conversation')
   return { conversationId: newConv.id, isNew: true }
 }
 
-// ─── Handoff ──────────────────────────────────────────────────────────────────
+// ── Handoff ────────────────────────────────────────────────────────────────────
 
 async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgId: string) {
   socket.awaitingHandoffConfirm = false
   await updateConversation(orgId, conversationId, { status: 'pending' })
-
   const msg = "I'm connecting you with a human agent now. Please hold on! 🙏"
   send(socket, { type: 'ai:response', content: msg, conversationId, createdAt: new Date().toISOString(), handoff: true })
   broadcastToAgents(orgId, { type: 'handoff:requested', visitorId: socket.visitorId, conversationId, createdAt: new Date().toISOString() })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: msg, aiMetadata: { shouldHandoff: true } })
 }
 
-// ─── Visitor: identify ────────────────────────────────────────────────────────
+// ── Visitor: identify ─────────────────────────────────────────────────────────
 
 async function handleVisitorIdentify(socket: TinfinSocket, msg: Record<string, unknown>) {
   const orgId = socket.orgId!
   const name = (msg.name as string | undefined)?.trim()
   const email = (msg.email as string | undefined)?.trim().toLowerCase()
-
   if (!name && !email) return
 
-  const contactId = await upsertContact({
-    orgId,
-    visitorId: socket.visitorId!,
-    name,
-    email,
-  })
-
-  // Update conversation's contact_id if we have a conversation
+  const contactId = await upsertContact({ orgId, visitorId: socket.visitorId!, name, email })
   if (contactId && socket.conversationId) {
-    await getSupabase()
-      .from('conversations')
-      .update({ contact_id: contactId })
-      .eq('id', socket.conversationId)
-      .eq('org_id', orgId)
+    await getSupabase().from('conversations').update({ contact_id: contactId })
+      .eq('id', socket.conversationId).eq('org_id', orgId)
   }
-
-  // Notify agents to refresh this conversation
-  broadcastToAgents(orgId, {
-    type: 'contact:updated',
-    conversationId: socket.conversationId,
-    contact: { name, email },
-  })
+  broadcastToAgents(orgId, { type: 'contact:updated', conversationId: socket.conversationId, contact: { name, email } })
 }
 
-// ─── Visitor: message ─────────────────────────────────────────────────────────
+// ── Visitor: message (with attachments) ───────────────────────────────────────
 
 async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
+  const attachments = (msg.attachments as Attachment[] | undefined) ?? []
   const orgId = socket.orgId!
-  if (!content) return
-  const requestedConversationId = ((msg.conversationId as string | undefined) ?? '').trim()
 
+  // Must have either text or attachments
+  if (!content && attachments.length === 0) return
+
+  const requestedConversationId = ((msg.conversationId as string | undefined) ?? '').trim()
   const visitorInfo = (msg.visitorInfo as Record<string, unknown> | undefined) ?? {}
   const name = ((msg.name as string | undefined) ?? (visitorInfo.name as string | undefined))?.trim()
   const email = ((msg.email as string | undefined) ?? (visitorInfo.email as string | undefined))?.trim().toLowerCase()
 
-  // Respect the requested conversation when visitor switches threads.
   if (requestedConversationId) {
     const ownsConversation = await visitorOwnsConversation(orgId, socket.visitorId!, requestedConversationId)
-    if (!ownsConversation) {
-      send(socket, { type: 'error', message: 'Conversation not found.' })
-      return
-    }
+    if (!ownsConversation) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
     socket.conversationId = requestedConversationId
   }
 
-  // Ensure conversation
   if (!socket.conversationId) {
     try {
       const result = await getOrCreateConversation({
-        orgId,
-        visitorId: socket.visitorId!,
-        conversationId: requestedConversationId || null,
+        orgId, visitorId: socket.visitorId!, conversationId: requestedConversationId || null,
       })
       socket.conversationId = result.conversationId
       send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: result.isNew })
     } catch (error) {
       if (error instanceof Error && error.message === 'CHAT_LIMIT_REACHED') {
-        send(socket, {
-          type: 'error',
-          message: 'Chat limit reached for this workspace. Please try again next billing period.',
-        })
+        send(socket, { type: 'error', message: 'Chat limit reached for this workspace. Please try again next billing period.' })
         return
       }
       send(socket, { type: 'error', message: 'Unable to start a new conversation right now.' })
@@ -678,52 +546,39 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 
   const conversationId = socket.conversationId
 
-  // Message payload can carry identity as a fallback when identify raced socket open.
   if (name || email) {
-    const contactId = await upsertContact({
-      orgId,
-      visitorId: socket.visitorId!,
-      name,
-      email,
-    })
+    const contactId = await upsertContact({ orgId, visitorId: socket.visitorId!, name, email })
     if (contactId) {
-      await getSupabase()
-        .from('conversations')
-        .update({ contact_id: contactId })
-        .eq('id', conversationId)
-        .eq('org_id', orgId)
+      await getSupabase().from('conversations').update({ contact_id: contactId })
+        .eq('id', conversationId).eq('org_id', orgId)
     }
   }
 
   const status = await getConversationStatus(orgId, conversationId)
-  if (!status) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!status) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   if (status === 'resolved' || status === 'closed') {
     send(socket, {
       type: 'conversation:resolved',
       content: 'This conversation has been resolved. Thank you! 😊',
-      conversationId,
-      createdAt: new Date().toISOString(),
+      conversationId, createdAt: new Date().toISOString(),
     })
     return
   }
 
-  // Broadcast to agents (inbox real-time)
+  // Notify agents (include attachments for agent inbox display)
   broadcastToAgents(orgId, {
-    type: 'visitor:message',
-    visitorId: socket.visitorId,
-    content,
-    conversationId,
-    createdAt: new Date().toISOString(),
+    type: 'visitor:message', visitorId: socket.visitorId,
+    content, attachments, conversationId, createdAt: new Date().toISOString(),
   })
 
-  await persistMessage({ conversationId, orgId, role: 'user', content })
+  await persistMessage({ conversationId, orgId, role: 'user', content, attachments })
 
   // If agent is handling → skip AI
   if (status === 'open') return
+
+  // If only file attachment, no text → just acknowledge, don't run AI
+  if (!content && attachments.length > 0) return
 
   // Handoff confirmation flow
   if (socket.awaitingHandoffConfirm) {
@@ -741,63 +596,59 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
   // AI typing
   setTimeout(() => send(socket, { type: 'typing:start', conversationId }), 300)
 
-  // RAG
-  ;(async () => {
-    try {
-      const ragResult = await queryRAG({ query: content, orgId, threshold: 0.3, maxChunks: 5 })
-      send(socket, { type: 'typing:stop', conversationId })
+    ; (async () => {
+      try {
+        const ragResult = await queryRAG({ query: content, orgId, threshold: 0.3, maxChunks: 5 })
+        send(socket, { type: 'typing:stop', conversationId })
 
-      if (ragResult.type === 'handoff') {
-        await triggerHandoff(socket, conversationId, orgId)
-      } else if (ragResult.type === 'ask_handoff') {
+        if (ragResult.type === 'handoff') {
+          await triggerHandoff(socket, conversationId, orgId)
+        } else if (ragResult.type === 'ask_handoff') {
+          socket.awaitingHandoffConfirm = true
+          send(socket, { type: 'ai:response', content: ragResult.message, conversationId, createdAt: new Date().toISOString() })
+          await persistMessage({ conversationId, orgId, role: 'assistant', content: ragResult.message, aiMetadata: { confidence: ragResult.confidence, awaitingConfirm: true } })
+        } else {
+          send(socket, { type: 'ai:response', content: ragResult.message, conversationId, createdAt: new Date().toISOString(), confidence: ragResult.confidence })
+          await persistMessage({ conversationId, orgId, role: 'assistant', content: ragResult.message, aiMetadata: { confidence: ragResult.confidence } })
+        }
+      } catch (err) {
+        console.error('[ws] RAG error:', err)
+        send(socket, { type: 'typing:stop', conversationId })
+        const fallback = "I'm having a little trouble right now. Would you like me to connect you with a human agent? (Reply **yes** to connect)"
+        send(socket, { type: 'ai:response', content: fallback, conversationId, createdAt: new Date().toISOString() })
         socket.awaitingHandoffConfirm = true
-        send(socket, { type: 'ai:response', content: ragResult.message, conversationId, createdAt: new Date().toISOString() })
-        await persistMessage({ conversationId, orgId, role: 'assistant', content: ragResult.message, aiMetadata: { confidence: ragResult.confidence, awaitingConfirm: true } })
-      } else {
-        send(socket, { type: 'ai:response', content: ragResult.message, conversationId, createdAt: new Date().toISOString(), confidence: ragResult.confidence })
-        await persistMessage({ conversationId, orgId, role: 'assistant', content: ragResult.message, aiMetadata: { confidence: ragResult.confidence } })
       }
-    } catch (err) {
-      console.error('[ws] RAG error:', err)
-      send(socket, { type: 'typing:stop', conversationId })
-      const fallback = "I'm having a little trouble right now. Would you like me to connect you with a human agent? (Reply **yes** to connect)"
-      send(socket, { type: 'ai:response', content: fallback, conversationId, createdAt: new Date().toISOString() })
-      socket.awaitingHandoffConfirm = true
-    }
-  })()
+    })()
 }
 
-// ─── Agent: message ───────────────────────────────────────────────────────────
+// ── Agent: message (with attachments) ─────────────────────────────────────────
 
 async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
+  const attachments = (msg.attachments as Attachment[] | undefined) ?? []
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   const orgId = socket.orgId!
-  if (!content || !conversationId) return
+
+  // Must have text or attachments
+  if ((!content && attachments.length === 0) || !conversationId) return
 
   const status = await getConversationStatus(orgId, conversationId)
-  if (!status) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!status) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
   if (status === 'bot' || status === 'pending') {
     send(socket, { type: 'error', message: 'Take over the conversation first before sending messages.' })
     return
   }
 
-  // ← CRITICAL FIX: deliver to visitor socket
+  // Deliver to visitor (include attachments)
   await sendToVisitor(orgId, conversationId, {
-    type: 'agent:message',
-    content,
-    conversationId,
-    createdAt: new Date().toISOString(),
+    type: 'agent:message', content, attachments, conversationId, createdAt: new Date().toISOString(),
   })
 
   send(socket, { type: 'message:sent', conversationId })
-  await persistMessage({ conversationId, orgId, role: 'agent', content })
+  await persistMessage({ conversationId, orgId, role: 'agent', content, attachments })
 }
 
-// ─── Agent: takeover ──────────────────────────────────────────────────────────
+// ── Agent: takeover, release, resolve (unchanged) ─────────────────────────────
 
 async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
@@ -805,28 +656,13 @@ async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unk
   if (!conversationId) return
 
   const updated = await updateConversation(orgId, conversationId, { status: 'open', assigned_to: socket.agentId ?? null })
-  if (!updated) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
-  await sendToVisitor(orgId, conversationId, {
-    type: 'agent:joined',
-    conversationId,
-    createdAt: new Date().toISOString(),
-  })
-
+  await sendToVisitor(orgId, conversationId, { type: 'agent:joined', conversationId, createdAt: new Date().toISOString() })
   broadcastToAgents(orgId, { type: 'conversation:status_changed', conversationId, status: 'open', assignedTo: socket.agentId })
   send(socket, { type: 'takeover:success', conversationId })
-
-  await persistMessage({
-    conversationId, orgId, role: 'assistant',
-    content: '— Agent joined the conversation —',
-    aiMetadata: { system: true, event: 'agent_joined' },
-  })
+  await persistMessage({ conversationId, orgId, role: 'assistant', content: '— Agent joined the conversation —', aiMetadata: { system: true, event: 'agent_joined' } })
 }
-
-// ─── Agent: release ───────────────────────────────────────────────────────────
 
 async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
@@ -834,21 +670,13 @@ async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unkn
   if (!conversationId) return
 
   const updated = await updateConversation(orgId, conversationId, { status: 'bot', assigned_to: null })
-  if (!updated) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   const reply = "You've been transferred back to our AI assistant. How can I help you?"
-  await sendToVisitor(orgId, conversationId, {
-    type: 'bot:resumed', content: reply, conversationId, createdAt: new Date().toISOString(),
-  })
-
+  await sendToVisitor(orgId, conversationId, { type: 'bot:resumed', content: reply, conversationId, createdAt: new Date().toISOString() })
   broadcastToAgents(orgId, { type: 'conversation:status_changed', conversationId, status: 'bot', assignedTo: null })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: reply, aiMetadata: { system: true, event: 'released_to_bot' } })
 }
-
-// ─── Agent: resolve ───────────────────────────────────────────────────────────
 
 async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
@@ -856,22 +684,16 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
   if (!conversationId) return
 
   const updated = await updateConversation(orgId, conversationId, { status: 'resolved' })
-  if (!updated) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   await sendToVisitor(orgId, conversationId, {
-    type: 'conversation:resolved',
-    content: 'This conversation has been resolved. Thank you! 😊',
-    conversationId,
-    createdAt: new Date().toISOString(),
+    type: 'conversation:resolved', content: 'This conversation has been resolved. Thank you! 😊',
+    conversationId, createdAt: new Date().toISOString(),
   })
-
   broadcastToAgents(orgId, { type: 'conversation:status_changed', conversationId, status: 'resolved' })
 }
 
-// ─── Conversation: resume ─────────────────────────────────────────────────────
+// ── Conversation helpers ───────────────────────────────────────────────────────
 
 async function handleConversationResume(socket: TinfinSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
@@ -887,7 +709,6 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
   }
 
   const status = await getConversationStatus(orgId, conversationId)
-
   if (!status || status === 'resolved' || status === 'closed') {
     const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
     socket.conversationId = result.conversationId
@@ -902,47 +723,28 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
 async function handleConversationsList(socket: TinfinSocket) {
   if (socket.isAgent) return
   if (!socket.orgId || !socket.visitorId) return
-
   const conversations = await fetchVisitorConversations(socket.orgId, socket.visitorId)
-  send(socket, {
-    type: 'conversations:list',
-    conversations,
-    activeConversationId: socket.conversationId ?? null,
-  })
+  send(socket, { type: 'conversations:list', conversations, activeConversationId: socket.conversationId ?? null })
 }
 
 async function handleConversationSelect(socket: TinfinSocket, msg: Record<string, unknown>) {
   if (socket.isAgent) return
-
   const orgId = socket.orgId!
   const visitorId = socket.visitorId!
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   if (!conversationId) return
 
   const ownsConversation = await visitorOwnsConversation(orgId, visitorId, conversationId)
-  if (!ownsConversation) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!ownsConversation) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   socket.conversationId = conversationId
-
   const status = await getConversationStatus(orgId, conversationId)
-  if (!status) {
-    send(socket, { type: 'error', message: 'Conversation not found.' })
-    return
-  }
+  if (!status) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
   send(socket, { type: 'conversation:ready', conversationId, isNew: false, status })
 
   const messages = await fetchConversationMessages(orgId, conversationId)
-  send(socket, {
-    type: 'conversation:history',
-    conversationId,
-    messages,
-  })
+  send(socket, { type: 'conversation:history', conversationId, messages })
 }
-
-// ─── Conversation: new ────────────────────────────────────────────────────────
 
 async function handleNewChat(socket: TinfinSocket) {
   const orgId = socket.orgId!
@@ -952,20 +754,20 @@ async function handleNewChat(socket: TinfinSocket) {
   send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
 }
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// ── Router ────────────────────────────────────────────────────────────────────
 
 async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   switch (msg.type) {
     case 'conversations:list': await handleConversationsList(socket); break
     case 'conversation:select': await handleConversationSelect(socket, msg); break
-    case 'visitor:message':    await handleVisitorMessage(socket, msg); break
-    case 'visitor:identify':   await handleVisitorIdentify(socket, msg); break
+    case 'visitor:message': await handleVisitorMessage(socket, msg); break
+    case 'visitor:identify': await handleVisitorIdentify(socket, msg); break
     case 'conversation:resume': await handleConversationResume(socket, msg); break
-    case 'conversation:new':   await handleNewChat(socket); break
-    case 'agent:message':      await handleAgentMessage(socket, msg); break
-    case 'agent:takeover':     await handleAgentTakeover(socket, msg); break
-    case 'agent:release':      await handleAgentRelease(socket, msg); break
-    case 'agent:resolve':      await handleAgentResolve(socket, msg); break
+    case 'conversation:new': await handleNewChat(socket); break
+    case 'agent:message': await handleAgentMessage(socket, msg); break
+    case 'agent:takeover': await handleAgentTakeover(socket, msg); break
+    case 'agent:release': await handleAgentRelease(socket, msg); break
+    case 'agent:resolve': await handleAgentResolve(socket, msg); break
     case 'typing:start':
     case 'typing:stop':
       broadcastToAgents(socket.orgId!, { type: msg.type, visitorId: socket.visitorId, conversationId: socket.conversationId })
@@ -976,7 +778,7 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
   }
 }
 
-// ─── Server ───────────────────────────────────────────────────────────────────
+// ── Server ────────────────────────────────────────────────────────────────────
 
 export function createWsServer(port: number) {
   const wss = new WebSocketServer({ port })
@@ -994,15 +796,8 @@ export function createWsServer(port: number) {
 
       let verifiedAgentId: string | undefined
       if (isAgent) {
-        verifiedAgentId = await authenticateAgentSocket({
-          orgId,
-          requestedAgentId,
-          token,
-        }) ?? undefined
-
-        if (!verifiedAgentId) {
-          return socket.close(1008, 'Unauthorized agent socket')
-        }
+        verifiedAgentId = await authenticateAgentSocket({ orgId, requestedAgentId, token }) ?? undefined
+        if (!verifiedAgentId) return socket.close(1008, 'Unauthorized agent socket')
       }
 
       socket.orgId = orgId
@@ -1016,24 +811,19 @@ export function createWsServer(port: number) {
       rooms.get(orgId)!.add(socket)
 
       send(socket, { type: 'connected', visitorId })
-      if (!isAgent) {
-        void handleConversationsList(socket)
-      }
+      if (!isAgent) void handleConversationsList(socket)
 
       socket.on('pong', () => { socket.isAlive = true })
-
       socket.on('message', async (raw) => {
         try {
           const msg = JSON.parse(raw.toString()) as Record<string, unknown>
           await handleMessage(socket, msg)
         } catch (e) { console.error('[ws] parse:', e) }
       })
-
       socket.on('close', () => {
         rooms.get(orgId)?.delete(socket)
         if (rooms.get(orgId)?.size === 0) rooms.delete(orgId)
       })
-
       socket.on('error', () => socket.terminate())
     } catch (e) {
       console.error('[ws] connection setup failed:', e)
