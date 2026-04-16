@@ -1,22 +1,23 @@
-export interface Attachment {
-  url: string
-  name: string
-  size: number   // bytes
-  type: string   // MIME type
-}
+/**
+ * apps/web/types/database.ts
+ *
+ * Shared database row types for the frontend.
+ * These mirror the Supabase DB schema without generics.
+ */
 
-export interface Conversation {
+// ─── Contact ──────────────────────────────────────────────────────────────────
+
+export interface Contact {
   id: string
   org_id: string
-  contact_id: string | null
-  status: 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
-  assigned_to: string | null
-  channel: string
-  started_at: string
-  resolved_at: string | null
-  contacts?: Contact | null
-  messages?: Message[]
+  name: string | null
+  email: string | null
+  phone: string | null
+  meta: Record<string, unknown> | null
+  created_at: string
 }
+
+// ─── Message ──────────────────────────────────────────────────────────────────
 
 export interface Message {
   id: string
@@ -24,16 +25,73 @@ export interface Message {
   org_id: string
   role: 'user' | 'assistant' | 'agent' | 'system'
   content: string
+  attachments: unknown[]
+  ai_metadata: Record<string, unknown> | null
   created_at: string
-  ai_metadata?: Record<string, unknown> | null
-  attachments?: Attachment[]
 }
 
-export interface Contact {
+// ─── Conversation ─────────────────────────────────────────────────────────────
+
+export type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
+export type ConversationChannel = 'chat' | 'email' | 'voice'
+
+export interface Conversation {
   id: string
   org_id: string
-  email: string | null
-  name: string | null
-  phone: string | null
+  contact_id: string | null
+  status: ConversationStatus
+  /** 'chat' | 'email' | 'voice' */
+  channel: ConversationChannel
+  assigned_to: string | null
+  started_at: string
+  resolved_at: string | null
+  meta: Record<string, unknown> | null
+  /** Joined contact record */
+  contacts: Contact | null
+  /** Joined message records (subset — for last message preview) */
+  messages?: Message[]
+}
+
+// ─── Email Message ────────────────────────────────────────────────────────────
+
+export interface EmailMessage {
+  id: string
+  org_id: string
+  conversation_id: string
+  message_id: string | null
+  external_message_id: string | null
+  in_reply_to: string | null
+  references_header: string | null
+  subject: string
+  from_email: string
+  from_name: string | null
+  to_emails: string[]
+  cc_emails: string[]
+  html_body: string | null
+  text_body: string | null
+  direction: 'inbound' | 'outbound'
+  status: 'received' | 'sent' | 'failed'
+  error_message: string | null
+  raw_headers: Record<string, string>
   created_at: string
+}
+
+// ─── Email Account ────────────────────────────────────────────────────────────
+
+export interface EmailAccountConfig {
+  id: string
+  orgId: string
+  fromEmail: string
+  fromName: string
+  inboundAddress: string | null
+  inboundProvider: string
+  isActive: boolean
+  aiAutoReply: boolean
+  emailSignature: string | null
+  settings: Record<string, unknown>
+  hasResendKey: boolean
+  resendApiKeyMasked: string | null
+  inboundWebhookToken: string | null
+  createdAt: string
+  updatedAt: string
 }

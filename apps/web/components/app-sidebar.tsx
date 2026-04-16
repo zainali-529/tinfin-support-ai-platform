@@ -1,24 +1,40 @@
 'use client'
 
 /**
- * apps/web/components/app-sidebar.tsx  (Updated)
- *
- * Changes:
- * - Usage, Team, and Billing moved to their own business nav group
- * - Settings remains in Account for general settings only
+ * apps/web/components/app-sidebar.tsx
+ * Updated — adds Email Settings to the Management nav group.
  */
 
-import * as React from "react"
+import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
-  SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
-  SidebarMenuItem, SidebarRail, SidebarMenuBadge,
-} from "@workspace/ui/components/sidebar"
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarMenuBadge,
+} from '@workspace/ui/components/sidebar'
 import {
-  LayoutDashboardIcon, InboxIcon, BookOpenIcon, BarChart2Icon,
-  SettingsIcon, CodeIcon, PhoneCallIcon, UsersIcon, CreditCardIcon, ZapIcon, MicIcon, Link2Icon,
+  LayoutDashboardIcon,
+  InboxIcon,
+  BookOpenIcon,
+  BarChart2Icon,
+  SettingsIcon,
+  CodeIcon,
+  PhoneCallIcon,
+  UsersIcon,
+  CreditCardIcon,
+  ZapIcon,
+  MicIcon,
+  Link2Icon,
+  MailIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
 import { OrgSwitcher } from '@/components/org/OrgSwitcher'
@@ -41,37 +57,39 @@ type NavGroup = {
 
 const navGroups: NavGroup[] = [
   {
-    label: "Main",
+    label: 'Main',
     items: [
       { label: 'Dashboard',  href: '/dashboard', icon: LayoutDashboardIcon, exact: true },
       { label: 'Inbox',      href: '/inbox',     icon: InboxIcon, badge: '3' },
+      { label: 'Email Inbox', href: '/email', icon: MailIcon },
       { label: 'Calls',      href: '/calls',     icon: PhoneCallIcon },
-    ]
+    ],
   },
   {
-    label: "Management",
+    label: 'Management',
     items: [
-      { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon },
-      { label: 'Widget',         href: '/widget',    icon: CodeIcon, adminOnly: true },
-      { label: 'Embedding',      href: '/embedding', icon: Link2Icon, adminOnly: true },
-      { label: 'Voice Assistant', href: '/voice-assistant', icon: MicIcon, adminOnly: true },
-      { label: 'Analytics',      href: '/analytics', icon: BarChart2Icon },
-    ]
+      { label: 'Knowledge Base',   href: '/knowledge',      icon: BookOpenIcon },
+      { label: 'Widget',           href: '/widget',         icon: CodeIcon, adminOnly: true },
+      { label: 'Embedding',        href: '/embedding',      icon: Link2Icon, adminOnly: true },
+      { label: 'Voice Assistant',  href: '/voice-assistant',icon: MicIcon, adminOnly: true },
+      { label: 'Email Channel',    href: '/email-settings', icon: MailIcon, adminOnly: true },
+      { label: 'Analytics',        href: '/analytics',      icon: BarChart2Icon },
+    ],
   },
   {
-    label: "Business",
+    label: 'Business',
     items: [
       { label: 'Usage',    href: '/usage',   icon: ZapIcon },
       { label: 'Team',     href: '/team',    icon: UsersIcon,      adminOnly: true },
       { label: 'Billing',  href: '/billing', icon: CreditCardIcon, adminOnly: true },
-    ]
+    ],
   },
   {
-    label: "Account",
+    label: 'Account',
     items: [
-      { label: 'Settings', href: '/settings',           icon: SettingsIcon },
-    ]
-  }
+      { label: 'Settings', href: '/settings', icon: SettingsIcon },
+    ],
+  },
 ]
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -98,7 +116,7 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
 
       <SidebarContent>
         {navGroups.map((group) => {
-          const visibleItems = group.items.filter(item => !item.adminOnly || isAdmin)
+          const visibleItems = group.items.filter((item) => !item.adminOnly || isAdmin)
           if (visibleItems.length === 0) return null
           return (
             <SidebarGroup key={group.label} className="py-2">
@@ -123,7 +141,6 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
                               {item.badge}
                             </SidebarMenuBadge>
                           )}
-                          {/* Show plan badge next to Usage item */}
                           {item.href === '/usage' && (
                             <PlanBadge planId={planId} size="xs" />
                           )}

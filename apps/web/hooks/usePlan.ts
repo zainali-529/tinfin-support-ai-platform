@@ -17,6 +17,7 @@ export type FeatureKey =
   | 'chatWidget'
   | 'aiResponses'
   | 'knowledgeBase'
+  | 'emailChannel'
   | 'widgetCustomization'
   | 'voiceCalls'
   | 'teamMembers'
@@ -47,7 +48,20 @@ export function usePlan() {
    */
   function canUse(feature: FeatureKey): boolean {
     if (!sub?.planDetails) return true
-    return (sub.planDetails.features as Record<string, boolean>)[feature] ?? false
+
+    const features = sub.planDetails.features as Record<string, boolean | undefined>
+    const featureValue = features[feature]
+
+    if (typeof featureValue === 'boolean') {
+      return featureValue
+    }
+
+    // Backward-compatible fallback when API responds with an older planDetails shape.
+    if (feature === 'emailChannel') {
+      return (sub.plan ?? 'free') !== 'free'
+    }
+
+    return false
   }
 
   /**

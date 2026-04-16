@@ -14,6 +14,7 @@ import { vapiWebhookRoute } from './routes/vapi-webhook.route'
 import { voicePreviewRoute } from './routes/voice-preview.route'
 import { stripeWebhookRoute } from './routes/stripe-webhook.route'
 import { uploadRoute } from './routes/upload.route'
+import { emailInboundRoute } from './routes/email-inbound.route'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
@@ -21,15 +22,29 @@ const WS_PORT = Number(process.env.WS_PORT || 3003)
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
 
-// ── Custom CORS routes MUST be registered before global cors middleware ──────
+// ── Custom routes registered BEFORE global express.json ─────────────────────
 
-// File upload — larger JSON limit (base64-encoded files up to ~14MB decode to ~10MB)
-// MUST be registered before global express.json()
+// File upload — larger JSON limit
 app.use('/api/upload', express.json({ limit: '15mb' }), uploadRoute)
 
 app.use('/api/widget-config', widgetConfigRoute)
 
-// ── Global CORS (for dashboard/web app) ───────────────────────────────────────
+// Email inbound webhooks — support both JSON (Postmark) and URL-encoded (Mailgun)
+// Must be registered before global express.json()
+app.use(
+  '/api/email-inbound',
+  (req: Request, res: Response, next: NextFunction) => {
+    const ct = req.headers['content-type'] ?? ''
+    if (ct.includes('application/x-www-form-urlencoded') || ct.includes('multipart/form-data')) {
+      express.urlencoded({ extended: true, limit: '5mb' })(req, res, next)
+    } else {
+      express.json({ limit: '5mb' })(req, res, next)
+    }
+  },
+  emailInboundRoute
+)
+
+// ── Global CORS ───────────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.WEB_URL || 'http://localhost:3000', credentials: true }))
 
 // ── Raw body routes (BEFORE express.json) ─────────────────────────────────────
@@ -41,7 +56,11 @@ app.use(
   (req: Request & { rawBody?: string }, _res: Response, next: NextFunction) => {
     if (Buffer.isBuffer(req.body)) {
       req.rawBody = req.body.toString('utf8')
-      try { req.body = JSON.parse(req.rawBody) as Record<string, unknown> } catch { req.body = {} }
+      try {
+        req.body = JSON.parse(req.rawBody) as Record<string, unknown>
+      } catch {
+        req.body = {}
+      }
     }
     next()
   },
@@ -49,7 +68,11 @@ app.use(
 )
 
 // Stripe webhook — raw body required for signature verification
-app.use('/api/stripe-webhook', express.raw({ type: 'application/json', limit: '2mb' }), stripeWebhookRoute)
+app.use(
+  '/api/stripe-webhook',
+  express.raw({ type: 'application/json', limit: '2mb' }),
+  stripeWebhookRoute
+)
 
 // ── JSON body for everything else ─────────────────────────────────────────────
 app.use(express.json())

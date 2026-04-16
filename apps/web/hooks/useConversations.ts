@@ -1,146 +1,118 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+/**
+ * apps/web/hooks/useConversations.ts
+ *
+ * Real-time conversations list. Subscribes to Supabase realtime for live updates.
+ * FIX: removed conversations.meta and conversations.resolved_at (don't exist in schema)
+ */
+
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useRealtimeTable } from './useRealtime'
-import type { Conversation, Contact, Message } from '@/types/database'
+import type { Conversation } from '@/types/database'
 
-function latestMessageAt(messages?: Message[]) {
-  if (!messages?.length) return 0
-  return messages.reduce((latest, message) => {
-    const ts = new Date(message.created_at).getTime()
-    return ts > latest ? ts : latest
-  }, 0)
-}
-
-function sortConversations(items: Conversation[]) {
-  return [...items].sort((a, b) => {
-    const aTs = Math.max(new Date(a.started_at).getTime(), latestMessageAt(a.messages))
-    const bTs = Math.max(new Date(b.started_at).getTime(), latestMessageAt(b.messages))
-    return bTs - aTs
-  })
-}
+// ─── Minimal safe query (only columns that exist in the schema) ────────────────
+const CONVERSATIONS_QUERY = `
+  id,
+  org_id,
+  contact_id,
+  status,
+  channel,
+  assigned_to,
+  started_at,
+  contacts (
+    id,
+    name,
+    email,
+    phone
+  ),
+  messages (
+    id,
+    role,
+    content,
+    created_at
+  )
+`
 
 export function useConversations(orgId: string) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
 
-  const fetchConversationById = useCallback(async (conversationId: string): Promise<Conversation | null> => {
-    if (!orgId) return null
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('conversations')
-      .select('*, contacts(*), messages(id, role, content, created_at, ai_metadata)')
-      .eq('org_id', orgId)
-      .eq('id', conversationId)
-      .maybeSingle()
-    return (data as Conversation | null) ?? null
-  }, [orgId])
-
-  const upsertConversation = useCallback((conversation: Conversation) => {
-    setConversations(prev => {
-      const idx = prev.findIndex(c => c.id === conversation.id)
-      if (idx === -1) return sortConversations([conversation, ...prev])
-      const next = [...prev]
-      next[idx] = { ...prev[idx], ...conversation }
-      return sortConversations(next)
-    })
-  }, [])
-
-  const fetch = useCallback(async () => {
+  const fetchConversations = useCallback(async () => {
     if (!orgId) return
-    setLoading(true)
+
     const supabase = createClient()
-    // Include ALL statuses — resolved shown as disabled, not hidden
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('conversations')
-      .select('*, contacts(*), messages(id, role, content, created_at, ai_metadata)')
+      .select(CONVERSATIONS_QUERY)
       .eq('org_id', orgId)
       .order('started_at', { ascending: false })
-      .limit(150)
-    setConversations(sortConversations((data as Conversation[]) ?? []))
-    setLoading(false)
-  }, [orgId])
+      .limit(200)
 
-  useEffect(() => { fetch() }, [fetch])
-
-  useRealtimeTable<Conversation>('conversations', orgId, '*', useCallback((payload) => {
-    if (payload.eventType === 'DELETE') {
-      setConversations(prev => prev.filter(c => c.id !== (payload.old as Conversation).id))
+    if (error) {
+      console.error('[useConversations] fetch error:', error.message)
       return
     }
 
-    void (async () => {
-      const hydrated = await fetchConversationById(payload.new.id)
-      if (hydrated) {
-        upsertConversation(hydrated)
-        return
-      }
+    setConversations((data as unknown as Conversation[]) ?? [])
+    setLoading(false)
+  }, [orgId])
 
-      // Fallback when hydration fails: still merge base row to avoid missing updates.
-      setConversations(prev => {
-        const idx = prev.findIndex(c => c.id === payload.new.id)
-        if (idx === -1) return sortConversations([payload.new as Conversation, ...prev])
-        const next = [...prev]
-        next[idx] = { ...prev[idx], ...payload.new }
-        return sortConversations(next)
-      })
-    })()
-  }, [fetchConversationById, upsertConversation]))
+  // Initial fetch
+  useEffect(() => {
+    setLoading(true)
+    void fetchConversations()
+  }, [fetchConversations])
 
-  useRealtimeTable<Message>('messages', orgId, 'INSERT', useCallback((payload) => {
-    let missingConversation = false
-    const nextMessage = payload.new
+  // Realtime subscription
+  useEffect(() => {
+    if (!orgId) return
 
-    setConversations(prev => {
-      const idx = prev.findIndex(c => c.id === nextMessage.conversation_id)
-      if (idx === -1) {
-        missingConversation = true
-        return prev
-      }
+    const supabase = createClient()
 
-      const current = prev[idx]
-      if (!current) return prev
-      const currentMessages = current.messages ?? []
-      if (currentMessages.some(m => m.id === nextMessage.id)) return prev
-
-      const next = [...prev]
-      const updatedConversation: Conversation = {
-        ...current,
-        messages: [...currentMessages, nextMessage],
-      }
-      next[idx] = updatedConversation
-      return sortConversations(next)
-    })
-
-    if (missingConversation) {
-      void (async () => {
-        const hydrated = await fetchConversationById(nextMessage.conversation_id)
-        if (hydrated) upsertConversation(hydrated)
-      })()
+    if (channelRef.current) {
+      void supabase.removeChannel(channelRef.current)
     }
-  }, [fetchConversationById, upsertConversation]))
 
-  useRealtimeTable<Contact>('contacts', orgId, '*', useCallback((payload) => {
-    if (payload.eventType === 'DELETE') return
-    const nextContact = payload.new
-
-    setConversations(prev => {
-      let changed = false
-      const next = prev.map(conversation => {
-        if (conversation.contact_id !== nextContact.id) return conversation
-        changed = true
-        return {
-          ...conversation,
-          contacts: {
-            ...(conversation.contacts ?? {} as Contact),
-            ...nextContact,
-          },
+    const channel = supabase
+      .channel(`conversations:${orgId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `org_id=eq.${orgId}`,
+        },
+        () => {
+          void fetchConversations()
         }
-      })
-      return changed ? next : prev
-    })
-  }, []))
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        () => {
+          // Debounce: only refetch once if multiple messages arrive quickly
+          void fetchConversations()
+        }
+      )
+      .subscribe()
 
-  return { conversations, loading, refetch: fetch }
+    channelRef.current = channel
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [orgId, fetchConversations])
+
+  return {
+    conversations,
+    loading,
+    refetch: fetchConversations,
+  }
 }
