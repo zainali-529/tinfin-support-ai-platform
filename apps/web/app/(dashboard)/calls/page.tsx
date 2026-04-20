@@ -16,8 +16,14 @@ import {
   AlertCircleIcon,
   CheckCircleIcon,
 } from 'lucide-react'
-import { formatCallDuration } from '@workspace/ai'
 import Link from 'next/link'
+
+function formatCallDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return '0:00'
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 // ─── Stats Card ───────────────────────────────────────────────────────────────
 

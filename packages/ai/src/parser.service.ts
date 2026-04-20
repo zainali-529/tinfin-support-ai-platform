@@ -1,5 +1,38 @@
-const pdfParse = require('pdf-parse')
+import {
+  DOMMatrix,
+  DOMPoint,
+  DOMRect,
+  ImageData,
+  Path2D,
+} from '@napi-rs/canvas'
 import mammoth from 'mammoth'
+
+const globalAny = globalThis as typeof globalThis & {
+  DOMMatrix?: typeof DOMMatrix
+  DOMPoint?: typeof DOMPoint
+  DOMRect?: typeof DOMRect
+  ImageData?: typeof ImageData
+  Path2D?: typeof Path2D
+}
+
+// pdfjs-dist (used by pdf-parse) expects DOM classes to exist in Node.
+if (!globalAny.DOMMatrix) {
+  globalAny.DOMMatrix = DOMMatrix
+}
+if (!globalAny.DOMPoint) {
+  globalAny.DOMPoint = DOMPoint
+}
+if (!globalAny.DOMRect) {
+  globalAny.DOMRect = DOMRect
+}
+if (ImageData && !globalAny.ImageData) {
+  globalAny.ImageData = ImageData
+}
+if (Path2D && !globalAny.Path2D) {
+  globalAny.Path2D = Path2D
+}
+
+const pdfParse = require('pdf-parse')
 
 export interface ParseResult {
   content: string
