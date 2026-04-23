@@ -3,11 +3,12 @@
  *
  * Vapi webhook handler for call lifecycle events.
  *
- * Key behaviors:
- * - Accepts x-vapi-secret as plain text serverUrlSecret.
- * - Preserves previously stored call fields when partial events arrive.
- * - Forces ended status on end-of-call-report and derives duration safely.
- * - Links calls to contacts and conversations using metadata + fallback matching.
+ * FIXES:
+ * - ended_at: When status is 'ended' but call.endedAt and message.timestamp are
+ *   both absent, fall back to new Date().toISOString() so ended_at is never null
+ *   on a finished call.
+ * - duration_seconds: Computed AFTER ended_at is fully resolved (including the
+ *   new fallback), so it is never null when we have a startedAt value.
  */
 
 import { Router, type Request, type Response } from 'express'
@@ -202,26 +203,45 @@ async function upsertCall(
     status = 'ended'
   }
 
+  // Don't regress an already-ended call back to an active status
   if (normalizeStatus(existing?.status) === 'ended' && ACTIVE_STATUSES.has(status)) {
     status = 'ended'
   }
 
+  // Set startedAt from event timestamp when call goes in-progress
   if (!startedAt && status === 'in-progress' && eventTimestamp) {
     startedAt = eventTimestamp
   }
-  if (!endedAt && status === 'ended' && eventTimestamp) {
-    endedAt = eventTimestamp
+
+  // ── FIX: ended_at null ────────────────────────────────────────────────────
+  // Priority: call.endedAt → existing.ended_at (already in endedAt) →
+  //           message.timestamp → current time (ultimate fallback)
+  // We must NOT leave ended_at null for a finished call; billing/analytics
+  // depend on it and duration_seconds cannot be computed without it.
+  if (!endedAt && status === 'ended') {
+    endedAt = eventTimestamp ?? new Date().toISOString()
   }
+
+  // Ensure startedAt is populated even for ended calls with no in-progress event
   if (!startedAt && status === 'ended') {
     startedAt = firstString(existing?.started_at, existing?.created_at)
   }
 
+  // ── FIX: duration_seconds null ────────────────────────────────────────────
+  // Compute duration AFTER ended_at has been fully resolved above.
+  // 1. Try direct computation from startedAt / endedAt
+  // 2. Fall back to any numeric value Vapi sent in the payload
+  // 3. Last resort: use existing DB value (preserves data from previous events)
   let durationSeconds = computeDurationSeconds(startedAt, endedAt)
+
   if (durationSeconds === null) {
     durationSeconds = firstNumber(call.durationSeconds, call.duration, existing?.duration_seconds)
   }
+
+  // One more attempt: if we have existing started_at + the now-resolved endedAt
   if (status === 'ended' && durationSeconds === null) {
-    durationSeconds = computeDurationSeconds(existing?.started_at ?? null, endedAt)
+    const effectiveStartedAt = startedAt ?? existing?.started_at ?? null
+    durationSeconds = computeDurationSeconds(effectiveStartedAt, endedAt)
   }
 
   const metadataFromCall = extractCallMetadata(call)
@@ -459,14 +479,11 @@ vapiWebhookRoute.post(
     const rawBody: string = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(req.body)
 
     // ── Signature verification ──────────────────────────────────────────────
-    // IMPORTANT: Vapi sends serverUrlSecret as a PLAIN TEXT string in the
-    // x-vapi-secret header — it is NOT HMAC. Simple string comparison only.
     const webhookSecret = process.env.VAPI_WEBHOOK_SECRET
     const signature = req.headers['x-vapi-secret'] as string | undefined
 
     if (webhookSecret) {
       if (!signature) {
-        // No header — allow in dev (ngrok), reject in production
         if (process.env.NODE_ENV === 'production') {
           console.warn('[vapi-webhook] Missing x-vapi-secret header — rejecting')
           return res.status(401).json({ error: 'Missing signature' })
