@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { WidgetConfig } from './types'
+import type { WidgetConfig, WidgetSuggestion } from './types'
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
 
@@ -24,6 +24,10 @@ export type ResolvedConfig = {
   autoOpenDelay: number
   showTypingIndicator: boolean
   offlineMessage: string | null
+  // Quick replies
+  suggestions: WidgetSuggestion[]
+  talkToHumanLabel: string
+  talkToHumanMessage: string
   // ── Voice / Vapi ────────────────────────────────────────────────────────
   vapiPublicKey: string | null
   vapiAssistantId: string | null
@@ -50,6 +54,9 @@ const DEFAULTS: Omit<ResolvedConfig, 'orgId'> = {
   autoOpenDelay: 5,
   showTypingIndicator: true,
   offlineMessage: null,
+  suggestions: [],
+  talkToHumanLabel: 'Talk to Human',
+  talkToHumanMessage: 'I want to talk to a human agent.',
   // Voice defaults
   vapiPublicKey: null,
   vapiAssistantId: null,

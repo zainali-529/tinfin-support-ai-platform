@@ -160,7 +160,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
 
   const {
     messages, conversations, activeConversation, activeConversationId,
-    typing, connected, agentActive, visitorInfo,
+    typing, connected, agentActive, visitorId, visitorInfo,
     sendMessage, uploadFile, sendTyping, startNewChat, openConversation, refreshInbox, initWithVisitorInfo,
   } = useChat(config.orgId)
 
@@ -170,6 +170,8 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
         publicKey: config.vapiPublicKey,
         assistantId: config.vapiAssistantId,
         orgId: config.orgId,
+        visitorId,
+        conversationId: activeConversationId ?? undefined,
         visitorName: visitorInfo?.name,
         visitorEmail: visitorInfo?.email,
       }
@@ -196,6 +198,20 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const botName = config.botName || 'AI Assistant'
   const inputPlaceholder = config.inputPlaceholder || 'Type a message…'
   const responseTimeText = config.responseTimeText || 'AI · We reply instantly'
+  const talkToHumanLabel = config.talkToHumanLabel || 'Talk to Human'
+  const talkToHumanMessage = typeof config.talkToHumanMessage === 'string'
+    ? config.talkToHumanMessage.trim()
+    : ''
+  const talkToHumanPayload = talkToHumanMessage || talkToHumanLabel
+  const quickSuggestions = (Array.isArray(config.suggestions) ? config.suggestions : [])
+    .map((item) => {
+      const label = typeof item?.label === 'string' ? item.label.trim() : ''
+      const message = typeof item?.message === 'string' ? item.message.trim() : ''
+      if (!label || !message) return null
+      return { label, message }
+    })
+    .filter((item): item is { label: string; message: string } => Boolean(item))
+    .slice(0, 6)
 
   const isLeft = config.position === 'bottom-left' || config.position === 'top-left'
   const isTop = config.position === 'top-left' || config.position === 'top-right'
@@ -350,6 +366,16 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setTab('chat')
   }, [activeConversation?.status, activeConversationId, input, pendingFiles, sendMessage])
 
+  const handleQuickReply = useCallback((message: string) => {
+    const text = message.trim()
+    if (!text || !activeConversationId) return
+    if (activeConversation?.status === 'resolved' || activeConversation?.status === 'closed') return
+    setInput('')
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    sendMessage(text)
+    setTab('chat')
+  }, [activeConversation?.status, activeConversationId, sendMessage])
+
   const handleStartChat = useCallback(() => {
     startNewChat()
     setTab('chat')
@@ -395,6 +421,11 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const isUploading = pendingFiles.some(pf => pf.uploading)
   const hasReadyFiles = pendingFiles.some(pf => pf.uploaded && !pf.error)
   const canSend = (input.trim().length > 0 || hasReadyFiles) && !isUploading && !!activeConversationId && !isResolvedConversation && connected
+  const hasUserMessage = messages.some(msg => msg.role === 'user')
+  const hasAssistantMessage = messages.some(msg => msg.role === 'assistant')
+  const showQuickSuggestions = !!activeConversationId && hasAssistantMessage && !hasUserMessage && quickSuggestions.length > 0 && !isResolvedConversation
+  const showTalkToHuman = !!activeConversationId && talkToHumanPayload.length > 0 && !isResolvedConversation
+  const canSendQuickReply = connected && !!activeConversationId && !isResolvedConversation && !isUploading
 
   const voiceEnabled = !!(config.voiceEnabled && config.vapiPublicKey && config.vapiAssistantId)
 
@@ -682,6 +713,20 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                 {/* Input area */}
                 {!isResolvedConversation && (
                   <div className="input-area">
+                    {showQuickSuggestions && (
+                      <div className="quick-suggestions">
+                        {quickSuggestions.map((item, idx) => (
+                          <button
+                            key={`${item.label}-${idx}`}
+                            className="quick-suggestion-btn"
+                            onClick={() => handleQuickReply(item.message)}
+                            disabled={!canSendQuickReply}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="input-row">
                       <button
                         className="input-attach-btn"
@@ -718,6 +763,15 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                         {isUploading ? <span className="send-spinner" /> : <SendIcon />}
                       </button>
                     </div>
+                    {showTalkToHuman && (
+                      <button
+                        className="talk-human-btn"
+                        onClick={() => handleQuickReply(talkToHumanPayload)}
+                        disabled={!canSendQuickReply}
+                      >
+                        {talkToHumanLabel}
+                      </button>
+                    )}
                   </div>
                 )}
               </>

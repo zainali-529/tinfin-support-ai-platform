@@ -40,11 +40,37 @@ const DEFAULT_CONFIG = {
   autoOpenDelay: 5,
   showTypingIndicator: true,
   offlineMessage: null,
+  // Quick replies
+  suggestions: [] as Array<{ label: string; message: string }>,
+  talkToHumanLabel: 'Talk to Human',
+  talkToHumanMessage: 'I want to talk to a human agent.',
   // Voice defaults — disabled until configured
   vapiPublicKey: null,
   vapiAssistantId: null,
   voiceEnabled: false,
   callButtonLabel: 'Talk to AI',
+}
+
+function parseSuggestions(value: unknown): Array<{ label: string; message: string }> {
+  if (!Array.isArray(value)) return []
+  const cleaned = value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const label = typeof (item as { label?: unknown }).label === 'string'
+        ? (item as { label: string }).label.trim()
+        : ''
+      const message = typeof (item as { message?: unknown }).message === 'string'
+        ? (item as { message: string }).message.trim()
+        : ''
+      if (!label || !message) return null
+      return {
+        label: label.slice(0, 40),
+        message: message.slice(0, 240),
+      }
+    })
+    .filter((item): item is { label: string; message: string } => Boolean(item))
+
+  return cleaned.slice(0, 6)
 }
 
 widgetConfigRoute.get('/:orgId', async (req: Request, res: Response) => {
@@ -115,6 +141,13 @@ widgetConfigRoute.get('/:orgId', async (req: Request, res: Response) => {
       autoOpenDelay:      typeof s.autoOpenDelay === 'number' ? s.autoOpenDelay : DEFAULT_CONFIG.autoOpenDelay,
       showTypingIndicator: typeof s.showTypingIndicator === 'boolean' ? s.showTypingIndicator : DEFAULT_CONFIG.showTypingIndicator,
       offlineMessage:     typeof s.offlineMessage === 'string' && s.offlineMessage ? s.offlineMessage : null,
+      suggestions:        parseSuggestions(s.suggestions),
+      talkToHumanLabel:   typeof s.talkToHumanLabel === 'string' && s.talkToHumanLabel.trim()
+        ? s.talkToHumanLabel.trim()
+        : DEFAULT_CONFIG.talkToHumanLabel,
+      talkToHumanMessage: typeof s.talkToHumanMessage === 'string' && s.talkToHumanMessage.trim()
+        ? s.talkToHumanMessage.trim()
+        : DEFAULT_CONFIG.talkToHumanMessage,
       // Voice — public key is safe to expose (read-only)
       vapiPublicKey:    voiceEnabled ? (process.env.VAPI_PUBLIC_KEY ?? null) : null,
       vapiAssistantId:  voiceEnabled ? (vapiData?.vapi_assistant_id ?? null) : null,

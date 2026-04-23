@@ -73,6 +73,14 @@ export const orgRouter = router({
         autoOpenDelay: z.number().min(0).max(60).optional(),
         showTypingIndicator: z.boolean().optional(),
         offlineMessage: z.string().max(200).optional(),
+        suggestions: z.array(
+          z.object({
+            label: z.string().min(1).max(40),
+            message: z.string().min(1).max(240),
+          })
+        ).max(6).optional(),
+        talkToHumanLabel: z.string().max(40).optional(),
+        talkToHumanMessage: z.string().max(240).optional(),
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {

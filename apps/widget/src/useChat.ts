@@ -103,6 +103,7 @@ export function useChat(orgId: string) {
   const [typing, setTyping] = useState(false)
   const [connected, setConnected] = useState(false)
   const [agentActive, setAgentActive] = useState(false)
+  const [visitorId, setVisitorId] = useState<string>(stored.current.visitorId)
   const [visitorInfo, setVisitorInfo] = useState<VisitorInfo | null>(stored.current.visitorInfo)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -258,7 +259,11 @@ export function useChat(orgId: string) {
 
           switch (msg.type) {
             case 'connected':
-              visitorIdRef.current = msg.visitorId as string
+              if (typeof msg.visitorId === 'string' && msg.visitorId.length > 0) {
+                visitorIdRef.current = msg.visitorId
+                setVisitorId(msg.visitorId)
+                persist()
+              }
               break
 
             case 'conversations:list': {
@@ -550,6 +555,7 @@ export function useChat(orgId: string) {
     typing,
     connected,
     agentActive,
+    visitorId,
     visitorInfo,
     sendMessage,
     uploadFile,

@@ -11,6 +11,7 @@ import { billingRouter } from '../routers/billing.router'
 import { usageRouter } from '../routers/usage.router'
 import { analyticsRouter } from '../routers/analytics.router'
 import { emailRouter } from '../routers/email.router'
+import { contactsRouter } from '../routers/contacts.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -25,6 +26,7 @@ export const appRouter = router({
   usage: usageRouter,
   analytics: analyticsRouter,
   email: emailRouter,
+  contacts: contactsRouter,
 })
 
 export type AppRouter = typeof appRouter;

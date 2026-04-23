@@ -30,6 +30,11 @@ export interface WidgetConversation {
   lastMessageAt: string
 }
 
+export interface WidgetSuggestion {
+  label: string
+  message: string
+}
+
 export interface WidgetConfig {
   orgId: string
   // Basic — direct DB columns
@@ -52,6 +57,10 @@ export interface WidgetConfig {
   autoOpenDelay?: number
   showTypingIndicator?: boolean
   offlineMessage?: string | null
+  // Quick replies
+  suggestions?: WidgetSuggestion[]
+  talkToHumanLabel?: string
+  talkToHumanMessage?: string
   // ── Voice / Vapi ────────────────────────────────────────────────────────────
   vapiPublicKey?: string | null
   vapiAssistantId?: string | null

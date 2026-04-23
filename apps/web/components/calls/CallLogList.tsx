@@ -1,19 +1,24 @@
 'use client'
 
+/**
+ * apps/web/components/calls/CallLogList.tsx  (FIXED)
+ *
+ * Fix: Contact display now shows name → email → phone → caller_number
+ *      instead of always falling back to "Unknown Caller".
+ *      Also: duration, cost, and all fields fully populated.
+ */
+
 import { formatDistanceToNow, format } from 'date-fns'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
-import { Badge } from '@workspace/ui/components/badge'
-import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Button } from '@workspace/ui/components/button'
-import { Separator } from '@workspace/ui/components/separator'
+import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   PhoneIcon,
   PhoneCallIcon,
   PhoneOffIcon,
   PhoneIncomingIcon,
-  PhoneMissedIcon,
   ClockIcon,
   MicIcon,
   PlayCircleIcon,
@@ -23,6 +28,7 @@ import {
 } from 'lucide-react'
 import { Input } from '@workspace/ui/components/input'
 import { useState } from 'react'
+import { trpc } from '@/lib/trpc'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +56,7 @@ interface CallRecord {
   started_at: string | null
   ended_at: string | null
   created_at: string
+  metadata?: Record<string, unknown> | null
   contacts?: Contact | null
 }
 
@@ -65,34 +72,71 @@ interface Props {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  'in-progress': { label: 'Live',     color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', dot: 'bg-emerald-400' },
-  'queued':      { label: 'Queued',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',             dot: 'bg-blue-400' },
-  'ringing':     { label: 'Ringing',  color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',         dot: 'bg-amber-400' },
-  'ended':       { label: 'Ended',    color: 'bg-muted text-muted-foreground',                                                dot: 'bg-muted-foreground' },
-  'created':     { label: 'Created',  color: 'bg-muted text-muted-foreground',                                                dot: 'bg-muted-foreground' },
-  'error':       { label: 'Failed',   color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',                 dot: 'bg-red-400' },
+  'in-progress': { label: 'Live',    color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', dot: 'bg-emerald-400' },
+  'queued':      { label: 'Queued',  color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',             dot: 'bg-blue-400' },
+  'ringing':     { label: 'Ringing', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',         dot: 'bg-amber-400' },
+  'ended':       { label: 'Ended',   color: 'bg-muted text-muted-foreground',                                                dot: 'bg-muted-foreground' },
+  'created':     { label: 'Created', color: 'bg-muted text-muted-foreground',                                                dot: 'bg-muted-foreground' },
+  'error':       { label: 'Failed',  color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',                 dot: 'bg-red-400' },
 }
 
 function getStatusCfg(status: string) {
   return STATUS_CONFIG[status] ?? STATUS_CONFIG['ended']!
 }
 
-function getContactLabel(call: CallRecord) {
+function getMetaString(call: CallRecord, keys: string[]): string | null {
+  const metadata = call.metadata
+  if (!metadata || typeof metadata !== 'object') return null
+  for (const key of keys) {
+    const value = metadata[key]
+    if (typeof value === 'string') {
+      const next = value.trim()
+      if (next.length > 0) return next
+    }
+  }
+  return null
+}
+
+/**
+ * Priority: contacts.name → contacts.email → contacts.phone → caller_number → 'Unknown Caller'
+ */
+function getContactLabel(call: CallRecord): string {
   if (call.contacts?.name) return call.contacts.name
   if (call.contacts?.email) return call.contacts.email
+  if (call.contacts?.phone) return call.contacts.phone
+  const metadataName = getMetaString(call, ['visitorName', 'customerName', 'name'])
+  if (metadataName) return metadataName
+  const metadataEmail = getMetaString(call, ['visitorEmail', 'customerEmail', 'email'])
+  if (metadataEmail) return metadataEmail
   if (call.caller_number) return call.caller_number
   return 'Unknown Caller'
 }
 
-function getContactInitials(call: CallRecord) {
+function getContactInitials(call: CallRecord): string {
   const label = getContactLabel(call)
+  if (label === 'Unknown Caller') return '?'
   return label.slice(0, 2).toUpperCase()
 }
 
-function formatCost(cents: string | null) {
+function getContactSubtext(call: CallRecord): string | null {
+  if (call.contacts?.name) {
+    // Name is showing — also show email or phone as subtext
+    if (call.contacts.email) return call.contacts.email
+    if (call.contacts.phone) return call.contacts.phone
+    if (call.caller_number) return call.caller_number
+  }
+  const metadataName = getMetaString(call, ['visitorName', 'customerName', 'name'])
+  if (metadataName) {
+    return getMetaString(call, ['visitorEmail', 'customerEmail', 'email'])
+      ?? getMetaString(call, ['visitorId', 'visitor_id'])
+  }
+  return null
+}
+
+function formatCost(cents: string | null): string | null {
   if (!cents) return null
   const n = parseInt(cents, 10)
-  if (isNaN(n)) return null
+  if (isNaN(n) || n === 0) return null
   return `$${(n / 100).toFixed(3)}`
 }
 
@@ -102,7 +146,7 @@ function getCallTypeIcon(type: string, direction: string) {
   return <PhoneCallIcon className="size-3.5 text-primary" />
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Call Log List ────────────────────────────────────────────────────────────
 
 export function CallLogList({ calls, loading, selectedId, onSelect, onSync, syncing }: Props) {
   const [search, setSearch] = useState('')
@@ -113,8 +157,9 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
     const label = getContactLabel(call).toLowerCase()
     return (
       label.includes(q) ||
-      call.caller_number?.includes(q) ||
-      call.status.includes(q)
+      (call.caller_number ?? '').includes(q) ||
+      call.status.includes(q) ||
+      (call.contacts?.email ?? '').toLowerCase().includes(q)
     )
   })
 
@@ -146,7 +191,7 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
         <div className="relative">
           <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
-            placeholder="Search by caller or status..."
+            placeholder="Search by name, email, number..."
             className="h-8 border-0 bg-muted/50 pl-8 text-xs shadow-none focus-visible:ring-0"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -187,8 +232,10 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
               const cfg = getStatusCfg(call.status)
               const isSelected = call.id === selectedId
               const label = getContactLabel(call)
+              const subtext = getContactSubtext(call)
               const initials = getContactInitials(call)
               const cost = formatCost(call.cost_cents)
+              const isUnknown = label === 'Unknown Caller'
 
               return (
                 <button
@@ -205,7 +252,9 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
                     <Avatar className="size-9">
                       <AvatarFallback className={cn(
                         'text-xs font-semibold',
-                        isSelected ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                        isSelected ? 'bg-primary/15 text-primary' :
+                        isUnknown ? 'bg-muted text-muted-foreground/50' :
+                        'bg-muted text-muted-foreground'
                       )}>
                         {initials}
                       </AvatarFallback>
@@ -221,7 +270,9 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
                     <div className="mb-0.5 flex items-center justify-between gap-2">
                       <span className={cn(
                         'truncate text-xs font-semibold',
-                        isSelected ? 'text-primary' : 'text-foreground'
+                        isSelected ? 'text-primary' :
+                        isUnknown ? 'text-muted-foreground italic' :
+                        'text-foreground'
                       )}>
                         {label}
                       </span>
@@ -229,6 +280,13 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
                         {formatDistanceToNow(new Date(call.created_at), { addSuffix: false })}
                       </span>
                     </div>
+
+                    {/* Subtext: email or phone if name is shown */}
+                    {subtext && (
+                      <p className="mb-0.5 truncate text-[10px] text-muted-foreground/70 font-mono">
+                        {subtext}
+                      </p>
+                    )}
 
                     {/* Summary or reason */}
                     <p className="mb-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
@@ -297,7 +355,10 @@ interface CallDetailProps {
 }
 
 export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
-  const { data: call, isLoading } = trpc_useCallDetail(callId ?? '')
+  const { data: call, isLoading } = trpc.vapi.getCall.useQuery(
+    { id: callId ?? '' },
+    { enabled: !!callId }
+  )
 
   if (!callId) {
     return (
@@ -328,7 +389,21 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
 
   if (!call) return null
 
-  const label = call.contacts?.name || call.contacts?.email || call.caller_number || 'Unknown Caller'
+  // Contact display — same priority as list
+  const contactName = (call.contacts as Contact | null)?.name
+  const contactEmail = (call.contacts as Contact | null)?.email
+  const contactPhone = (call.contacts as Contact | null)?.phone
+
+  const metadataName = getMetaString(call as CallRecord, ['visitorName', 'customerName', 'name'])
+  const metadataEmail = getMetaString(call as CallRecord, ['visitorEmail', 'customerEmail', 'email'])
+
+  const label = contactName
+    ?? contactEmail
+    ?? contactPhone
+    ?? metadataName
+    ?? metadataEmail
+    ?? (call.caller_number as string | null)
+    ?? 'Unknown Caller'
   const cost = formatCost(call.cost_cents as string | null)
   const cfg = getStatusCfg(call.status)
 
@@ -338,7 +413,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
       <div className="flex items-start gap-4 border-b bg-card/50 px-6 py-4 shrink-0">
         <Avatar className="size-12">
           <AvatarFallback className="text-sm font-bold bg-primary/10 text-primary">
-            {label.slice(0, 2).toUpperCase()}
+            {label === 'Unknown Caller' ? '?' : label.slice(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
@@ -351,24 +426,40 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
               {cfg.label}
             </span>
           </div>
+          {/* Contact details row */}
           <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
-            {call.started_at && (
+            {(contactEmail || metadataEmail) && (contactName || metadataName) && (
+              <span className="font-mono">{contactEmail ?? metadataEmail}</span>
+            )}
+            {contactPhone && (
               <span className="flex items-center gap-1">
                 <PhoneIcon className="size-3" />
-                {format(new Date(call.started_at), 'MMM d, h:mm a')}
+                {contactPhone}
+              </span>
+            )}
+            {call.caller_number && !contactPhone && (
+              <span className="flex items-center gap-1">
+                <PhoneIcon className="size-3" />
+                {call.caller_number as string}
+              </span>
+            )}
+            {call.started_at && (
+              <span className="flex items-center gap-1">
+                <ClockIcon className="size-3" />
+                {format(new Date(call.started_at as string), 'MMM d, h:mm a')}
               </span>
             )}
             {call.duration_seconds ? (
               <span className="flex items-center gap-1">
                 <ClockIcon className="size-3" />
-                {call.durationFormatted}
+                {call.durationFormatted as string}
               </span>
             ) : null}
             <span className="capitalize flex items-center gap-1">
-              {getCallTypeIcon(call.type, call.direction)}
+              {getCallTypeIcon(call.type as string, call.direction as string)}
               {call.type === 'webCall' ? 'Web Call' : `${call.direction} Phone`}
             </span>
-            {cost && <span>{cost}</span>}
+            {cost && <span className="font-mono">{cost}</span>}
           </div>
         </div>
       </div>
@@ -382,7 +473,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 AI Summary
               </p>
-              <p className="text-sm leading-relaxed">{call.summary}</p>
+              <p className="text-sm leading-relaxed">{call.summary as string}</p>
             </div>
           )}
 
@@ -394,7 +485,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
               </p>
               <audio
                 controls
-                src={call.recording_url}
+                src={call.recording_url as string}
                 className="w-full h-8"
                 style={{ outline: 'none' }}
               />
@@ -408,7 +499,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
                 Transcript
               </p>
               <div className="space-y-2 max-h-80 overflow-y-auto text-sm leading-relaxed">
-                {call.transcript.split('\n').map((line: string, i: number) => {
+                {(call.transcript as string).split('\n').map((line: string, i: number) => {
                   const isUser = line.startsWith('User:') || line.startsWith('user:')
                   const isBot = line.startsWith('AI') || line.startsWith('Assistant')
                   return (
@@ -434,20 +525,23 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
             </p>
             <div className="space-y-2">
               {[
-                { label: 'Vapi Call ID', value: call.vapi_call_id },
-                { label: 'Status', value: call.status },
-                { label: 'Type', value: call.type },
-                { label: 'Direction', value: call.direction },
-                { label: 'Ended Reason', value: call.ended_reason },
-                { label: 'Caller Number', value: call.caller_number },
-                { label: 'Duration', value: call.durationFormatted },
-                { label: 'Cost', value: cost },
-                { label: 'Started', value: call.started_at ? format(new Date(call.started_at), 'PPpp') : null },
-                { label: 'Ended', value: call.ended_at ? format(new Date(call.ended_at), 'PPpp') : null },
+                { label: 'Contact Name',   value: contactName },
+                { label: 'Contact Email',  value: contactEmail },
+                { label: 'Contact Phone',  value: contactPhone },
+                { label: 'Caller Number',  value: call.caller_number },
+                { label: 'Vapi Call ID',   value: call.vapi_call_id },
+                { label: 'Status',         value: call.status },
+                { label: 'Type',           value: call.type },
+                { label: 'Direction',      value: call.direction },
+                { label: 'Ended Reason',   value: call.ended_reason },
+                { label: 'Duration',       value: call.durationFormatted },
+                { label: 'Cost',           value: cost },
+                { label: 'Started',        value: call.started_at ? format(new Date(call.started_at as string), 'PPpp') : null },
+                { label: 'Ended',          value: call.ended_at ? format(new Date(call.ended_at as string), 'PPpp') : null },
               ].filter(r => r.value).map(row => (
                 <div key={row.label} className="flex items-start justify-between gap-4 text-xs">
                   <span className="text-muted-foreground shrink-0">{row.label}</span>
-                  <span className="text-foreground font-mono text-right break-all">{row.value}</span>
+                  <span className="text-foreground font-mono text-right break-all">{row.value as string}</span>
                 </div>
               ))}
             </div>
@@ -456,11 +550,4 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
       </ScrollArea>
     </div>
   )
-}
-
-// Hook import at module level to avoid React rules violation
-import { trpc } from '@/lib/trpc'
-
-function trpc_useCallDetail(id: string) {
-  return trpc.vapi.getCall.useQuery({ id }, { enabled: !!id })
 }

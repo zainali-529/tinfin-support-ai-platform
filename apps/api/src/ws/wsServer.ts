@@ -45,6 +45,8 @@ interface VisitorConversationSummary {
 // orgId → all sockets in that org
 const rooms = new Map<string, Set<TinfinSocket>>()
 
+const DEFAULT_WELCOME_MESSAGE = 'Hi 👋 How can we help?'
+
 // ── Utils ──────────────────────────────────────────────────────────────────────
 
 function getSupabase(): SupabaseClient {
@@ -77,6 +79,46 @@ function broadcastToAgents(orgId: string, data: unknown) {
     if (s.isAgent && s.readyState === WebSocket.OPEN) {
       s.send(JSON.stringify(data))
     }
+  })
+}
+
+async function getWelcomeMessage(orgId: string): Promise<string> {
+  try {
+    const { data } = await getSupabase()
+      .from('widget_configs')
+      .select('welcome_message')
+      .eq('org_id', orgId)
+      .maybeSingle()
+
+    const message = (data?.welcome_message as string | null | undefined)?.trim()
+    return message && message.length > 0 ? message : DEFAULT_WELCOME_MESSAGE
+  } catch (e) {
+    console.error('[ws] getWelcomeMessage:', e)
+    return DEFAULT_WELCOME_MESSAGE
+  }
+}
+
+async function sendWelcomeMessage(params: {
+  socket: TinfinSocket
+  conversationId: string
+  orgId: string
+}) {
+  const message = await getWelcomeMessage(params.orgId)
+  if (!message) return
+
+  send(params.socket, {
+    type: 'ai:response',
+    content: message,
+    conversationId: params.conversationId,
+    createdAt: new Date().toISOString(),
+  })
+
+  await persistMessage({
+    conversationId: params.conversationId,
+    orgId: params.orgId,
+    role: 'assistant',
+    content: message,
+    aiMetadata: { system: true, event: 'welcome' },
   })
 }
 
@@ -705,6 +747,7 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
     const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
     socket.conversationId = result.conversationId
     send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
+    await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
     return
   }
 
@@ -713,6 +756,7 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
     const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
     socket.conversationId = result.conversationId
     send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
+    await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
     return
   }
 
@@ -752,6 +796,9 @@ async function handleNewChat(socket: TinfinSocket) {
   socket.conversationId = result.conversationId
   socket.awaitingHandoffConfirm = false
   send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
+  if (result.isNew) {
+    await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
+  }
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────

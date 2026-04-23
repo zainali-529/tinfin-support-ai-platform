@@ -21,6 +21,8 @@ export interface VapiCallOptions {
   assistantId: string
   orgId: string
   visitorId?: string
+  conversationId?: string
+  contactId?: string
   visitorName?: string
   visitorEmail?: string
 }
@@ -164,15 +166,21 @@ export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn 
 
       // ── Start the call ──────────────────────────────────────────────────
 
+      const callContext = {
+        orgId: options.orgId,
+        ...(options.visitorId ? { visitorId: options.visitorId } : {}),
+        ...(options.conversationId ? { conversationId: options.conversationId } : {}),
+        ...(options.contactId ? { contactId: options.contactId } : {}),
+        ...(options.visitorName ? { visitorName: options.visitorName } : {}),
+        ...(options.visitorEmail ? { visitorEmail: options.visitorEmail } : {}),
+        source: 'tinfin-widget',
+      }
+
       await vapi.start(options.assistantId, {
-        // Pass visitor context as metadata for webhook linking
-        metadata: {
-          orgId: options.orgId,
-          ...(options.visitorId ? { visitorId: options.visitorId } : {}),
-          ...(options.visitorName ? { visitorName: options.visitorName } : {}),
-          ...(options.visitorEmail ? { visitorEmail: options.visitorEmail } : {}),
-          source: 'tinfin-widget',
-        },
+        // Keep context in both metadata and variableValues because providers/webhooks
+        // may expose one path but not the other.
+        metadata: callContext,
+        variableValues: callContext,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start call'

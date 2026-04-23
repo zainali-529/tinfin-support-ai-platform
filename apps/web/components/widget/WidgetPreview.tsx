@@ -23,6 +23,9 @@ export interface PreviewConfig {
   autoOpenDelay: number
   showTypingIndicator: boolean
   offlineMessage: string
+  suggestions: Array<{ label: string; message: string }>
+  talkToHumanLabel: string
+  talkToHumanMessage: string
 }
 
 const LAUNCHER_PX: Record<string, number> = { sm: 48, md: 56, lg: 64 }
@@ -47,6 +50,8 @@ export function WidgetPreview({ config }: Props) {
   const borderRadius = config.borderRadius ?? 20
   const widgetWidth = config.widgetWidth ?? 380
   const botName = config.botName || 'AI Assistant'
+  const previewSuggestions = (config.suggestions ?? []).slice(0, 3)
+  const talkToHumanLabel = config.talkToHumanLabel || 'Talk to Human'
 
   const headerBg = config.headerStyle === 'gradient'
     ? `linear-gradient(135deg, ${color}, ${color}bb)`
@@ -246,6 +251,31 @@ export function WidgetPreview({ config }: Props) {
                   </div>
                 )}
               </div>
+
+              {(previewSuggestions.length > 0 || talkToHumanLabel) && (
+                <div className="px-2.5 pb-2 space-y-2">
+                  {previewSuggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {previewSuggestions.map((item, idx) => (
+                        <span
+                          key={`${item.label}-${idx}`}
+                          className="px-2 py-1 rounded-full text-[10px] font-semibold border border-zinc-200 bg-white text-zinc-700"
+                        >
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {talkToHumanLabel && (
+                    <div
+                      className="w-full text-center text-[11px] font-semibold rounded-lg border px-2.5 py-1.5"
+                      style={{ borderColor: color, color, background: `${color}12` }}
+                    >
+                      {talkToHumanLabel}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Input */}
               <div className="shrink-0 p-2 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800 flex gap-1.5 items-center">

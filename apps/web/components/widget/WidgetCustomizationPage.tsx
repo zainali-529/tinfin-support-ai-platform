@@ -52,6 +52,14 @@ interface WidgetSettings {
   autoOpenDelay: number
   showTypingIndicator: boolean
   offlineMessage: string
+  suggestions: WidgetSuggestion[]
+  talkToHumanLabel: string
+  talkToHumanMessage: string
+}
+
+interface WidgetSuggestion {
+  label: string
+  message: string
 }
 
 const DEFAULT_SETTINGS: WidgetSettings = {
@@ -73,6 +81,9 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   autoOpenDelay: 5,
   showTypingIndicator: true,
   offlineMessage: '',
+  suggestions: [],
+  talkToHumanLabel: 'Talk to Human',
+  talkToHumanMessage: 'I want to talk to a human agent.',
 }
 
 const POSITIONS = [
@@ -93,6 +104,36 @@ const PRESET_COLORS = [
   '#f97316', '#eab308', '#22c55e', '#14b8a6',
   '#0ea5e9', '#3b82f6', '#1e293b', '#18181b',
 ]
+
+const MAX_SUGGESTIONS = 6
+
+function parseSuggestions(value: unknown): WidgetSuggestion[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const label = typeof (item as { label?: unknown }).label === 'string'
+        ? (item as { label: string }).label.trim()
+        : ''
+      const message = typeof (item as { message?: unknown }).message === 'string'
+        ? (item as { message: string }).message.trim()
+        : ''
+      if (!label || !message) return null
+      return { label, message }
+    })
+    .filter((item): item is WidgetSuggestion => Boolean(item))
+    .slice(0, MAX_SUGGESTIONS)
+}
+
+function normalizeSuggestions(items: WidgetSuggestion[]): WidgetSuggestion[] {
+  return items
+    .map((item) => ({
+      label: item.label.trim(),
+      message: item.message.trim(),
+    }))
+    .filter(item => item.label.length > 0 && item.message.length > 0)
+    .slice(0, MAX_SUGGESTIONS)
+}
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
@@ -190,6 +231,13 @@ export function WidgetCustomizationPage({ orgId }: Props) {
       autoOpenDelay:     typeof s.autoOpenDelay === 'number'    ? s.autoOpenDelay    : DEFAULT_SETTINGS.autoOpenDelay,
       showTypingIndicator: typeof s.showTypingIndicator === 'boolean' ? s.showTypingIndicator : DEFAULT_SETTINGS.showTypingIndicator,
       offlineMessage:    typeof s.offlineMessage === 'string'   ? s.offlineMessage   : DEFAULT_SETTINGS.offlineMessage,
+      suggestions:       parseSuggestions(s.suggestions),
+      talkToHumanLabel:  typeof s.talkToHumanLabel === 'string' && s.talkToHumanLabel.trim()
+        ? s.talkToHumanLabel
+        : DEFAULT_SETTINGS.talkToHumanLabel,
+      talkToHumanMessage: typeof s.talkToHumanMessage === 'string' && s.talkToHumanMessage.trim()
+        ? s.talkToHumanMessage
+        : DEFAULT_SETTINGS.talkToHumanMessage,
     })
     setIsDirty(false)
   }, [existingConfig])
@@ -198,6 +246,23 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     setSettings(prev => ({ ...prev, ...patch }))
     setIsDirty(true)
   }, [])
+
+  const updateSuggestion = useCallback((index: number, patch: Partial<WidgetSuggestion>) => {
+    update({
+      suggestions: settings.suggestions.map((item, idx) =>
+        idx === index ? { ...item, ...patch } : item
+      ),
+    })
+  }, [settings.suggestions, update])
+
+  const addSuggestion = useCallback(() => {
+    if (settings.suggestions.length >= MAX_SUGGESTIONS) return
+    update({ suggestions: [...settings.suggestions, { label: '', message: '' }] })
+  }, [settings.suggestions, update])
+
+  const removeSuggestion = useCallback((index: number) => {
+    update({ suggestions: settings.suggestions.filter((_, idx) => idx !== index) })
+  }, [settings.suggestions, update])
 
   const openUpgradeDialog = useCallback(() => {
     setIsUpgradeDialogOpen(true)
@@ -247,6 +312,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
           autoOpenDelay:      settings.autoOpenDelay,
           showTypingIndicator: settings.showTypingIndicator,
           offlineMessage:     settings.offlineMessage || undefined,
+          suggestions:        normalizeSuggestions(settings.suggestions),
+          talkToHumanLabel:   settings.talkToHumanLabel.trim() || undefined,
+          talkToHumanMessage: settings.talkToHumanMessage.trim() || undefined,
         },
       })
       setSaved(true)
@@ -278,6 +346,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     autoOpenDelay:       settings.autoOpenDelay,
     showTypingIndicator: settings.showTypingIndicator,
     offlineMessage:      settings.offlineMessage,
+    suggestions:         settings.suggestions,
+    talkToHumanLabel:    settings.talkToHumanLabel,
+    talkToHumanMessage:  settings.talkToHumanMessage,
   }
 
   return (
@@ -590,6 +661,100 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                       <Input placeholder="We're offline right now."
                         value={settings.offlineMessage}
                         onChange={e => update({ offlineMessage: e.target.value })} className="h-8 text-sm" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Quick Suggestions</CardTitle>
+                    <CardDescription className="text-xs">
+                      Shown right after the AI welcome message. They disappear after the first user reply.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {settings.suggestions.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">
+                        No suggestions yet. Add a few to guide visitors.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {settings.suggestions.map((item, idx) => (
+                          <div key={idx} className="rounded-lg border p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold">Suggestion {idx + 1}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => removeSuggestion(idx)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground font-medium">Label</Label>
+                              <Input
+                                placeholder="Pricing"
+                                value={item.label}
+                                onChange={e => updateSuggestion(idx, { label: e.target.value })}
+                                className="h-8 text-sm"
+                                maxLength={40}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground font-medium">Message to send</Label>
+                              <Textarea
+                                placeholder="I want to learn about pricing."
+                                value={item.message}
+                                onChange={e => updateSuggestion(idx, { message: e.target.value })}
+                                className="min-h-[64px] text-sm resize-none"
+                                maxLength={240}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={addSuggestion}
+                      disabled={settings.suggestions.length >= MAX_SUGGESTIONS}
+                    >
+                      Add suggestion
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Talk to Human Button</CardTitle>
+                    <CardDescription className="text-xs">
+                      Always visible at the bottom of chat. Sends the message below when clicked.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Button Label</Label>
+                      <Input
+                        placeholder="Talk to Human"
+                        value={settings.talkToHumanLabel}
+                        onChange={e => update({ talkToHumanLabel: e.target.value })}
+                        className="h-8 text-sm"
+                        maxLength={40}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-medium">Message to send</Label>
+                      <Textarea
+                        placeholder="I want to talk to a human agent."
+                        value={settings.talkToHumanMessage}
+                        onChange={e => update({ talkToHumanMessage: e.target.value })}
+                        className="min-h-[64px] text-sm resize-none"
+                        maxLength={240}
+                      />
                     </div>
                   </CardContent>
                 </Card>

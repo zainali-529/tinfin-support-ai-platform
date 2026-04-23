@@ -128,10 +128,17 @@ export interface VapiAssistant {
 export interface VapiCall {
   id: string
   assistantId?: string
+  assistant?: { metadata?: Record<string, unknown> }
+  assistantOverrides?: {
+    metadata?: Record<string, unknown>
+    variableValues?: Record<string, unknown>
+  }
   status: string
   type: string
   startedAt?: string
   endedAt?: string
+  durationSeconds?: number
+  duration?: number
   cost?: number
   endedReason?: string
   transcript?: string
@@ -139,7 +146,8 @@ export interface VapiCall {
   recordingUrl?: string
   stereoRecordingUrl?: string
   phoneNumberId?: string
-  customer?: { number?: string; name?: string }
+  customer?: { number?: string; name?: string; email?: string }
+  metadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }

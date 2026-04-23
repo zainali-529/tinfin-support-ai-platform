@@ -2,7 +2,7 @@
 
 /**
  * apps/web/components/app-sidebar.tsx
- * Updated — adds Email Settings to the Management nav group.
+ * Updated — adds Contacts to the Main nav group.
  */
 
 import * as React from 'react'
@@ -59,21 +59,22 @@ const navGroups: NavGroup[] = [
   {
     label: 'Main',
     items: [
-      { label: 'Dashboard',  href: '/dashboard', icon: LayoutDashboardIcon, exact: true },
-      { label: 'Inbox',      href: '/inbox',     icon: InboxIcon, badge: '3' },
-      { label: 'Email Inbox', href: '/email', icon: MailIcon },
-      { label: 'Calls',      href: '/calls',     icon: PhoneCallIcon },
+      { label: 'Dashboard',    href: '/dashboard',   icon: LayoutDashboardIcon, exact: true },
+      { label: 'Inbox',        href: '/inbox',        icon: InboxIcon, badge: '3' },
+      { label: 'Contacts',     href: '/contacts',     icon: UsersIcon },
+      { label: 'Email Inbox',  href: '/email',        icon: MailIcon },
+      { label: 'Calls',        href: '/calls',        icon: PhoneCallIcon },
     ],
   },
   {
     label: 'Management',
     items: [
-      { label: 'Knowledge Base',   href: '/knowledge',      icon: BookOpenIcon },
-      { label: 'Widget',           href: '/widget',         icon: CodeIcon, adminOnly: true },
-      { label: 'Embedding',        href: '/embedding',      icon: Link2Icon, adminOnly: true },
-      { label: 'Voice Assistant',  href: '/voice-assistant',icon: MicIcon, adminOnly: true },
-      { label: 'Email Channel',    href: '/email-settings', icon: MailIcon, adminOnly: true },
-      { label: 'Analytics',        href: '/analytics',      icon: BarChart2Icon },
+      { label: 'Knowledge Base',   href: '/knowledge',       icon: BookOpenIcon },
+      { label: 'Widget',           href: '/widget',          icon: CodeIcon, adminOnly: true },
+      { label: 'Embedding',        href: '/embedding',       icon: Link2Icon, adminOnly: true },
+      { label: 'Voice Assistant',  href: '/voice-assistant', icon: MicIcon, adminOnly: true },
+      { label: 'Email Channel',    href: '/email-settings',  icon: MailIcon, adminOnly: true },
+      { label: 'Analytics',        href: '/analytics',       icon: BarChart2Icon },
     ],
   },
   {

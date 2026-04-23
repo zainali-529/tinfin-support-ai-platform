@@ -84,6 +84,9 @@ export interface WidgetConfig {
   showBranding: boolean
   autoOpen: boolean
   autoOpenDelay: number
+  suggestions?: Array<{ label: string; message: string }>
+  talkToHumanLabel?: string
+  talkToHumanMessage?: string
 }
 
 export interface KBChunk {
