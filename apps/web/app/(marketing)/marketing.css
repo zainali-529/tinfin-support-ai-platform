@@ -81,6 +81,37 @@
   opacity: 1;
 }
 
+/* ── New hero animations ────────────────────────────────────────────────────── */
+
+@keyframes float-bounce-soft {
+  0%, 100% { transform: translateY(0px) translateX(0); }
+  50%      { transform: translateY(-12px) translateX(2px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-bounce-soft {
+  animation: float-bounce-soft 3s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
 /* ── Pause animations when user prefers reduced motion ─────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -90,7 +121,9 @@
   .animate-marquee,
   .animate-marquee-reverse,
   .animate-orb-1,
-  .animate-orb-2 {
+  .animate-orb-2,
+  .animate-bounce-soft,
+  .animate-glow-pulse {
     animation: none !important;
   }
 }
