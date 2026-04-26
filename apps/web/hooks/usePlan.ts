@@ -18,6 +18,7 @@ export type FeatureKey =
   | 'aiResponses'
   | 'knowledgeBase'
   | 'emailChannel'
+  | 'whatsappChannel'
   | 'widgetCustomization'
   | 'voiceCalls'
   | 'teamMembers'
@@ -58,6 +59,9 @@ export function usePlan() {
 
     // Backward-compatible fallback when API responds with an older planDetails shape.
     if (feature === 'emailChannel') {
+      return (sub.plan ?? 'free') !== 'free'
+    }
+    if (feature === 'whatsappChannel') {
       return (sub.plan ?? 'free') !== 'free'
     }
 

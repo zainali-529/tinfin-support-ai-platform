@@ -13,12 +13,16 @@ if (!supabaseServiceKey) {
   throw new Error('Missing SUPABASE_SERVICE_KEY in API environment')
 }
 
+const resolvedSupabaseUrl = supabaseUrl
+const resolvedSupabaseServiceKey = supabaseServiceKey
+
 function readJwtRole(token: string): string | null {
   const parts = token.split('.')
-  if (parts.length < 2) return null
+  const rawPayload = parts[1]
+  if (!rawPayload) return null
 
   try {
-    const raw = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const raw = rawPayload.replace(/-/g, '+').replace(/_/g, '/')
     const padded = raw + '='.repeat((4 - (raw.length % 4)) % 4)
     const payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as { role?: unknown }
     return typeof payload.role === 'string' ? payload.role : null
@@ -27,7 +31,7 @@ function readJwtRole(token: string): string | null {
   }
 }
 
-const supabaseRole = readJwtRole(supabaseServiceKey)
+const supabaseRole = readJwtRole(resolvedSupabaseServiceKey)
 if (supabaseRole !== 'service_role') {
   console.warn('[api] SUPABASE_SERVICE_KEY does not look like a service_role key. Widget updates may fail due to RLS policies.')
 }
@@ -35,8 +39,8 @@ if (supabaseRole !== 'service_role') {
 export function createContext({ req }: CreateExpressContextOptions) {
   const token = req.headers.authorization?.replace('Bearer ', '')
   const supabase = createClient(
-    supabaseUrl,
-    supabaseServiceKey
+    resolvedSupabaseUrl,
+    resolvedSupabaseServiceKey
   )
   return { supabase, token }
 }

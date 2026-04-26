@@ -7,6 +7,7 @@ import {
   jsonb,
   integer,
   customType,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
@@ -223,3 +224,26 @@ export const orgApiKeys = pgTable('org_api_keys', {
   // Org's own Vapi private key (optional — falls back to platform key)
   vapiKeyEncrypted: text('vapi_key_encrypted'),
 })
+
+export const cannedResponses = pgTable(
+  'canned_responses',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    title: text('title').notNull(),
+    category: text('category').default('general').notNull(),
+    shortcut: text('shortcut'),
+    content: text('content').notNull(),
+    tags: jsonb('tags').default([]).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    usageCount: integer('usage_count').default(0).notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    orgShortcutUnique: uniqueIndex('canned_responses_org_shortcut_unique').on(table.orgId, table.shortcut),
+  })
+)

@@ -10,7 +10,7 @@ interface UseInViewOptions {
 
 export function useInView<T extends HTMLElement = HTMLDivElement>(
   options: UseInViewOptions = {}
-): [React.RefObject<T>, boolean] {
+): [React.RefObject<T | null>, boolean] {
   const { threshold = 0.15, rootMargin = '0px', once = true } = options
   const ref = useRef<T>(null)
   const [inView, setInView] = useState(false)
@@ -20,7 +20,9 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(
     if (!el) return
 
     const observer = new IntersectionObserver(
-      ([entry]) => {
+      (entries) => {
+        const entry = entries[0]
+        if (!entry) return
         if (entry.isIntersecting) {
           setInView(true)
           if (once) observer.disconnect()

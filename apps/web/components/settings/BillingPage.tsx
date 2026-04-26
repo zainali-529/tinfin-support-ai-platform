@@ -54,6 +54,7 @@ function PlanCard({
   const knowledgeBasesLimit = plan.limits.knowledgeBases ?? 1
   const voiceMinutesLimit = plan.limits.voiceMinutesPerMonth ?? 0
   const hasEmailChannel = plan.features.emailChannel ?? plan.id !== 'free'
+  const hasWhatsAppChannel = plan.features.whatsappChannel ?? plan.id !== 'free'
 
   return (
     <div className={cn(
@@ -100,6 +101,12 @@ function PlanCard({
           <CheckIcon className={cn('size-3.5 mt-0.5 shrink-0', hasEmailChannel ? 'text-emerald-500' : 'text-muted-foreground/40')} />
           <span className={hasEmailChannel ? 'text-muted-foreground' : 'text-muted-foreground/50'}>
             {hasEmailChannel ? 'Email channel (inbound + replies)' : 'Email channel preview only'}
+          </span>
+        </li>
+        <li className="flex items-start gap-2">
+          <CheckIcon className={cn('size-3.5 mt-0.5 shrink-0', hasWhatsAppChannel ? 'text-emerald-500' : 'text-muted-foreground/40')} />
+          <span className={hasWhatsAppChannel ? 'text-muted-foreground' : 'text-muted-foreground/50'}>
+            {hasWhatsAppChannel ? 'WhatsApp channel' : 'WhatsApp channel preview only'}
           </span>
         </li>
         {plan.features.analytics && <li className="flex items-start gap-2"><CheckIcon className="size-3.5 mt-0.5 shrink-0 text-emerald-500" /><span className="text-muted-foreground">Analytics</span></li>}
@@ -418,6 +425,7 @@ function BillingInner() {
               { label: 'Organizations', free: '1', pro: '1', scale: '3' },
               { label: 'Chat widget', free: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Email channel', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'WhatsApp channel', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Widget customization', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Voice calls', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Team management', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },

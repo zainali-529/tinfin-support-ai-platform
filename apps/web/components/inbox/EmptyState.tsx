@@ -6,7 +6,7 @@
  * Shown in the right panel of the inbox when no conversation is selected.
  */
 
-import { MailIcon, MessageSquareIcon, InboxIcon } from 'lucide-react'
+import { MailIcon, MessageSquareIcon, InboxIcon, MessageCircleIcon } from 'lucide-react'
 
 export function EmptyState() {
   return (
@@ -29,6 +29,11 @@ export function EmptyState() {
         <span className="flex items-center gap-1.5">
           <MailIcon className="size-3.5" />
           Email
+        </span>
+        <span className="text-muted-foreground/30">·</span>
+        <span className="flex items-center gap-1.5">
+          <MessageCircleIcon className="size-3.5" />
+          WhatsApp
         </span>
       </div>
     </div>

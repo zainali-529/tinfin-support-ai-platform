@@ -1,18 +1,66 @@
 /**
  * packages/ai/src/vapi.service.ts
  *
- * Fix: Deepgram voice IDs stored as "aura-asteria-en" but Vapi API expects
- * just "asteria" (no prefix/suffix). Added normalizeDeepgramVoiceId() helper.
- *
- * Fix: is_owner support in team router referenced here via DB flag.
+ * FIXES:
+ *   - tools moved from assistant root → model.tools (Vapi API requirement)
+ *   - silenceTimeoutSeconds minimum raised to 10 (Vapi API requirement)
+ *   - artifactPlan kept at root (correct location per Vapi docs)
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'
 
 const VAPI_BASE_URL = 'https://api.vapi.ai'
 
+// ─── Provider types ───────────────────────────────────────────────────────────
+
 export type VapiVoiceProvider = 'openai' | 'deepgram' | '11labs' | 'azure' | 'cartesia'
 export type VapiModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4-turbo' | string
+export type VapiTranscriptionProvider = 'deepgram' | 'talkscriber' | 'gladia'
+
+// ─── Tool types ───────────────────────────────────────────────────────────────
+
+export interface VapiToolMessage {
+  type: 'request-start' | 'request-response-delayed' | 'request-failed' | 'request-complete'
+  content: string
+  timingMilliseconds?: number
+}
+
+export interface VapiToolFunction {
+  name: string
+  description: string
+  parameters: {
+    type: 'object'
+    properties: Record<string, { type: string; description: string }>
+    required: string[]
+  }
+}
+
+/** Tool definition — goes inside model.tools[] NOT at assistant root */
+export interface VapiTool {
+  type: 'function'
+  messages?: VapiToolMessage[]
+  function: VapiToolFunction
+  server?: {
+    url: string
+    secret?: string
+    timeoutSeconds?: number
+  }
+}
+
+export interface VapiToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: Record<string, unknown>
+  }
+}
+
+export interface VapiToolResult {
+  toolCallId: string
+  result: string
+  error?: string
+}
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
 
@@ -27,14 +75,12 @@ export interface VapiVoiceOption {
 }
 
 export const VAPI_VOICE_CATALOGUE: VapiVoiceOption[] = [
-  // OpenAI TTS
   { id: 'openai:alloy',   label: 'Alloy',   provider: 'openai',   voiceId: 'alloy',   gender: 'Neutral', accent: 'American', description: 'Balanced, versatile — great default' },
   { id: 'openai:nova',    label: 'Nova',    provider: 'openai',   voiceId: 'nova',    gender: 'Female',  accent: 'American', description: 'Friendly and warm' },
   { id: 'openai:shimmer', label: 'Shimmer', provider: 'openai',   voiceId: 'shimmer', gender: 'Female',  accent: 'American', description: 'Soft and professional' },
   { id: 'openai:echo',    label: 'Echo',    provider: 'openai',   voiceId: 'echo',    gender: 'Male',    accent: 'American', description: 'Clear and confident' },
   { id: 'openai:onyx',    label: 'Onyx',    provider: 'openai',   voiceId: 'onyx',    gender: 'Male',    accent: 'American', description: 'Deep and authoritative' },
   { id: 'openai:fable',   label: 'Fable',   provider: 'openai',   voiceId: 'fable',   gender: 'Male',    accent: 'British',  description: 'Expressive British accent' },
-  // Deepgram Aura — stored as "aura-xxx-en" but API receives just "xxx"
   { id: 'deepgram:aura-asteria-en', label: 'Asteria', provider: 'deepgram', voiceId: 'aura-asteria-en', gender: 'Female', accent: 'American', description: 'Natural, very low latency' },
   { id: 'deepgram:aura-luna-en',    label: 'Luna',    provider: 'deepgram', voiceId: 'aura-luna-en',    gender: 'Female', accent: 'American', description: 'Gentle, ultra-fast' },
   { id: 'deepgram:aura-stella-en',  label: 'Stella',  provider: 'deepgram', voiceId: 'aura-stella-en',  gender: 'Female', accent: 'American', description: 'Bright and cheerful' },
@@ -47,46 +93,25 @@ export const VAPI_VOICE_CATALOGUE: VapiVoiceOption[] = [
 
 export const DEFAULT_VOICE_ID = 'openai:alloy'
 
-/**
- * Parse "provider:voiceId" string into parts.
- * For Deepgram, the stored voiceId is still "aura-asteria-en" —
- * use normalizeDeepgramVoiceId() separately when building Vapi payloads.
- */
-export function parseVoiceId(raw: string): { provider: VapiVoiceProvider; voiceId: string } {
-  const colonIdx = raw.indexOf(':')
-  if (colonIdx === -1) {
-    console.warn(`[vapi] Invalid voice format "${raw}", using default openai:alloy`)
-    return { provider: 'openai', voiceId: 'alloy' }
-  }
-  const provider = raw.slice(0, colonIdx) as VapiVoiceProvider
-  const voiceId = raw.slice(colonIdx + 1)
-  const supported: VapiVoiceProvider[] = ['openai', 'deepgram', '11labs', 'azure', 'cartesia']
-  if (!supported.includes(provider) || !voiceId) {
-    console.warn(`[vapi] Unsupported voice "${raw}", using default openai:alloy`)
-    return { provider: 'openai', voiceId: 'alloy' }
-  }
-  return { provider, voiceId }
+// ─── Payload types ────────────────────────────────────────────────────────────
+
+export interface VapiTranscriber {
+  provider: VapiTranscriptionProvider
+  model?: string
+  language?: string
+  smartFormat?: boolean
+  diarize?: boolean
 }
 
-/**
- * Vapi's Deepgram integration expects just the model name without the
- * "aura-" prefix and "-en" (or other locale) suffix.
- *
- * Examples:
- *   "aura-asteria-en" → "asteria"
- *   "aura-zeus-en"    → "zeus"
- *   "aura-helios-en"  → "helios"
- *
- * If the voiceId doesn't match the pattern, it's returned as-is.
- */
-export function normalizeDeepgramVoiceId(voiceId: string): string {
-  // Strip leading "aura-" and trailing "-{locale}" (e.g., -en, -es, -fr)
-  return voiceId
-    .replace(/^aura-/, '')
-    .replace(/-[a-z]{2}$/, '')
+export interface VapiArtifactPlan {
+  recordingEnabled?: boolean
 }
 
-// ─── Vapi payload types ───────────────────────────────────────────────────────
+export interface VapiStopSpeakingPlan {
+  numWords?: number
+  voiceSeconds?: number
+  backoffSeconds?: number
+}
 
 export interface VapiAssistantPayload {
   name: string
@@ -97,16 +122,27 @@ export interface VapiAssistantPayload {
     messages?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
     maxTokens?: number
     temperature?: number
+    /**
+     * CORRECT LOCATION: tools go inside model{}, NOT at assistant root.
+     * Vapi rejects assistant-root-level tools with "property tools should not exist".
+     */
+    tools?: VapiTool[]
   }
   voice: {
     provider: VapiVoiceProvider
-    voiceId: string   // normalized value sent to Vapi
+    voiceId: string
     speed?: number
   }
+  transcriber?: VapiTranscriber
+  /** Recording settings — stays at assistant root (correct per Vapi docs) */
+  artifactPlan?: VapiArtifactPlan
+  /** Interruption control — stays at assistant root */
+  stopSpeakingPlan?: VapiStopSpeakingPlan
   endCallMessage?: string
   endCallPhrases?: string[]
   maxDurationSeconds?: number
   backgroundSound?: 'off' | 'office' | 'cafe'
+  /** Minimum: 10 seconds (Vapi API requirement) */
   silenceTimeoutSeconds?: number
   responseDelaySeconds?: number
   backchannelingEnabled?: boolean
@@ -175,6 +211,7 @@ export interface VapiWebhookEvent {
       | 'user-interrupted'
       | 'voice-input'
     call?: VapiCall
+    toolCallList?: VapiToolCall[]
     artifact?: {
       transcript?: string
       messagesOpenAIFormatted?: Array<{ role: string; content: string }>
@@ -193,9 +230,7 @@ export interface VapiWebhookEvent {
 
 function resolveApiKey(orgPrivateKey?: string | null): string {
   const key = orgPrivateKey?.trim() || process.env.VAPI_PRIVATE_KEY?.trim()
-  if (!key) {
-    throw new Error('Vapi private key not configured. Set VAPI_PRIVATE_KEY env var.')
-  }
+  if (!key) throw new Error('Vapi private key not configured. Set VAPI_PRIVATE_KEY env var.')
   return key
 }
 
@@ -280,6 +315,84 @@ export async function listVapiPhoneNumbers(orgPrivateKey?: string | null): Promi
   return vapiRequest<VapiPhoneNumber[]>('GET', '/phone-number', undefined, orgPrivateKey)
 }
 
+// ─── Voice ID utilities ───────────────────────────────────────────────────────
+
+export function parseVoiceId(raw: string): { provider: VapiVoiceProvider; voiceId: string } {
+  const colonIdx = raw.indexOf(':')
+  if (colonIdx === -1) {
+    console.warn(`[vapi] Invalid voice format "${raw}", using default openai:alloy`)
+    return { provider: 'openai', voiceId: 'alloy' }
+  }
+  const provider = raw.slice(0, colonIdx) as VapiVoiceProvider
+  const voiceId = raw.slice(colonIdx + 1)
+  const supported: VapiVoiceProvider[] = ['openai', 'deepgram', '11labs', 'azure', 'cartesia']
+  if (!supported.includes(provider) || !voiceId) {
+    console.warn(`[vapi] Unsupported voice "${raw}", using default openai:alloy`)
+    return { provider: 'openai', voiceId: 'alloy' }
+  }
+  return { provider, voiceId }
+}
+
+/**
+ * Normalize Deepgram voice ID for Vapi API.
+ * Vapi expects "asteria" not "aura-asteria-en".
+ */
+export function normalizeDeepgramVoiceId(voiceId: string): string {
+  return voiceId
+    .replace(/^aura-/, '')
+    .replace(/-[a-z]{2}$/, '')
+}
+
+// ─── Tool builder ─────────────────────────────────────────────────────────────
+
+/**
+ * Build the Knowledge Base search tool.
+ * This goes inside model.tools[] — NOT at assistant root.
+ */
+export function buildKnowledgeBaseTool(webhookBaseUrl: string, webhookSecret: string): VapiTool {
+  return {
+    type: 'function',
+    messages: [
+      {
+        type: 'request-start',
+        content: 'Let me check our knowledge base for that.',
+      },
+      {
+        type: 'request-response-delayed',
+        timingMilliseconds: 4000,
+        content: 'Still searching, just a moment.',
+      },
+      {
+        type: 'request-failed',
+        content: "I'm having trouble accessing our knowledge base right now.",
+      },
+    ],
+    function: {
+      name: 'searchKnowledgeBase',
+      description:
+        'Search the company knowledge base to find accurate, up-to-date information about ' +
+        'products, services, pricing, policies, and procedures. ' +
+        'Use this tool whenever a customer asks a specific factual question. ' +
+        'Do NOT fabricate answers — always use this tool for factual queries.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The customer question or search query to look up in the knowledge base',
+          },
+        },
+        required: ['query'],
+      },
+    },
+    server: {
+      url: `${webhookBaseUrl}/api/vapi-webhook`,
+      secret: webhookSecret,
+      timeoutSeconds: 20,
+    },
+  }
+}
+
 // ─── Assistant Builder ────────────────────────────────────────────────────────
 
 export interface BuildAssistantOptions {
@@ -294,59 +407,129 @@ export interface BuildAssistantOptions {
   orgId: string
   webhookBaseUrl: string
   webhookSecret: string
+  // KB integration
+  toolsEnabled?: boolean
+  // Transcription
+  transcriptionProvider?: VapiTranscriptionProvider
+  transcriptionLanguage?: string
+  // Timing — silenceTimeoutSeconds MINIMUM is 10 per Vapi API
+  silenceTimeoutSeconds?: number
+  responseDelaySeconds?: number
+  // Behavior
+  interruptionsEnabled?: boolean
+  recordingEnabled?: boolean
+  endCallPhrases?: string[]
 }
 
-/**
- * Build the Vapi v2 assistant payload.
- *
- * KEY FIX: Deepgram voiceId is stored as "aura-asteria-en" internally,
- * but Vapi expects just "asteria". normalizeDeepgramVoiceId() handles this.
- */
 export function buildOrgAssistantPayload(opts: BuildAssistantOptions): VapiAssistantPayload {
-  const defaultSystemPrompt = `You are a helpful, professional customer support voice assistant for ${opts.companyName}.
-Your job is to answer customer questions clearly, concisely, and warmly.
-Be conversational and natural — this is a voice call, not a chat.
-Keep answers short (2–3 sentences max) unless the customer asks for more detail.
-If you don't know the answer, say so and offer to connect them with a human agent.
-Always speak in the same language the customer is using.
-Never make up information about pricing, policies, or features.`
+  const {
+    toolsEnabled = true,
+    transcriptionProvider = 'deepgram',
+    transcriptionLanguage = 'en',
+    // FIX: minimum 10, default 30
+    silenceTimeoutSeconds = 30,
+    responseDelaySeconds = 0.4,
+    interruptionsEnabled = true,
+    recordingEnabled = true,
+    endCallPhrases = ['goodbye', 'bye', 'thanks bye', "that's all", 'end call'],
+  } = opts
+
+  // Guard: Vapi minimum is 10 seconds
+  const safeSilenceTimeout = Math.max(10, silenceTimeoutSeconds)
+
+  // ── System prompt ─────────────────────────────────────────────────────────
+
+  const kbInstructions = toolsEnabled
+    ? `
+## Knowledge Base Access
+You have a 'searchKnowledgeBase' tool. Use it for ANY factual question about our products, pricing, policies, or procedures.
+Rules:
+  1. Call the tool before answering factual questions — do NOT guess.
+  2. After getting results, summarize concisely for voice (1-2 sentences).
+  3. If the tool returns no result, say you don't have that info and offer to connect to a human.
+  4. Natural phrasing: "Let me check that..." → wait → "I found that..."
+`
+    : ''
+
+  const defaultSystemPrompt = `You are a helpful, professional, and warm customer support voice assistant for ${opts.companyName}.
+${kbInstructions}
+## Core Behaviors
+- This is a voice call — be conversational and concise. 2–3 sentences max per response.
+- Never recite long lists; summarize and offer to elaborate.
+- Always speak in the same language the customer uses.
+- If you cannot help, offer to connect to a human agent.
+- Never fabricate pricing, policies, or features.`
 
   const systemPromptContent = opts.systemPrompt?.trim() || defaultSystemPrompt
 
+  // ── Voice ─────────────────────────────────────────────────────────────────
+
   const { provider, voiceId: rawVoiceId } = parseVoiceId(opts.voiceId ?? DEFAULT_VOICE_ID)
+  const vapiVoiceId = provider === 'deepgram' ? normalizeDeepgramVoiceId(rawVoiceId) : rawVoiceId
 
-  // ── DEEPGRAM FIX: normalize the voice ID for Vapi API ─────────────────────
-  // Stored: "aura-asteria-en" → Sent to Vapi: "asteria"
-  const vapiVoiceId = provider === 'deepgram'
-    ? normalizeDeepgramVoiceId(rawVoiceId)
-    : rawVoiceId
+  // ── Tools → go inside model.tools[] ──────────────────────────────────────
 
-  return {
+  const modelTools: VapiTool[] = toolsEnabled
+    ? [buildKnowledgeBaseTool(opts.webhookBaseUrl, opts.webhookSecret)]
+    : []
+
+  // ── Transcriber ───────────────────────────────────────────────────────────
+
+  const transcriber: VapiTranscriber = {
+    provider: transcriptionProvider,
+    language: transcriptionLanguage,
+    ...(transcriptionProvider === 'deepgram' ? { smartFormat: true } : {}),
+  }
+
+  // ── Build payload ─────────────────────────────────────────────────────────
+
+  const payload: VapiAssistantPayload = {
     name: opts.name,
-    firstMessage: opts.firstMessage?.trim() ||
+    firstMessage:
+      opts.firstMessage?.trim() ||
       `Hello! I'm the virtual assistant for ${opts.companyName}. How can I help you today?`,
+
     model: {
       provider: 'openai',
       model: opts.model ?? 'gpt-4o-mini',
       messages: [
-        {
-          role: 'system',
-          content: systemPromptContent,
-        },
+        { role: 'system', content: systemPromptContent },
       ],
       maxTokens: 256,
       temperature: 0.4,
+      // FIX: tools inside model{} not at assistant root
+      ...(modelTools.length > 0 ? { tools: modelTools } : {}),
     },
+
     voice: {
       provider,
-      voiceId: vapiVoiceId,   // ← normalized value (e.g., "asteria" not "aura-asteria-en")
+      voiceId: vapiVoiceId,
     },
+
+    transcriber,
+
+    artifactPlan: {
+      recordingEnabled,
+    },
+
+    // Interruption control
+    ...(interruptionsEnabled
+      ? {}
+      : {
+          stopSpeakingPlan: {
+            numWords: 10,
+            voiceSeconds: 0.5,
+            backoffSeconds: 1,
+          },
+        }),
+
     endCallMessage: 'Thank you for calling. Have a great day!',
-    endCallPhrases: ['goodbye', 'bye', 'thanks bye', "that's all", 'end call'],
+    endCallPhrases,
     maxDurationSeconds: opts.maxDurationSeconds ?? 600,
     backgroundSound: opts.backgroundSound ?? 'off',
-    silenceTimeoutSeconds: 30,
-    responseDelaySeconds: 0.4,
+    // FIX: enforce minimum 10
+    silenceTimeoutSeconds: safeSilenceTimeout,
+    responseDelaySeconds,
     backchannelingEnabled: true,
     serverUrl: `${opts.webhookBaseUrl}/api/vapi-webhook`,
     serverUrlSecret: opts.webhookSecret,
@@ -355,6 +538,8 @@ Never make up information about pricing, policies, or features.`
       source: 'tinfin',
     },
   }
+
+  return payload
 }
 
 // ─── Webhook Verification ─────────────────────────────────────────────────────

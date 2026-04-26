@@ -19,13 +19,20 @@ export interface Contact {
 
 // ─── Message ──────────────────────────────────────────────────────────────────
 
+export interface Attachment {
+  name: string
+  url: string
+  type: string
+  size: number
+}
+
 export interface Message {
   id: string
   conversation_id: string
   org_id: string
   role: 'user' | 'assistant' | 'agent' | 'system'
   content: string
-  attachments: unknown[]
+  attachments: Attachment[]
   ai_metadata: Record<string, unknown> | null
   created_at: string
 }
@@ -33,23 +40,39 @@ export interface Message {
 // ─── Conversation ─────────────────────────────────────────────────────────────
 
 export type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
-export type ConversationChannel = 'chat' | 'email' | 'voice'
+export type ConversationChannel =
+  | 'chat'
+  | 'email'
+  | 'whatsapp'
+  | 'facebook'
+  | 'instagram'
+  | 'sms'
+  | 'telegram'
+  | 'voice'
+
+export interface EmailMessagePreview {
+  id: string
+  subject: string
+  created_at: string
+}
 
 export interface Conversation {
   id: string
   org_id: string
   contact_id: string | null
   status: ConversationStatus
-  /** 'chat' | 'email' | 'voice' */
+  /** 'chat' | 'email' | 'whatsapp' | future channels */
   channel: ConversationChannel
   assigned_to: string | null
   started_at: string
-  resolved_at: string | null
-  meta: Record<string, unknown> | null
+  resolved_at?: string | null
+  meta?: Record<string, unknown> | null
   /** Joined contact record */
   contacts: Contact | null
   /** Joined message records (subset — for last message preview) */
   messages?: Message[]
+  /** Joined email message previews for subject-based list snippets */
+  email_messages?: EmailMessagePreview[]
 }
 
 // ─── Email Message ────────────────────────────────────────────────────────────
@@ -94,4 +117,30 @@ export interface EmailAccountConfig {
   inboundWebhookToken: string | null
   createdAt: string
   updatedAt: string
+}
+
+// ─── Canned Responses ──────────────────────────────────────────────────────────
+
+export type CannedResponseCategory = string
+
+export interface CannedResponse {
+  id: string
+  orgId: string
+  title: string
+  category: CannedResponseCategory
+  shortcut: string | null
+  content: string
+  tags: string[]
+  isActive: boolean
+  usageCount: number
+  lastUsedAt: string | null
+  createdBy: string | null
+  updatedBy: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CannedResponseSuggestion extends CannedResponse {
+  score: number
+  reason: string
 }

@@ -20,6 +20,11 @@ const CONVERSATIONS_QUERY = `
   channel,
   assigned_to,
   started_at,
+  email_messages (
+    id,
+    subject,
+    created_at
+  ),
   contacts (
     id,
     name,
@@ -34,21 +39,32 @@ const CONVERSATIONS_QUERY = `
   )
 `
 
-export function useConversations(orgId: string) {
+interface UseConversationsOptions {
+  channelFilter?: string | null
+}
+
+export function useConversations(orgId: string, options?: UseConversationsOptions) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+  const channelFilter = options?.channelFilter ?? null
 
   const fetchConversations = useCallback(async () => {
     if (!orgId) return
 
     const supabase = createClient()
-    const { data, error } = await supabase
+    let query = supabase
       .from('conversations')
       .select(CONVERSATIONS_QUERY)
       .eq('org_id', orgId)
       .order('started_at', { ascending: false })
       .limit(200)
+
+    if (channelFilter && channelFilter !== 'all') {
+      query = query.eq('channel', channelFilter)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error('[useConversations] fetch error:', error.message)
@@ -57,7 +73,7 @@ export function useConversations(orgId: string) {
 
     setConversations((data as unknown as Conversation[]) ?? [])
     setLoading(false)
-  }, [orgId])
+  }, [channelFilter, orgId])
 
   // Initial fetch
   useEffect(() => {

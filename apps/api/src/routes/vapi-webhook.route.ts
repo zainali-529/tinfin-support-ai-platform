@@ -1,23 +1,20 @@
 /**
  * apps/api/src/routes/vapi-webhook.route.ts
  *
- * Vapi webhook handler for call lifecycle events.
- *
- * FIXES:
- * - ended_at: When status is 'ended' but call.endedAt and message.timestamp are
- *   both absent, fall back to new Date().toISOString() so ended_at is never null
- *   on a finished call.
- * - duration_seconds: Computed AFTER ended_at is fully resolved (including the
- *   new fallback), so it is never null when we have a startedAt value.
+ * Vapi webhook handler — enhanced with:
+ *   - tool-calls: handles searchKnowledgeBase in real-time during calls
+ *   - Synchronous tool response (Vapi waits for result before continuing)
+ *   - All existing status-update / end-of-call-report / hang logic preserved
  */
 
 import { Router, type Request, type Response } from 'express'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { VapiWebhookEvent } from '@workspace/ai'
+import { queryRAG } from '@workspace/ai'
+import type { VapiWebhookEvent, VapiToolCall, VapiToolResult } from '@workspace/ai'
 
 export const vapiWebhookRoute: Router = Router()
 
-// ─── Supabase admin client (service role) ─────────────────────────────────────
+// ─── Supabase admin client ─────────────────────────────────────────────────────
 
 function getSupabase(): SupabaseClient {
   return createClient(
@@ -46,14 +43,8 @@ interface VapiCallPayload {
   summary?: string
   recordingUrl?: string
   stereoRecordingUrl?: string
-  customer?: {
-    number?: string
-    name?: string
-    email?: string
-  }
-  assistant?: {
-    metadata?: Record<string, unknown>
-  }
+  customer?: { number?: string; name?: string; email?: string }
+  assistant?: { metadata?: Record<string, unknown> }
   assistantOverrides?: {
     metadata?: Record<string, unknown>
     variableValues?: Record<string, unknown>
@@ -96,6 +87,8 @@ interface ExistingCallRow {
 }
 
 const ACTIVE_STATUSES = new Set(['created', 'queued', 'ringing', 'in-progress', 'forwarding'])
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function asString(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -166,17 +159,125 @@ function extractCallMetadata(call: VapiCallPayload): Record<string, unknown> {
   const overrideMetadata = asRecord(overrides.metadata)
   const variableValues = asRecord(overrides.variableValues)
   const callMetadata = asRecord(call.metadata)
-
-  // Order matters: explicit call metadata should win over inherited values.
-  return {
-    ...assistantMetadata,
-    ...overrideMetadata,
-    ...variableValues,
-    ...callMetadata,
-  }
+  return { ...assistantMetadata, ...overrideMetadata, ...variableValues, ...callMetadata }
 }
 
-// ─── DB helpers ───────────────────────────────────────────────────────────────
+// ─── Resolve org from call metadata / assistant lookup ────────────────────────
+
+async function resolveOrgId(
+  supabase: SupabaseClient,
+  call: VapiCallPayload
+): Promise<string | null> {
+  const metadata = extractCallMetadata(call)
+  const metadataOrgId = firstString(metadata.orgId, metadata.org_id)
+  if (metadataOrgId) return metadataOrgId
+
+  if (call.assistantId) {
+    const { data } = await supabase
+      .from('vapi_assistants')
+      .select('org_id')
+      .eq('vapi_assistant_id', call.assistantId)
+      .maybeSingle()
+    if (data?.org_id) return data.org_id as string
+  }
+
+  const { data: existing } = await supabase
+    .from('calls')
+    .select('org_id')
+    .eq('vapi_call_id', call.id)
+    .maybeSingle()
+
+  return existing?.org_id ?? null
+}
+
+// ─── Resolve KB IDs for this org/assistant ────────────────────────────────────
+
+async function resolveKbIds(
+  supabase: SupabaseClient,
+  orgId: string,
+  assistantId?: string | null
+): Promise<string[]> {
+  if (assistantId) {
+    const { data } = await supabase
+      .from('vapi_assistants')
+      .select('kb_ids')
+      .eq('org_id', orgId)
+      .eq('vapi_assistant_id', assistantId)
+      .maybeSingle()
+
+    const kbIds = (data?.kb_ids as string[] | null | undefined) ?? []
+    if (kbIds.length > 0) return kbIds
+  }
+  // Fallback: use all org KBs
+  return []
+}
+
+// ─── Knowledge Base tool handler ──────────────────────────────────────────────
+
+/**
+ * Called synchronously during a Vapi tool-calls event.
+ * Must respond within ~20 seconds (Vapi's tool timeout).
+ * Returns results that Vapi immediately feeds back to the AI.
+ */
+async function handleKnowledgeBaseSearch(
+  supabase: SupabaseClient,
+  orgId: string,
+  assistantId: string | null | undefined,
+  toolCalls: VapiToolCall[]
+): Promise<VapiToolResult[]> {
+  const results: VapiToolResult[] = []
+
+  // Fetch KB IDs configured for this assistant
+  const kbIds = await resolveKbIds(supabase, orgId, assistantId)
+
+  for (const call of toolCalls) {
+    if (call.function.name !== 'searchKnowledgeBase') continue
+
+    const query = asString(call.function.arguments?.query)
+
+    if (!query) {
+      results.push({ toolCallId: call.id, result: 'No query provided.' })
+      continue
+    }
+
+    try {
+      // Use the first configured KB, or let RAG search all org KBs
+      const kbId = kbIds[0] ?? undefined
+
+      const ragResult = await queryRAG({
+        query,
+        orgId,
+        kbId,
+        threshold: 0.25,
+        maxChunks: 5,
+      })
+
+      // For voice, format result as short factual text
+      let result: string
+
+      if (ragResult.type === 'handoff' || ragResult.type === 'ask_handoff') {
+        result = '__HANDOFF__' // Signal to AI that human handoff is needed
+      } else if (ragResult.message) {
+        result = ragResult.message
+      } else {
+        result = 'I could not find relevant information in the knowledge base.'
+      }
+
+      results.push({ toolCallId: call.id, result })
+    } catch (err) {
+      console.error('[vapi-webhook] KB search failed:', err)
+      results.push({
+        toolCallId: call.id,
+        result: 'Knowledge base search temporarily unavailable.',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }
+
+  return results
+}
+
+// ─── Call upsert ──────────────────────────────────────────────────────────────
 
 async function upsertCall(
   supabase: SupabaseClient,
@@ -188,7 +289,9 @@ async function upsertCall(
 
   const { data: existing } = await supabase
     .from('calls')
-    .select('id, created_at, status, type, direction, duration_seconds, recording_url, stereo_recording_url, transcript, summary, cost_cents, cost_breakdown, ended_reason, caller_number, visitor_id, started_at, ended_at, metadata, vapi_assistant_id, phone_number_id')
+    .select(
+      'id, created_at, status, type, direction, duration_seconds, recording_url, stereo_recording_url, transcript, summary, cost_cents, cost_breakdown, ended_reason, caller_number, visitor_id, started_at, ended_at, metadata, vapi_assistant_id, phone_number_id'
+    )
     .eq('org_id', orgId)
     .eq('vapi_call_id', call.id)
     .maybeSingle<ExistingCallRow>()
@@ -198,47 +301,39 @@ async function upsertCall(
   let startedAt = firstString(call.startedAt, existing?.started_at)
   let endedAt = firstString(call.endedAt, existing?.ended_at)
 
-  let status = normalizeStatus(overrides.status) ?? normalizeStatus(call.status) ?? normalizeStatus(existing?.status) ?? 'created'
-  if (!normalizeStatus(overrides.status) && (endedAt || firstString(call.endedReason, overrides.ended_reason))) {
+  let status =
+    normalizeStatus(overrides.status) ??
+    normalizeStatus(call.status) ??
+    normalizeStatus(existing?.status) ??
+    'created'
+
+  if (
+    !normalizeStatus(overrides.status) &&
+    (endedAt || firstString(call.endedReason, overrides.ended_reason))
+  ) {
     status = 'ended'
   }
 
-  // Don't regress an already-ended call back to an active status
   if (normalizeStatus(existing?.status) === 'ended' && ACTIVE_STATUSES.has(status)) {
     status = 'ended'
   }
 
-  // Set startedAt from event timestamp when call goes in-progress
   if (!startedAt && status === 'in-progress' && eventTimestamp) {
     startedAt = eventTimestamp
   }
 
-  // ── FIX: ended_at null ────────────────────────────────────────────────────
-  // Priority: call.endedAt → existing.ended_at (already in endedAt) →
-  //           message.timestamp → current time (ultimate fallback)
-  // We must NOT leave ended_at null for a finished call; billing/analytics
-  // depend on it and duration_seconds cannot be computed without it.
   if (!endedAt && status === 'ended') {
     endedAt = eventTimestamp ?? new Date().toISOString()
   }
 
-  // Ensure startedAt is populated even for ended calls with no in-progress event
   if (!startedAt && status === 'ended') {
     startedAt = firstString(existing?.started_at, existing?.created_at)
   }
 
-  // ── FIX: duration_seconds null ────────────────────────────────────────────
-  // Compute duration AFTER ended_at has been fully resolved above.
-  // 1. Try direct computation from startedAt / endedAt
-  // 2. Fall back to any numeric value Vapi sent in the payload
-  // 3. Last resort: use existing DB value (preserves data from previous events)
   let durationSeconds = computeDurationSeconds(startedAt, endedAt)
-
   if (durationSeconds === null) {
     durationSeconds = firstNumber(call.durationSeconds, call.duration, existing?.duration_seconds)
   }
-
-  // One more attempt: if we have existing started_at + the now-resolved endedAt
   if (status === 'ended' && durationSeconds === null) {
     const effectiveStartedAt = startedAt ?? existing?.started_at ?? null
     durationSeconds = computeDurationSeconds(effectiveStartedAt, endedAt)
@@ -265,9 +360,10 @@ async function upsertCall(
     stereo_recording_url: firstString(call.stereoRecordingUrl, existing?.stereo_recording_url),
     transcript: firstString(call.transcript, existing?.transcript),
     summary: firstString(call.summary, existing?.summary),
-    cost_cents: call.cost !== undefined && call.cost !== null
-      ? String(Math.round(call.cost * 100))
-      : existing?.cost_cents ?? null,
+    cost_cents:
+      call.cost !== undefined && call.cost !== null
+        ? String(Math.round(call.cost * 100))
+        : (existing?.cost_cents ?? null),
     cost_breakdown: call.costBreakdown ?? existing?.cost_breakdown ?? null,
     ended_reason: firstString(call.endedReason, overrides.ended_reason, existing?.ended_reason),
     caller_number: firstString(call.customer?.number, existing?.caller_number),
@@ -300,41 +396,8 @@ async function upsertCall(
   return (data?.id as string | undefined) ?? existing?.id ?? null
 }
 
-/**
- * Resolve orgId from call metadata or assistant_id → vapi_assistants lookup.
- */
-async function resolveOrgId(
-  supabase: SupabaseClient,
-  call: VapiCallPayload
-): Promise<string | null> {
-  const metadata = extractCallMetadata(call)
-  const metadataOrgId = firstString(metadata.orgId, metadata.org_id)
-  if (metadataOrgId) {
-    return metadataOrgId
-  }
+// ─── Context linking ──────────────────────────────────────────────────────────
 
-  if (call.assistantId) {
-    const { data } = await supabase
-      .from('vapi_assistants')
-      .select('org_id')
-      .eq('vapi_assistant_id', call.assistantId)
-      .maybeSingle()
-
-    if (data?.org_id) return data.org_id as string
-  }
-
-  const { data: existing } = await supabase
-    .from('calls')
-    .select('org_id')
-    .eq('vapi_call_id', call.id)
-    .maybeSingle()
-
-  return existing?.org_id ?? null
-}
-
-/**
- * Try to link a call to a contact/conversation from visitor context.
- */
 async function linkCallToContext(
   supabase: SupabaseClient,
   orgId: string,
@@ -349,7 +412,8 @@ async function linkCallToContext(
   const callerName = call.customer?.name
   const callerEmail = call.customer?.email
 
-  if (!visitorId && !callerNumber && !callerEmail && !metadataConversationId && !metadataContactId) return
+  if (!visitorId && !callerNumber && !callerEmail && !metadataConversationId && !metadataContactId)
+    return
 
   let contactId: string | null = null
   let conversationId: string | null = null
@@ -361,7 +425,6 @@ async function linkCallToContext(
       .eq('org_id', orgId)
       .eq('id', metadataConversationId)
       .maybeSingle()
-
     if (conversation?.id) {
       conversationId = conversation.id as string
       contactId = (conversation.contact_id as string | null | undefined) ?? null
@@ -375,11 +438,9 @@ async function linkCallToContext(
       .eq('org_id', orgId)
       .eq('id', metadataContactId)
       .maybeSingle()
-
     contactId = (contact?.id as string | undefined) ?? null
   }
 
-  // Try visitor ID first (web calls from widget)
   if (!contactId && visitorId) {
     const { data } = await supabase
       .from('contacts')
@@ -388,11 +449,9 @@ async function linkCallToContext(
       .or(`meta->>visitorId.eq.${visitorId},meta->>visitor_id.eq.${visitorId}`)
       .order('created_at', { ascending: false })
       .limit(1)
-
     contactId = (data?.[0]?.id as string | undefined) ?? null
   }
 
-  // Try phone number (PSTN calls)
   if (!contactId && callerNumber) {
     const { data } = await supabase
       .from('contacts')
@@ -401,10 +460,8 @@ async function linkCallToContext(
       .eq('phone', callerNumber)
       .order('created_at', { ascending: false })
       .limit(1)
-
     contactId = (data?.[0]?.id as string | undefined) ?? null
 
-    // Create contact if new phone caller
     if (!contactId) {
       const { data: created } = await supabase
         .from('contacts')
@@ -413,19 +470,14 @@ async function linkCallToContext(
           name: callerName ?? null,
           email: callerEmail ?? null,
           phone: callerNumber,
-          meta: {
-            source: 'voice_call',
-            ...(visitorId ? { visitorId } : {}),
-          },
+          meta: { source: 'voice_call', ...(visitorId ? { visitorId } : {}) },
         })
         .select('id')
         .maybeSingle()
-
       contactId = created?.id ?? null
     }
   }
 
-  // Try email if still no match
   if (!contactId && callerEmail) {
     const { data } = await supabase
       .from('contacts')
@@ -434,7 +486,6 @@ async function linkCallToContext(
       .eq('email', callerEmail.toLowerCase())
       .order('created_at', { ascending: false })
       .limit(1)
-
     contactId = (data?.[0]?.id as string | undefined) ?? null
   }
 
@@ -446,7 +497,6 @@ async function linkCallToContext(
       .eq('contact_id', contactId)
       .order('started_at', { ascending: false })
       .limit(1)
-
     conversationId = (conversationRows?.[0]?.id as string | undefined) ?? null
   }
 
@@ -456,18 +506,8 @@ async function linkCallToContext(
   if (visitorId) updatePatch.visitor_id = visitorId
 
   if (Object.keys(updatePatch).length > 0) {
-    await supabase
-      .from('calls')
-      .update(updatePatch)
-      .eq('id', callId)
-      .eq('org_id', orgId)
-
-    console.log('[vapi-webhook] Linked call context', {
-      callId,
-      contactId,
-      conversationId,
-      visitorId,
-    })
+    await supabase.from('calls').update(updatePatch).eq('id', callId).eq('org_id', orgId)
+    console.log('[vapi-webhook] Linked call context', { callId, contactId, conversationId, visitorId })
   }
 }
 
@@ -478,7 +518,7 @@ vapiWebhookRoute.post(
   async (req: Request & { rawBody?: string }, res: Response) => {
     const rawBody: string = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(req.body)
 
-    // ── Signature verification ──────────────────────────────────────────────
+    // ── Signature verification ────────────────────────────────────────────────
     const webhookSecret = process.env.VAPI_WEBHOOK_SECRET
     const signature = req.headers['x-vapi-secret'] as string | undefined
 
@@ -488,41 +528,87 @@ vapiWebhookRoute.post(
           console.warn('[vapi-webhook] Missing x-vapi-secret header — rejecting')
           return res.status(401).json({ error: 'Missing signature' })
         }
-        console.warn('[vapi-webhook] Missing x-vapi-secret (dev/ngrok — allowing)')
+        console.warn('[vapi-webhook] Missing x-vapi-secret (dev — allowing)')
       } else if (signature.trim() !== webhookSecret.trim()) {
         console.warn('[vapi-webhook] Invalid x-vapi-secret — rejecting')
         return res.status(401).json({ error: 'Invalid signature' })
       }
     }
 
-    // Respond immediately — Vapi retries on non-200
-    res.status(200).json({ received: true })
-
-    // ── Process event ───────────────────────────────────────────────────────
     const event = req.body as VapiWebhookEvent
     const message = event?.message
-    if (!message) return
+    if (!message) return res.status(200).json({ received: true })
 
     const call = message.call as VapiCallPayload | undefined
-    if (!call?.id) return
-
     const supabase = getSupabase()
-    const orgId = await resolveOrgId(supabase, call)
-    if (!orgId) {
-      console.warn('[vapi-webhook] Could not resolve orgId for call', call.id)
-      return
-    }
-
     const eventType = message.type
     const eventTimestamp = asString(message.timestamp)
 
+    // ── tool-calls: SYNCHRONOUS — must reply before returning ────────────────
+    // Vapi blocks the AI response until we reply with tool results.
+    if (eventType === 'tool-calls') {
+      const toolCallList = (message as Record<string, unknown>).toolCallList as
+        | VapiToolCall[]
+        | undefined
+
+      if (!toolCallList?.length) {
+        return res.status(200).json({ results: [] })
+      }
+
+      try {
+        // Resolve orgId from call metadata or assistant lookup
+        const orgId = call ? await resolveOrgId(supabase, call) : null
+
+        if (!orgId) {
+          console.warn('[vapi-webhook] tool-calls: could not resolve orgId')
+          return res.status(200).json({
+            results: toolCallList.map((tc) => ({
+              toolCallId: tc.id,
+              result: 'Service temporarily unavailable.',
+            })),
+          })
+        }
+
+        const results = await handleKnowledgeBaseSearch(
+          supabase,
+          orgId,
+          call?.assistantId ?? null,
+          toolCallList
+        )
+
+        console.log(
+          `[vapi-webhook] tool-calls: org=${orgId} calls=${toolCallList.length} results=${results.length}`
+        )
+
+        // Vapi expects: { results: [ { toolCallId, result } ] }
+        return res.status(200).json({ results })
+      } catch (err) {
+        console.error('[vapi-webhook] tool-calls error:', err)
+        return res.status(200).json({
+          results: (toolCallList ?? []).map((tc) => ({
+            toolCallId: tc.id,
+            result: 'An error occurred while searching the knowledge base.',
+          })),
+        })
+      }
+    }
+
+    // ── All other events: respond immediately, process async ─────────────────
+    res.status(200).json({ received: true })
+
+    if (!call?.id) return
+
     try {
+      const orgId = await resolveOrgId(supabase, call)
+      if (!orgId) {
+        console.warn('[vapi-webhook] Could not resolve orgId for call', call.id)
+        return
+      }
+
       switch (eventType) {
         case 'status-update': {
           const callRowId = await upsertCall(supabase, orgId, call, { eventType, eventTimestamp })
-          if (callRowId) {
-            await linkCallToContext(supabase, orgId, callRowId, call)
-          }
+          if (callRowId) await linkCallToContext(supabase, orgId, callRowId, call)
           console.log(`[vapi-webhook] status-update: ${call.id} → ${call.status}`)
           break
         }
@@ -530,28 +616,26 @@ vapiWebhookRoute.post(
         case 'end-of-call-report': {
           const artifact = message.artifact
 
-          const callRowId = await upsertCall(supabase, orgId, {
-            ...call,
-            transcript: artifact?.transcript ?? call.transcript,
-            recordingUrl: artifact?.recordingUrl ?? call.recordingUrl,
-            stereoRecordingUrl: artifact?.stereoRecordingUrl ?? call.stereoRecordingUrl,
-            summary: message.summary ?? call.summary,
-            endedReason: message.endedReason ?? call.endedReason,
-            cost: message.cost ?? call.cost,
-            costBreakdown: (message.costBreakdown as Record<string, unknown>) ?? call.costBreakdown,
-          }, {
-            eventType,
-            eventTimestamp,
-            overrides: {
-              status: 'ended',
+          const callRowId = await upsertCall(
+            supabase,
+            orgId,
+            {
+              ...call,
+              transcript: artifact?.transcript ?? call.transcript,
+              recordingUrl: artifact?.recordingUrl ?? call.recordingUrl,
+              stereoRecordingUrl: artifact?.stereoRecordingUrl ?? call.stereoRecordingUrl,
+              summary: message.summary ?? call.summary,
+              endedReason: message.endedReason ?? call.endedReason,
+              cost: message.cost ?? call.cost,
+              costBreakdown: (message.costBreakdown as Record<string, unknown>) ?? call.costBreakdown,
             },
-          })
+            { eventType, eventTimestamp, overrides: { status: 'ended' } }
+          )
 
-          if (callRowId) {
-            await linkCallToContext(supabase, orgId, callRowId, call)
-          }
+          if (callRowId) await linkCallToContext(supabase, orgId, callRowId, call)
 
-          const duration = computeDurationSeconds(call.startedAt ?? null, call.endedAt ?? null) ?? '?'
+          const duration =
+            computeDurationSeconds(call.startedAt ?? null, call.endedAt ?? null) ?? '?'
           console.log(`[vapi-webhook] end-of-call-report: ${call.id}, duration=${duration}s`)
           break
         }
@@ -562,16 +646,12 @@ vapiWebhookRoute.post(
             eventTimestamp,
             overrides: { status: 'ended', ended_reason: 'hang' },
           })
-          if (callRowId) {
-            await linkCallToContext(supabase, orgId, callRowId, call)
-          }
+          if (callRowId) await linkCallToContext(supabase, orgId, callRowId, call)
           break
         }
 
-        default: {
-          // speech-update, transcript, etc. — no DB action needed
+        default:
           break
-        }
       }
     } catch (err) {
       console.error('[vapi-webhook] Processing error:', err)

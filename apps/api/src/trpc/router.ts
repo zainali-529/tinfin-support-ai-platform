@@ -11,7 +11,9 @@ import { billingRouter } from '../routers/billing.router'
 import { usageRouter } from '../routers/usage.router'
 import { analyticsRouter } from '../routers/analytics.router'
 import { emailRouter } from '../routers/email.router'
+import { whatsappRouter } from '../routers/whatsapp.router'
 import { contactsRouter } from '../routers/contacts.router'
+import { cannedResponsesRouter } from '../routers/canned-responses.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -26,7 +28,9 @@ export const appRouter = router({
   usage: usageRouter,
   analytics: analyticsRouter,
   email: emailRouter,
+  whatsapp: whatsappRouter,
   contacts: contactsRouter,
+  cannedResponses: cannedResponsesRouter,
 })
 
 export type AppRouter = typeof appRouter;

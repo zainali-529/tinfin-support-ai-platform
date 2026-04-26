@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Button } from '@workspace/ui/components/button'
@@ -23,8 +23,14 @@ import {
   FileIcon, ImageIcon, XIcon, Loader2Icon, DownloadIcon,
 } from 'lucide-react'
 import { useMessages } from '@/hooks/useMessages'
+import {
+  useCannedResponsesList,
+  useCannedResponseSuggestions,
+  useCannedResponseUsage,
+} from '@/hooks/useCannedResponses'
+import { CannedResponsePicker } from '@/components/canned/CannedResponsePicker'
 import { createClient } from '@/lib/supabase'
-import type { Conversation, Attachment } from '@/types/database'
+import type { Conversation, Attachment, CannedResponse } from '@/types/database'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +63,17 @@ function formatFileSize(bytes: number): string {
 
 function isImageType(type: string): boolean {
   return type.startsWith('image/')
+}
+
+function insertCannedText(current: string, cannedContent: string): string {
+  const slashMatch = current.match(/(?:^|\s)\/[a-z0-9_-]*$/i)
+  if (!slashMatch) {
+    return current.trim().length > 0 ? `${current}\n${cannedContent}` : cannedContent
+  }
+
+  const start = slashMatch.index ?? current.length
+  const prefix = current.slice(0, start).trimEnd()
+  return prefix.length > 0 ? `${prefix}\n${cannedContent}` : cannedContent
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -224,6 +241,8 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   const { messages, loading, sending, sendMessage } = useMessages(conversation.id, orgId)
   const { send: wsSend } = useAgentWS(orgId, agentId)
   const [reply, setReply] = useState('')
+  const [cannedOpen, setCannedOpen] = useState(false)
+  const [cannedQuery, setCannedQuery] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -234,6 +253,33 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   const isBotMode = status === 'bot'
   const isResolved = status === 'resolved' || status === 'closed'
   const canReply = isAgentMode && !isResolved
+  const { data: cannedResponses = [], isLoading: cannedLoading } = useCannedResponsesList({
+    query: cannedQuery || undefined,
+    limit: 50,
+  })
+  const { data: cannedSuggestions = [] } = useCannedResponseSuggestions(conversation.id, 3)
+  const cannedUsage = useCannedResponseUsage()
+  const orderedCannedResponses = useMemo(() => {
+    if (cannedQuery.trim().length > 0) return cannedResponses
+
+    const merged: CannedResponse[] = []
+    const seen = new Set<string>()
+
+    for (const item of cannedSuggestions) {
+      if (!seen.has(item.id)) {
+        merged.push(item)
+        seen.add(item.id)
+      }
+    }
+    for (const item of cannedResponses) {
+      if (!seen.has(item.id)) {
+        merged.push(item)
+        seen.add(item.id)
+      }
+    }
+
+    return merged
+  }, [cannedQuery, cannedResponses, cannedSuggestions])
 
   // ── Revoke object URLs on unmount ──────────────────────────────────────────
   useEffect(() => {
@@ -350,8 +396,19 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   }, [reply, sending, canReply, wsSend, conversation.id, sendMessage, agentId, pendingFiles])
 
   const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && cannedOpen) {
+      setCannedOpen(false)
+      return
+    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend()
   }
+
+  const handleCannedSelect = useCallback((item: CannedResponse) => {
+    setReply((prev) => insertCannedText(prev, item.content))
+    setCannedOpen(false)
+    setCannedQuery('')
+    void cannedUsage.mutateAsync({ id: item.id }).catch(() => undefined)
+  }, [cannedUsage])
 
   const handleTakeover = async () => {
     const supabase = createClient()
@@ -616,7 +673,15 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border bg-background ring-1 ring-border/50 transition-shadow focus-within:ring-2 focus-within:ring-ring/30">
+          <div className="relative rounded-xl border bg-background ring-1 ring-border/50 transition-shadow focus-within:ring-2 focus-within:ring-ring/30">
+            <CannedResponsePicker
+              open={cannedOpen}
+              query={cannedQuery}
+              loading={cannedLoading}
+              responses={orderedCannedResponses}
+              onSelect={handleCannedSelect}
+            />
+
             {/* Pending files strip */}
             {pendingFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 px-3 pt-2.5 pb-0">
@@ -657,10 +722,22 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
 
             <Textarea
               ref={textareaRef}
-              placeholder="Type your reply… (⌘+Enter to send)"
+              placeholder="Type your reply… (Use / for canned responses, ⌘+Enter to send)"
               className="min-h-[72px] resize-none border-0 bg-transparent px-3 py-2.5 text-sm shadow-none focus-visible:ring-0"
               value={reply}
-              onChange={e => setReply(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value
+                setReply(value)
+
+                const slashMatch = value.match(/(?:^|\s)\/([a-z0-9_-]*)$/i)
+                if (slashMatch) {
+                  setCannedOpen(true)
+                  setCannedQuery(slashMatch[1] ?? '')
+                } else {
+                  setCannedOpen(false)
+                  setCannedQuery('')
+                }
+              }}
               onKeyDown={handleKey}
             />
 

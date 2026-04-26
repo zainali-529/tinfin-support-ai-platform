@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { redirect } from 'next/navigation'
 import { TeamSettingsPage } from '@/components/settings/TeamSettingsPage'
 import { UpgradePrompt } from '@/components/billing/PlanGuard'
@@ -27,7 +28,8 @@ export default async function TeamPageRoute() {
 
   if (membership?.role !== 'admin') redirect('/dashboard')
 
-  const { data: sub } = await supabase
+  // Use service-role client for subscription reads to avoid role/RLS-specific false "free" fallbacks.
+  const { data: sub } = await supabaseAdmin
     .from('subscriptions')
     .select('plan')
     .eq('org_id', activeOrgId)

@@ -324,7 +324,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
                     contact.emailThreads.map(thread => (
                       <button
                         key={thread.conversationId}
-                        onClick={() => router.push(`/email?conversation=${thread.conversationId}`)}
+                        onClick={() => router.push(`/inbox?channel=email&conversation=${thread.conversationId}`)}
                         className="w-full flex items-start gap-3 rounded-xl border bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors group"
                       >
                         <MailIcon className="size-4 text-muted-foreground shrink-0 mt-0.5" />

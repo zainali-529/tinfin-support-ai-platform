@@ -35,11 +35,13 @@ import {
   MicIcon,
   Link2Icon,
   MailIcon,
+  MessageSquareQuoteIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
 import { OrgSwitcher } from '@/components/org/OrgSwitcher'
 import { PlanBadge } from '@/components/billing/PlanGuard'
 import { usePlan } from '@/hooks/usePlan'
+import { createClient } from '@/lib/supabase'
 
 type NavItem = {
   label: string
@@ -60,9 +62,8 @@ const navGroups: NavGroup[] = [
     label: 'Main',
     items: [
       { label: 'Dashboard',    href: '/dashboard',   icon: LayoutDashboardIcon, exact: true },
-      { label: 'Inbox',        href: '/inbox',        icon: InboxIcon, badge: '3' },
+      { label: 'Inbox',        href: '/inbox',        icon: InboxIcon },
       { label: 'Contacts',     href: '/contacts',     icon: UsersIcon },
-      { label: 'Email Inbox',  href: '/email',        icon: MailIcon },
       { label: 'Calls',        href: '/calls',        icon: PhoneCallIcon },
     ],
   },
@@ -73,7 +74,7 @@ const navGroups: NavGroup[] = [
       { label: 'Widget',           href: '/widget',          icon: CodeIcon, adminOnly: true },
       { label: 'Embedding',        href: '/embedding',       icon: Link2Icon, adminOnly: true },
       { label: 'Voice Assistant',  href: '/voice-assistant', icon: MicIcon, adminOnly: true },
-      { label: 'Email Channel',    href: '/email-settings',  icon: MailIcon, adminOnly: true },
+      { label: 'Canned Replies',   href: '/canned-responses', icon: MessageSquareQuoteIcon, adminOnly: true },
       { label: 'Analytics',        href: '/analytics',       icon: BarChart2Icon },
     ],
   },
@@ -88,10 +89,55 @@ const navGroups: NavGroup[] = [
   {
     label: 'Account',
     items: [
+      { label: 'Channels', href: '/settings/channels', icon: MailIcon, adminOnly: true },
       { label: 'Settings', href: '/settings', icon: SettingsIcon },
     ],
   },
 ]
+
+function useUnreadCount(orgId: string): number {
+  const [count, setCount] = React.useState(0)
+
+  React.useEffect(() => {
+    if (!orgId) return
+
+    const supabase = createClient()
+
+    const fetchCount = async () => {
+      const { count: unreadCount, error } = await supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+        .in('status', ['bot', 'pending'])
+
+      if (!error) setCount(unreadCount ?? 0)
+    }
+
+    void fetchCount()
+
+    const channel = supabase
+      .channel(`sidebar:unread:${orgId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `org_id=eq.${orgId}`,
+        },
+        () => {
+          void fetchCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [orgId])
+
+  return count
+}
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   user: { email?: string } | null
@@ -103,6 +149,7 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
   const isAdmin = activeOrg.role === 'admin'
   const { planId } = usePlan()
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? 'TF'
+  const unreadCount = useUnreadCount(activeOrg.id)
 
   const isActive = (href: string, exact = false) => {
     if (exact) return pathname === href
@@ -137,9 +184,9 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
                         <Link href={item.href}>
                           <item.icon className="size-4 shrink-0" />
                           <span className="flex-1 truncate text-[13px]">{item.label}</span>
-                          {item.badge && (
+                          {(item.badge || (item.href === '/inbox' && unreadCount > 0)) && (
                             <SidebarMenuBadge className="min-w-[18px] h-[18px] text-[10px] font-bold tabular-nums">
-                              {item.badge}
+                              {item.badge ?? (unreadCount > 99 ? '99+' : unreadCount)}
                             </SidebarMenuBadge>
                           )}
                           {item.href === '/usage' && (

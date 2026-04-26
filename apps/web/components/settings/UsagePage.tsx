@@ -251,6 +251,7 @@ export function UsagePage() {
                 { label: 'Chats/month', value: limits?.conversations === -1 ? 'Unlimited' : limits?.conversations?.toLocaleString() ?? '50' },
                 { label: 'Voice min/month', value: limits?.voiceMinutes === 0 ? 'None' : `${limits?.voiceMinutes ?? 0}` },
                 { label: 'Email channel', value: canUse('emailChannel') ? 'Included' : 'Preview only' },
+                { label: 'WhatsApp channel', value: canUse('whatsappChannel') ? 'Included' : 'Preview only' },
                 { label: 'Team members', value: `${limits?.teamMembers ?? 1}` },
                 { label: 'Knowledge bases', value: `${limits?.knowledgeBases ?? 1}` },
                 { label: 'KB chunks', value: limits?.kbChunks?.toLocaleString() ?? '100' },
@@ -276,7 +277,7 @@ export function UsagePage() {
               <CardContent className="pt-4 space-y-3">
                 <p className="text-sm font-semibold">Unlock more with Pro</p>
                 <ul className="text-xs text-muted-foreground space-y-1.5">
-                  {['Email channel', '5 team members', '1,000 chats/month', '100 voice minutes', 'Widget customization', 'Analytics'].map(f => (
+                  {['Email channel', 'WhatsApp channel', '5 team members', '1,000 chats/month', '100 voice minutes', 'Widget customization', 'Analytics'].map(f => (
                     <li key={f} className="flex items-center gap-1.5">
                       <span className="size-4 flex items-center justify-center rounded-full bg-primary/10 text-primary text-[10px]">✓</span>
                       {f}

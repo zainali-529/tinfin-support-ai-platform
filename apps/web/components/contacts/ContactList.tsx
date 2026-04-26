@@ -46,6 +46,7 @@ interface Props {
 const CHANNEL_DOT: Record<string, string> = {
   chat:    'bg-blue-400',
   email:   'bg-amber-400',
+  whatsapp:'bg-emerald-500',
   voice:   'bg-emerald-400',
   manual:  'bg-muted-foreground',
   import:  'bg-muted-foreground',
@@ -54,6 +55,7 @@ const CHANNEL_DOT: Record<string, string> = {
 const CHANNEL_LABEL: Record<string, string> = {
   chat:  'Chat',
   email: 'Email',
+  whatsapp: 'WhatsApp',
   voice: 'Voice',
 }
 

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Navbar } from '@/components/marketing/Navbar'
-import '@/app/(marketing)/marketing.css'
+// import '@/app/(marketing)/marketing.css'
 
 export const metadata: Metadata = {
   title: 'Tinfin — AI Customer Support Platform',
@@ -76,7 +76,13 @@ export default function MarketingLayout({
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">
                 Legal
               </p>
-              {['Privacy', 'Terms', 'Security', 'DPA'].map(l => (
+              <a
+                href="/privacy"
+                className="block text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Privacy
+              </a>
+              {['Terms', 'Security', 'DPA'].map(l => (
                 <a
                   key={l}
                   href="#"

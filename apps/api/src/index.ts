@@ -15,6 +15,7 @@ import { voicePreviewRoute } from './routes/voice-preview.route'
 import { stripeWebhookRoute } from './routes/stripe-webhook.route'
 import { uploadRoute } from './routes/upload.route'
 import { emailInboundRoute } from './routes/email-inbound.route'
+import { whatsappWebhookRoute } from './routes/whatsapp-webhook.route'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
@@ -42,6 +43,23 @@ app.use(
     }
   },
   emailInboundRoute
+)
+
+// WhatsApp webhook
+// Capture raw body for signature verification while still parsing JSON.
+app.use(
+  '/api/whatsapp-webhook',
+  express.json({
+    limit: '5mb',
+    verify: (
+      req: Request & { rawBody?: string },
+      _res: Response,
+      buf: Buffer
+    ) => {
+      req.rawBody = buf.toString('utf8')
+    },
+  }),
+  whatsappWebhookRoute
 )
 
 // ── Global CORS ───────────────────────────────────────────────────────────────

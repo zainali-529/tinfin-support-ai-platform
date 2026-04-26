@@ -299,10 +299,20 @@ export const teamRouter = router({
       }
 
       // ── EMAIL VALIDATION ────────────────────────────────────────────────────
-      // Fetch the logged-in user's email from Supabase Auth (authoritative source)
-      const { data: { user: authUser } } = await ctx.supabase.auth.getUser()
-      const userEmail = authUser?.email?.toLowerCase().trim()
+      // protectedProcedure already validated the token and attached ctx.user.
+      // Using ctx.user prevents false mismatches from calling getUser() without a token.
       const inviteEmail = (invite.email as string).toLowerCase().trim()
+      let userEmail = ctx.user.email?.toLowerCase().trim() ?? ''
+
+      // Fallback for edge-cases where token payload omits email.
+      if (!userEmail) {
+        const { data: userRow } = await ctx.supabase
+          .from('users')
+          .select('email')
+          .eq('id', ctx.user.id)
+          .maybeSingle()
+        userEmail = userRow?.email?.toLowerCase().trim() ?? ''
+      }
 
       if (!userEmail || userEmail !== inviteEmail) {
         throw new TRPCError({
