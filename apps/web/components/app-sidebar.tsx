@@ -2,7 +2,7 @@
 
 /**
  * apps/web/components/app-sidebar.tsx
- * Updated — adds Contacts to the Main nav group.
+ * Dashboard sidebar navigation with permission-aware route groups.
  */
 
 import * as React from 'react'
@@ -16,27 +16,26 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarMenuBadge,
 } from '@workspace/ui/components/sidebar'
 import {
-  LayoutDashboardIcon,
-  InboxIcon,
-  BookOpenIcon,
   BarChart2Icon,
-  SettingsIcon,
-  CodeIcon,
-  PhoneCallIcon,
-  UsersIcon,
-  CreditCardIcon,
-  ZapIcon,
-  MicIcon,
-  Link2Icon,
-  MailIcon,
-  MessageSquareQuoteIcon,
+  BookOpenIcon,
   Building2Icon,
+  CodeIcon,
+  CreditCardIcon,
+  InboxIcon,
+  LayoutDashboardIcon,
+  Link2Icon,
+  MessageSquareQuoteIcon,
+  MicIcon,
+  PhoneCallIcon,
+  SettingsIcon,
+  UsersIcon,
+  ZapIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
 import { OrgSwitcher } from '@/components/org/OrgSwitcher'
@@ -50,6 +49,7 @@ type NavItem = {
   href: string
   icon: React.ComponentType<{ className?: string }>
   exact?: boolean
+  activePrefixes?: string[]
   badge?: string
   adminOnly?: boolean
   permission?: TeamPermissionKey
@@ -62,7 +62,7 @@ type NavGroup = {
 
 const navGroups: NavGroup[] = [
   {
-    label: 'Main',
+    label: 'Workspace',
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboardIcon, exact: true, permission: 'dashboard' },
       { label: 'Inbox', href: '/inbox', icon: InboxIcon, permission: 'inbox' },
@@ -71,30 +71,29 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Management',
+    label: 'AI Studio',
     items: [
       { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon, permission: 'knowledge' },
+      { label: 'Canned Replies', href: '/canned-responses', icon: MessageSquareQuoteIcon, permission: 'cannedResponses' },
       { label: 'Widget', href: '/widget', icon: CodeIcon, permission: 'widget' },
       { label: 'Embedding', href: '/embedding', icon: Link2Icon, permission: 'embedding' },
       { label: 'Voice Assistant', href: '/voice-assistant', icon: MicIcon, permission: 'voiceAssistant' },
-      { label: 'Canned Replies', href: '/canned-responses', icon: MessageSquareQuoteIcon, permission: 'cannedResponses' },
+    ],
+  },
+  {
+    label: 'Performance',
+    items: [
       { label: 'Analytics', href: '/analytics', icon: BarChart2Icon, permission: 'analytics' },
+      { label: 'Usage', href: '/usage', icon: ZapIcon },
     ],
   },
   {
-    label: 'Business',
+    label: 'Administration',
     items: [
-      { label: 'Usage',    href: '/usage',   icon: ZapIcon },
-      { label: 'Team',     href: '/team',    icon: UsersIcon,      adminOnly: true },
-      { label: 'Billing',  href: '/billing', icon: CreditCardIcon, adminOnly: true },
-    ],
-  },
-  {
-    label: 'Account',
-    items: [
+      { label: 'Team', href: '/team', icon: UsersIcon, adminOnly: true },
+      { label: 'Billing', href: '/billing', icon: CreditCardIcon, adminOnly: true },
       { label: 'Organizations', href: '/organizations', icon: Building2Icon },
-      { label: 'Channels', href: '/settings/channels', icon: MailIcon, permission: 'channels' },
-      { label: 'Settings', href: '/settings', icon: SettingsIcon },
+      { label: 'Settings', href: '/settings', icon: SettingsIcon, activePrefixes: ['/settings'] },
     ],
   },
 ]
@@ -144,7 +143,7 @@ function useUnreadCount(orgId: string): number {
 }
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  user: { email?: string } | null
+  user: { email?: string | null; name?: string | null } | null
   activeOrg: {
     id: string
     name: string
@@ -158,12 +157,21 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
   const pathname = usePathname()
   const isAdmin = activeOrg.role === 'admin'
   const { planId } = usePlan()
-  const initials = user?.email?.slice(0, 2).toUpperCase() ?? 'TF'
   const unreadCount = useUnreadCount(activeOrg.id)
 
-  const isActive = (href: string, exact = false) => {
-    if (exact) return pathname === href
-    return pathname === href || pathname.startsWith(href + '/')
+  const identityLabel = user?.name?.trim() || user?.email?.trim() || 'Tinfin User'
+  const initials = identityLabel
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const isItemActive = (item: NavItem) => {
+    if (item.exact) return pathname === item.href
+    const prefixes = item.activePrefixes ?? [item.href]
+    return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'))
   }
 
   return (
@@ -191,21 +199,19 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
                         asChild
-                        isActive={isActive(item.href, item.exact)}
+                        isActive={isItemActive(item)}
                         tooltip={item.label}
-                        className="h-9 gap-3 px-3 rounded-lg font-medium"
+                        className="h-9 gap-3 rounded-lg px-3 font-medium"
                       >
                         <Link href={item.href}>
                           <item.icon className="size-4 shrink-0" />
                           <span className="flex-1 truncate text-[13px]">{item.label}</span>
                           {(item.badge || (item.href === '/inbox' && unreadCount > 0)) && (
-                            <SidebarMenuBadge className="min-w-[18px] h-[18px] text-[10px] font-bold tabular-nums">
+                            <SidebarMenuBadge className="h-[18px] min-w-[18px] text-[10px] font-bold tabular-nums">
                               {item.badge ?? (unreadCount > 99 ? '99+' : unreadCount)}
                             </SidebarMenuBadge>
                           )}
-                          {item.href === '/usage' && (
-                            <PlanBadge planId={planId} size="xs" />
-                          )}
+                          {item.href === '/usage' && <PlanBadge planId={planId} size="xs" />}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -217,8 +223,15 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
         })}
       </SidebarContent>
 
-      <UserMenu email={user?.email ?? ''} initials={initials} />
+      <UserMenu
+        email={user?.email ?? ''}
+        name={user?.name ?? null}
+        initials={initials}
+        role={activeOrg.role}
+        orgName={activeOrg.name}
+      />
       <SidebarRail />
     </Sidebar>
   )
 }
+

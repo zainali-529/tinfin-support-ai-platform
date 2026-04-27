@@ -35,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: userRecord } = await supabase
     .from('users')
-    .select('org_id, active_org_id')
+    .select('org_id, active_org_id, name, email')
     .eq('id', user.id)
     .single()
 
@@ -108,11 +108,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
     permissions: userPermissions,
   }
 
+  const sidebarUser = {
+    email: userRecord?.email ?? user.email ?? '',
+    name: userRecord?.name ?? (user.user_metadata?.name as string | undefined) ?? null,
+  }
+
   return (
     <TooltipProvider delayDuration={0}>
       <OrgProvider org={activeOrgWithRole}>
         <SidebarProvider>
-          <AppSidebar user={user} activeOrg={activeOrgWithRole} />
+          <AppSidebar user={sidebarUser} activeOrg={activeOrgWithRole} />
           <SidebarInset>
             <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
               <SidebarTrigger className="-ml-1" />
@@ -144,3 +149,4 @@ export default async function DashboardLayout({ children }: { children: React.Re
     </TooltipProvider>
   )
 }
+
