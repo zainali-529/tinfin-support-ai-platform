@@ -23,27 +23,9 @@ import {
 } from '@workspace/ai'
 import type { Context } from '../trpc/context'
 import { requireFeature } from '../lib/plan-guards'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function assertOrgAdmin(
-  supabase: Context['supabase'],
-  userId: string,
-  orgId: string
-): Promise<void> {
-  const { data } = await supabase
-    .from('user_organizations')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('org_id', orgId)
-    .maybeSingle()
-  if (!data || data.role !== 'admin') {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Only admins can manage voice assistant settings.',
-    })
-  }
-}
 
 async function getOrgVapiKey(
   supabase: Context['supabase'],
@@ -113,6 +95,7 @@ export const vapiRouter = router({
   // ── READ ─────────────────────────────────────────────────────────────────────
 
   getAssistantConfig: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
     const { data } = await ctx.supabase
       .from('vapi_assistants')
       .select('*')
@@ -134,6 +117,7 @@ export const vapiRouter = router({
         .optional()
     )
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'calls', 'Calls access is required.')
       const orgId = ctx.userOrgId
       const limit = input?.limit ?? 50
       const offset = input?.offset ?? 0
@@ -165,6 +149,7 @@ export const vapiRouter = router({
   getCall: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'calls', 'Calls access is required.')
       const { data, error } = await ctx.supabase
         .from('calls')
         .select('*, contacts(id, name, email, phone), conversations(id, status, started_at)')
@@ -181,6 +166,7 @@ export const vapiRouter = router({
     }),
 
   getCallStats: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'calls', 'Calls access is required.')
     const orgId = ctx.userOrgId
     const now = new Date()
     const todayStart = new Date(
@@ -239,11 +225,13 @@ export const vapiRouter = router({
   }),
 
   hasCustomVapiKey: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
     const key = await getOrgVapiKey(ctx.supabase, ctx.userOrgId)
     return { hasCustomKey: Boolean(key) }
   }),
 
-  getPublicKey: protectedProcedure.query(() => {
+  getPublicKey: protectedProcedure.query(({ ctx }) => {
+    requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
     const publicKey = process.env.VAPI_PUBLIC_KEY
     if (!publicKey)
       throw new TRPCError({
@@ -258,7 +246,7 @@ export const vapiRouter = router({
   upsertAssistantConfig: protectedProcedure
     .input(upsertAssistantSchema)
     .mutation(async ({ ctx, input }) => {
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
       await requireFeature(ctx.supabase, ctx.userOrgId, 'voiceCalls')
 
       const orgId = ctx.userOrgId
@@ -432,7 +420,7 @@ export const vapiRouter = router({
     }),
 
   deleteAssistant: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
 
     const orgId = ctx.userOrgId
     const { data: existing } = await ctx.supabase
@@ -460,13 +448,13 @@ export const vapiRouter = router({
   saveOrgVapiKey: protectedProcedure
     .input(z.object({ vapiPrivateKey: z.string().min(10, 'Invalid Vapi key') }))
     .mutation(async ({ ctx, input }) => {
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
       await saveOrgVapiKey(ctx.supabase, ctx.userOrgId, input.vapiPrivateKey)
       return { success: true }
     }),
 
   removeOrgVapiKey: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
     await ctx.supabase
       .from('org_api_keys')
       .update({ vapi_key_encrypted: null })
@@ -477,7 +465,7 @@ export const vapiRouter = router({
   syncCallsFromVapi: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }))
     .mutation(async ({ ctx, input }) => {
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
 
       const orgId = ctx.userOrgId
       const { data: assistantRow } = await ctx.supabase

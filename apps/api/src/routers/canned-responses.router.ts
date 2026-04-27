@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { protectedProcedure, router } from '../trpc/trpc'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 const cannedCategorySchema = z.string().trim().min(1).max(40)
 
@@ -110,6 +111,7 @@ export const cannedResponsesRouter = router({
       limit: z.number().int().min(1).max(100).default(30),
     }).optional())
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'cannedResponses', 'Canned Replies access is required.')
       const orgId = ctx.userOrgId
       const query = input?.query?.trim()
       const safeQuery = query?.replace(/[^a-zA-Z0-9 _/-]/g, ' ').trim()
@@ -151,9 +153,7 @@ export const cannedResponsesRouter = router({
       isActive: z.boolean().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.userRole !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can create canned responses.' })
-      }
+      requirePermissionFromContext(ctx, 'cannedResponses', 'Canned Replies access is required.')
 
       const shortcut = normalizeShortcut(input.shortcut)
       const now = new Date().toISOString()
@@ -194,9 +194,7 @@ export const cannedResponsesRouter = router({
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.userRole !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can update canned responses.' })
-      }
+      requirePermissionFromContext(ctx, 'cannedResponses', 'Canned Replies access is required.')
 
       const payload: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
@@ -231,9 +229,7 @@ export const cannedResponsesRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.userRole !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can delete canned responses.' })
-      }
+      requirePermissionFromContext(ctx, 'cannedResponses', 'Canned Replies access is required.')
 
       const { error } = await ctx.supabase
         .from('canned_responses')
@@ -251,6 +247,7 @@ export const cannedResponsesRouter = router({
   recordUsage: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'cannedResponses', 'Canned Replies access is required.')
       const now = new Date().toISOString()
 
       const { data, error } = await ctx.supabase
@@ -293,6 +290,7 @@ export const cannedResponsesRouter = router({
       limit: z.number().int().min(1).max(10).default(4),
     }))
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'cannedResponses', 'Canned Replies access is required.')
       const orgId = ctx.userOrgId
 
       const { data: conversation } = await ctx.supabase

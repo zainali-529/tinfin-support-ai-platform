@@ -19,6 +19,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 export const chatRouter = router({
   getConversations: protectedProcedure
@@ -28,6 +29,7 @@ export const chatRouter = router({
       orgId: z.string().uuid().optional(),
     }).optional())
     .query(async ({ ctx }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       // Use ctx.userOrgId — the middleware already validated org membership
       const orgId = ctx.userOrgId
 
@@ -43,6 +45,7 @@ export const chatRouter = router({
   getMessages: protectedProcedure
     .input(z.object({ conversationId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       const orgId = ctx.userOrgId
 
       const { data } = await ctx.supabase
@@ -61,6 +64,7 @@ export const chatRouter = router({
       assignedTo: z.string().uuid().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       const orgId = ctx.userOrgId
 
       const { data } = await ctx.supabase

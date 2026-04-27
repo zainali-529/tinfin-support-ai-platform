@@ -8,6 +8,7 @@
 import { z } from 'zod'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requireLimit } from '../lib/plan-guards'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 export const knowledgeRouter = router({
   getKnowledgeBases: protectedProcedure
@@ -15,6 +16,7 @@ export const knowledgeRouter = router({
       orgId: z.string().uuid().optional(), // kept for backward compat
     }).optional())
     .query(async ({ ctx }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
       const orgId = ctx.userOrgId // middleware-validated active org
 
       const { data } = await ctx.supabase
@@ -31,6 +33,7 @@ export const knowledgeRouter = router({
       sourceType: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
       const orgId = ctx.userOrgId
 
       const { count: kbCount } = await ctx.supabase
@@ -50,6 +53,7 @@ export const knowledgeRouter = router({
   deleteKnowledgeBase: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
       const orgId = ctx.userOrgId
 
       await ctx.supabase

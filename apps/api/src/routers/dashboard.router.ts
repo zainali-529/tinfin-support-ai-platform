@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getPlan } from '../lib/plans'
 import { getOrgSubscription } from '../lib/subscriptions'
 import { protectedProcedure, router } from '../trpc/trpc'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 type DashboardPeriod = 'today' | '7d' | '30d'
 
@@ -101,6 +102,7 @@ export const dashboardRouter = router({
   getHomeOverview: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'dashboard', 'Dashboard access is required.')
       const orgId = ctx.userOrgId
       const period = (input?.period ?? '7d') as DashboardPeriod
       const { currentStartIso, currentEndIso, prevStartIso } =
@@ -283,6 +285,7 @@ export const dashboardRouter = router({
   getRecentConversations: protectedProcedure
     .input(listInputSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'dashboard', 'Dashboard access is required.')
       const limit = input?.limit ?? 6
 
       const conversationsResult = await ctx.supabase
@@ -411,6 +414,7 @@ export const dashboardRouter = router({
         .optional()
     )
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'dashboard', 'Dashboard access is required.')
       const limit = input?.limit ?? 12
 
       const [conversationResult, messagesResult, callsResult] = await Promise.all([
@@ -535,6 +539,7 @@ export const dashboardRouter = router({
     }),
 
   getOnboardingStatus: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'dashboard', 'Dashboard access is required.')
     const [
       subscriptionResult,
       widgetResult,
@@ -598,7 +603,8 @@ export const dashboardRouter = router({
 
     const planId = subscriptionResult.planId || 'free'
     const plan = getPlan(planId)
-    const isAdmin = ctx.userRole === 'admin'
+    const canManageWidget = ctx.userPermissions.widget === true
+    const canManageChannels = ctx.userPermissions.channels === true
 
     const hasWidget = toCount(widgetResult) > 0
     const hasKnowledgeBase = toCount(knowledgeResult) > 0
@@ -616,7 +622,7 @@ export const dashboardRouter = router({
         description: 'Enable your website widget to start receiving messages.',
         href: '/widget',
         completed: hasWidget,
-        locked: !isAdmin,
+        locked: !canManageWidget,
       },
       {
         key: 'knowledge',
@@ -632,7 +638,7 @@ export const dashboardRouter = router({
         description: 'Allow customers to contact you through support email.',
         href: '/settings/channels',
         completed: hasEmailConnected,
-        locked: !isAdmin || !plan.features.emailChannel,
+        locked: !canManageChannels || !plan.features.emailChannel,
       },
       {
         key: 'whatsapp',
@@ -640,7 +646,7 @@ export const dashboardRouter = router({
         description: 'Enable WhatsApp support in your unified inbox.',
         href: '/settings/channels/whatsapp',
         completed: hasWhatsAppConnected,
-        locked: !isAdmin || !plan.features.whatsappChannel,
+        locked: !canManageChannels || !plan.features.whatsappChannel,
       },
       {
         key: 'first_conversation',

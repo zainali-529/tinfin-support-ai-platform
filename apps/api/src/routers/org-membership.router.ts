@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { PLANS } from '../lib/plans'
+import { getEffectiveTeamPermissions } from '@workspace/types'
 
 function slugify(name: string): string {
   return name
@@ -53,29 +54,6 @@ async function buildUniqueSlug(supabase: any, orgName: string): Promise<string> 
   }
 
   return `${baseSlug}-${shortId()}`
-}
-
-async function assertOrgAdmin(supabase: any, userId: string, orgId: string): Promise<void> {
-  const { data: membership, error } = await supabase
-    .from('user_organizations')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('org_id', orgId)
-    .maybeSingle()
-
-  if (error) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `Failed to verify permissions: ${error.message}`,
-    })
-  }
-
-  if (!membership || membership.role !== 'admin') {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Only organization admins can create a new organization.',
-    })
-  }
 }
 
 async function getOwnedOrganizationsCount(supabase: any, userId: string): Promise<number> {
@@ -151,22 +129,38 @@ async function getOrgWithSubscriptionPlan(supabase: any, orgId: string) {
 
 export const orgMembershipRouter = router({
   getMyOrgs: protectedProcedure.query(async ({ ctx }) => {
-    const membershipsResult = await ctx.supabase
+    const membershipsWithPermissions = await ctx.supabase
       .from('user_organizations')
       .select(
-        `id, role, is_owner, is_default, joined_at, organizations (id, name, slug, plan, created_at)`
+        `id, role, permissions, is_owner, is_default, joined_at, organizations (id, name, slug, plan, created_at)`
       )
       .eq('user_id', ctx.user.id)
       .order('joined_at', { ascending: true })
 
-    if (membershipsResult.error) {
+    let membershipsData = membershipsWithPermissions.data as Array<any> | null
+    let membershipsError = membershipsWithPermissions.error
+
+    if (membershipsError && isMissingColumnError(membershipsError, 'permissions')) {
+      const fallbackMemberships = await ctx.supabase
+        .from('user_organizations')
+        .select(
+          `id, role, is_owner, is_default, joined_at, organizations (id, name, slug, plan, created_at)`
+        )
+        .eq('user_id', ctx.user.id)
+        .order('joined_at', { ascending: true })
+
+      membershipsData = fallbackMemberships.data as Array<any> | null
+      membershipsError = fallbackMemberships.error
+    }
+
+    if (membershipsError) {
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
-        message: `Failed to fetch organizations: ${membershipsResult.error.message}`,
+        message: `Failed to fetch organizations: ${membershipsError.message}`,
       })
     }
 
-    const normalized = ((membershipsResult.data ?? []) as Array<any>).map((row) => {
+    const normalized = (membershipsData ?? []).map((row) => {
       const org = (Array.isArray(row.organizations) ? row.organizations[0] : row.organizations) as {
         id: string
         name: string
@@ -175,9 +169,12 @@ export const orgMembershipRouter = router({
         created_at: string
       }
 
+      const role = (row.role === 'admin' ? 'admin' : 'agent') as 'admin' | 'agent'
+
       return {
         membershipId: row.id,
-        role: row.role as 'admin' | 'agent',
+        role,
+        permissions: getEffectiveTeamPermissions(role, row.permissions ?? null),
         isOwner: (row.is_owner as boolean) ?? false,
         isDefault: row.is_default,
         joinedAt: row.joined_at,
@@ -211,31 +208,68 @@ export const orgMembershipRouter = router({
     const org = await getOrgWithSubscriptionPlan(ctx.supabase, activeOrgId)
     if (!org) return null
 
-    const { data: membership } = await ctx.supabase
+    let membershipResult = await ctx.supabase
       .from('user_organizations')
-      .select('role')
+      .select('role, permissions')
       .eq('user_id', ctx.user.id)
       .eq('org_id', activeOrgId)
       .maybeSingle()
+
+    if (membershipResult.error && isMissingColumnError(membershipResult.error, 'permissions')) {
+      membershipResult = await ctx.supabase
+        .from('user_organizations')
+        .select('role')
+        .eq('user_id', ctx.user.id)
+        .eq('org_id', activeOrgId)
+        .maybeSingle()
+    }
+
+    if (membershipResult.error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to resolve organization membership: ${membershipResult.error.message}`,
+      })
+    }
+
+    const role = (membershipResult.data?.role === 'admin' ? 'admin' : 'agent') as 'admin' | 'agent'
 
     return {
       id: org.id,
       name: org.name,
       slug: org.slug,
       plan: org.plan,
-      role: (membership?.role ?? 'agent') as 'admin' | 'agent',
+      role,
+      permissions: getEffectiveTeamPermissions(role, membershipResult.data?.permissions ?? null),
     }
   }),
 
   switchOrg: protectedProcedure
     .input(z.object({ orgId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const { data: membership } = await ctx.supabase
+      let membershipResult = await ctx.supabase
         .from('user_organizations')
-        .select('id, role')
+        .select('id, role, permissions')
         .eq('user_id', ctx.user.id)
         .eq('org_id', input.orgId)
         .maybeSingle()
+
+      if (membershipResult.error && isMissingColumnError(membershipResult.error, 'permissions')) {
+        membershipResult = await ctx.supabase
+          .from('user_organizations')
+          .select('id, role')
+          .eq('user_id', ctx.user.id)
+          .eq('org_id', input.orgId)
+          .maybeSingle()
+      }
+
+      if (membershipResult.error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to resolve organization membership: ${membershipResult.error.message}`,
+        })
+      }
+
+      const membership = membershipResult.data
 
       if (!membership) {
         throw new TRPCError({
@@ -257,7 +291,13 @@ export const orgMembershipRouter = router({
       }
 
       const org = await getOrgWithSubscriptionPlan(ctx.supabase, input.orgId)
-      return { success: true, org, role: membership.role }
+      const role = (membership.role === 'admin' ? 'admin' : 'agent') as 'admin' | 'agent'
+      return {
+        success: true,
+        org,
+        role,
+        permissions: getEffectiveTeamPermissions(role, (membership as { permissions?: unknown }).permissions ?? null),
+      }
     }),
 
   createOrg: protectedProcedure
@@ -272,8 +312,6 @@ export const orgMembershipRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.user.id
       const orgName = input.name.trim()
-
-      await assertOrgAdmin(ctx.supabase, userId, ctx.userOrgId)
 
       const ownedCount = await getOwnedOrganizationsCount(ctx.supabase, userId)
 
@@ -335,21 +373,34 @@ export const orgMembershipRouter = router({
 
         await ctx.supabase.from('widget_configs').upsert({ org_id: org.id }, { onConflict: 'org_id' })
 
-        const { error: memberError } = await ctx.supabase
+        let memberInsert = await ctx.supabase
           .from('user_organizations')
           .insert({
             user_id: userId,
             org_id: org.id,
             role: 'admin',
+            permissions: getEffectiveTeamPermissions('admin', null),
             is_default: false,
             is_owner: true,
           })
 
-        if (memberError) {
+        if (memberInsert.error && isMissingColumnError(memberInsert.error, 'permissions')) {
+          memberInsert = await ctx.supabase
+            .from('user_organizations')
+            .insert({
+              user_id: userId,
+              org_id: org.id,
+              role: 'admin',
+              is_default: false,
+              is_owner: true,
+            })
+        }
+
+        if (memberInsert.error) {
           await ctx.supabase.from('organizations').delete().eq('id', org.id)
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Failed to add membership: ${memberError.message}`,
+            message: `Failed to add membership: ${memberInsert.error.message}`,
           })
         }
 
@@ -535,15 +586,37 @@ export const orgMembershipRouter = router({
 
       if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a member.' })
 
-      const { data } = await ctx.supabase
+      const membersWithPermissions = await ctx.supabase
         .from('user_organizations')
-        .select(`id, role, is_owner, joined_at, users (id, email, name, avatar_url)`)
+        .select(`id, role, permissions, is_owner, joined_at, users (id, email, name, avatar_url)`)
         .eq('org_id', input.orgId)
         .order('joined_at', { ascending: true })
 
-      return (data ?? []).map((row) => ({
+      let membersData = membersWithPermissions.data as Array<any> | null
+      let membersError = membersWithPermissions.error
+
+      if (membersError && isMissingColumnError(membersError, 'permissions')) {
+        const fallbackMembers = await ctx.supabase
+          .from('user_organizations')
+          .select(`id, role, is_owner, joined_at, users (id, email, name, avatar_url)`)
+          .eq('org_id', input.orgId)
+          .order('joined_at', { ascending: true })
+
+        membersData = fallbackMembers.data as Array<any> | null
+        membersError = fallbackMembers.error
+      }
+
+      if (membersError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to fetch members: ${membersError.message}`,
+        })
+      }
+
+      return (membersData ?? []).map((row) => ({
         membershipId: row.id,
         role: row.role as 'admin' | 'agent',
+        permissions: getEffectiveTeamPermissions((row.role === 'admin' ? 'admin' : 'agent') as 'admin' | 'agent', row.permissions ?? null),
         isOwner: (row.is_owner as boolean) ?? false,
         joinedAt: row.joined_at,
         ...((Array.isArray(row.users) ? row.users[0] : row.users) as {

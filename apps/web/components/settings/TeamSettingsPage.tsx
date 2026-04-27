@@ -1,17 +1,44 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import * as React from 'react'
+import { formatDistanceToNow } from 'date-fns'
+import {
+  AlertCircleIcon,
+  CheckIcon,
+  CopyIcon,
+  CrownIcon,
+  LinkIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  ShieldIcon,
+  Trash2Icon,
+  UserIcon,
+  UsersIcon,
+  XCircleIcon,
+} from 'lucide-react'
 import { trpc } from '@/lib/trpc'
 import { useActiveOrg } from '@/components/org/OrgContext'
+import { cn } from '@workspace/ui/lib/utils'
 import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
-import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
-import { Skeleton } from '@workspace/ui/components/skeleton'
-import { Alert, AlertDescription } from '@workspace/ui/components/alert'
-import { Separator } from '@workspace/ui/components/separator'
 import { Input } from '@workspace/ui/components/input'
 import { Label } from '@workspace/ui/components/label'
+import { Spinner } from '@workspace/ui/components/spinner'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@workspace/ui/components/card'
+import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import { Separator } from '@workspace/ui/components/separator'
+import { Skeleton } from '@workspace/ui/components/skeleton'
+import { Checkbox } from '@workspace/ui/components/checkbox'
+import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@workspace/ui/components/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,25 +57,17 @@ import {
   DropdownMenuTrigger,
 } from '@workspace/ui/components/dropdown-menu'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@workspace/ui/components/dialog'
-import { Spinner } from '@workspace/ui/components/spinner'
-import { cn } from '@workspace/ui/lib/utils'
-import {
-  UsersIcon, PlusIcon, MoreHorizontalIcon, ShieldIcon, UserIcon,
-  CopyIcon, CheckIcon, Trash2Icon, XCircleIcon, RefreshCwIcon,
-  MailIcon, ClockIcon, OctagonXIcon, AlertCircleIcon, LinkIcon,
-  CheckCircleIcon, CrownIcon,
-} from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+  TEAM_PERMISSION_META,
+  type TeamPermissionKey,
+  type TeamPermissions,
+} from '@workspace/types'
+
+type OrgRole = 'admin' | 'agent'
 
 type Member = {
   membershipId: string
-  role: 'admin' | 'agent'
+  role: OrgRole
+  permissions: TeamPermissions
   isOwner: boolean
   joinedAt: string
   id: string
@@ -61,21 +80,52 @@ type Member = {
 type Invitation = {
   id: string
   email: string
-  role: 'admin' | 'agent'
+  role: OrgRole
+  permissions: TeamPermissions
   status: string
   expires_at: string
   created_at: string
 }
 
-// ─── Role Selector ────────────────────────────────────────────────────────────
+const EMPTY_PERMISSIONS: TeamPermissions = TEAM_PERMISSION_META.reduce(
+  (acc, item) => {
+    acc[item.key] = item.defaultAgent
+    return acc
+  },
+  {} as TeamPermissions
+)
+
+function countEnabledPermissions(permissions: TeamPermissions): number {
+  return TEAM_PERMISSION_META.reduce(
+    (count, item) => (permissions[item.key] ? count + 1 : count),
+    0
+  )
+}
+
+function RolePill({ role }: { role: OrgRole }) {
+  const isAdmin = role === 'admin'
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+        isAdmin
+          ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+          : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+      )}
+    >
+      {isAdmin ? <ShieldIcon className="size-2.5" /> : <UserIcon className="size-2.5" />}
+      {role}
+    </span>
+  )
+}
 
 function RoleSelector({
   value,
   onChange,
   disabled,
 }: {
-  value: 'admin' | 'agent'
-  onChange: (v: 'admin' | 'agent') => void
+  value: OrgRole
+  onChange: (next: OrgRole) => void
   disabled?: boolean
 }) {
   return (
@@ -87,31 +137,27 @@ function RoleSelector({
           disabled={disabled}
           onClick={() => onChange(role)}
           className={cn(
-            'flex flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-all duration-100',
-            'hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed',
+            'rounded-xl border px-3 py-2.5 text-left transition',
             value === role
               ? role === 'admin'
-                ? 'border-violet-400 bg-violet-50 dark:border-violet-600 dark:bg-violet-900/20 ring-1 ring-violet-300 dark:ring-violet-700'
-                : 'border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20 ring-1 ring-blue-300 dark:ring-blue-700'
-              : 'border-border bg-muted/20'
+                ? 'border-violet-400 bg-violet-50 ring-1 ring-violet-300 dark:border-violet-600 dark:bg-violet-900/20 dark:ring-violet-700'
+                : 'border-blue-400 bg-blue-50 ring-1 ring-blue-300 dark:border-blue-600 dark:bg-blue-900/20 dark:ring-blue-700'
+              : 'border-border bg-muted/20',
+            'disabled:opacity-60 disabled:cursor-not-allowed'
           )}
         >
           <div className="flex items-center gap-1.5">
-            {role === 'admin'
-              ? <ShieldIcon className={cn('size-3.5', value === role ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground')} />
-              : <UserIcon className={cn('size-3.5', value === role ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground')} />
-            }
-            <span className={cn(
-              'text-xs font-semibold capitalize',
-              value === role
-                ? role === 'admin' ? 'text-violet-700 dark:text-violet-300' : 'text-blue-700 dark:text-blue-300'
-                : 'text-foreground'
-            )}>
-              {role}
-            </span>
+            {role === 'admin' ? (
+              <ShieldIcon className="size-3.5 text-violet-600 dark:text-violet-400" />
+            ) : (
+              <UserIcon className="size-3.5 text-blue-600 dark:text-blue-400" />
+            )}
+            <span className="text-xs font-semibold capitalize">{role}</span>
           </div>
-          <p className="text-[10px] text-muted-foreground leading-snug">
-            {role === 'admin' ? 'Full access + settings' : 'Inbox, calls & KB'}
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {role === 'admin'
+              ? 'Full access to all modules'
+              : 'Customizable module permissions'}
           </p>
         </button>
       ))}
@@ -119,128 +165,229 @@ function RoleSelector({
   )
 }
 
-// ─── Invite Dialog ────────────────────────────────────────────────────────────
+function PermissionEditor({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: TeamPermissions
+  onChange: (next: TeamPermissions) => void
+  disabled?: boolean
+}) {
+  function togglePermission(key: TeamPermissionKey, checked: boolean) {
+    onChange({
+      ...value,
+      [key]: checked,
+    })
+  }
 
-function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'admin' | 'agent'>('agent')
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [error, setError] = useState('')
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">Module permissions</Label>
+        <span className="text-[11px] text-muted-foreground">
+          {countEnabledPermissions(value)} enabled
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {TEAM_PERMISSION_META.map((permission) => (
+          <label
+            key={permission.key}
+            className={cn(
+              'flex items-start gap-2 rounded-lg border p-2.5',
+              disabled && 'opacity-60'
+            )}
+          >
+            <Checkbox
+              checked={value[permission.key]}
+              onCheckedChange={(next) => togglePermission(permission.key, Boolean(next))}
+              disabled={disabled}
+              className="mt-0.5"
+            />
+            <span className="space-y-0.5">
+              <span className="block text-xs font-semibold">{permission.label}</span>
+              <span className="block text-[11px] text-muted-foreground">{permission.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
 
+function PermissionSummary({ permissions }: { permissions: TeamPermissions }) {
+  const enabled = TEAM_PERMISSION_META.filter((item) => permissions[item.key])
+  if (enabled.length === TEAM_PERMISSION_META.length) {
+    return (
+      <Badge variant="outline" className="text-[10px]">
+        Full access
+      </Badge>
+    )
+  }
+  if (enabled.length === 0) {
+    return (
+      <Badge variant="outline" className="text-[10px]">
+        No modules
+      </Badge>
+    )
+  }
+
+  const primary = enabled.slice(0, 2)
+  const extraCount = enabled.length - primary.length
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {primary.map((entry) => (
+        <Badge key={entry.key} variant="outline" className="text-[10px]">
+          {entry.label}
+        </Badge>
+      ))}
+      {extraCount > 0 && (
+        <Badge variant="outline" className="text-[10px]">
+          +{extraCount} more
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+function InviteDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const utils = trpc.useUtils()
+
+  const [email, setEmail] = React.useState('')
+  const [role, setRole] = React.useState<OrgRole>('agent')
+  const [permissions, setPermissions] = React.useState<TeamPermissions>(EMPTY_PERMISSIONS)
+  const [inviteLink, setInviteLink] = React.useState<string | null>(null)
+  const [errorMsg, setErrorMsg] = React.useState('')
+  const [copied, setCopied] = React.useState(false)
+
   const inviteMutation = trpc.team.inviteMember.useMutation({
     onSuccess: (data) => {
       setInviteLink(data.inviteLink)
       void utils.team.getPendingInvitations.invalidate()
     },
-    onError: (err) => setError(err.message),
+    onError: (error) => {
+      setErrorMsg(error.message)
+    },
   })
 
-  function handleClose() {
+  function resetState() {
     setEmail('')
     setRole('agent')
+    setPermissions(EMPTY_PERMISSIONS)
     setInviteLink(null)
+    setErrorMsg('')
     setCopied(false)
-    setError('')
-    onOpenChange(false)
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    inviteMutation.mutate({ email: email.trim().toLowerCase(), role })
+  function handleClose(nextOpen: boolean) {
+    if (!nextOpen) {
+      resetState()
+    }
+    onOpenChange(nextOpen)
   }
 
-  function handleCopy() {
+  function submitInvite(event: React.FormEvent) {
+    event.preventDefault()
+    setErrorMsg('')
+    inviteMutation.mutate({
+      email: email.trim().toLowerCase(),
+      role,
+      permissions: role === 'agent' ? permissions : undefined,
+    })
+  }
+
+  async function copyInviteLink() {
     if (!inviteLink) return
-    navigator.clipboard.writeText(inviteLink)
+    await navigator.clipboard.writeText(inviteLink)
     setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-base">Invite Team Member</DialogTitle>
-          <DialogDescription className="text-sm">
-            Generate an invite link to add someone to your organization.
+          <DialogTitle>Invite Team Member</DialogTitle>
+          <DialogDescription>
+            Choose role and module permissions before generating an invite link.
           </DialogDescription>
         </DialogHeader>
 
         {!inviteLink ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={submitInvite} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="invite-email" className="text-sm font-medium">Email address</Label>
+              <Label htmlFor="invite-email">Email address</Label>
               <Input
                 id="invite-email"
                 type="email"
-                placeholder="colleague@company.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="agent@company.com"
                 required
                 disabled={inviteMutation.isPending}
                 autoFocus
-                className="h-9"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Role</Label>
+              <Label>Role</Label>
               <RoleSelector value={role} onChange={setRole} disabled={inviteMutation.isPending} />
             </div>
 
-            {error && (
-              <Alert variant="destructive">
-                <OctagonXIcon className="size-4" />
-                <AlertDescription className="text-xs">{error}</AlertDescription>
+            {role === 'agent' ? (
+              <PermissionEditor
+                value={permissions}
+                onChange={setPermissions}
+                disabled={inviteMutation.isPending}
+              />
+            ) : (
+              <Alert>
+                <AlertCircleIcon className="size-4" />
+                <AlertDescription className="text-xs">
+                  Admin invites always receive full module access.
+                </AlertDescription>
               </Alert>
             )}
 
-            <div className="flex gap-2 justify-end pt-1">
-              <Button type="button" variant="outline" size="sm" onClick={handleClose} disabled={inviteMutation.isPending}>
+            {errorMsg && (
+              <Alert variant="destructive">
+                <AlertDescription className="text-xs">{errorMsg}</AlertDescription>
+              </Alert>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={inviteMutation.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={inviteMutation.isPending || !email.trim()}>
+              <Button type="submit" disabled={inviteMutation.isPending || !email.trim()}>
                 {inviteMutation.isPending && <Spinner className="mr-1.5 size-3.5" />}
-                {inviteMutation.isPending ? 'Creating…' : 'Create Invite Link'}
+                {inviteMutation.isPending ? 'Creating...' : 'Create Invite'}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20 p-3.5 space-y-1">
-              <div className="flex items-center gap-2">
-                <CheckCircleIcon className="size-4 text-emerald-600 shrink-0" />
-                <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Invite link created!</p>
-              </div>
-              <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 pl-6">
-                Share with <strong>{email}</strong> · expires in 7 days
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground font-medium">Invite Link</Label>
-              {/* Fixed: wrap-anywhere prevents overflow */}
-              <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-xs font-mono text-muted-foreground break-all leading-relaxed">
-                {inviteLink}
-              </div>
-              <Button size="sm" variant="outline" onClick={handleCopy} className="w-full gap-1.5">
-                {copied ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
-                {copied ? 'Copied to clipboard!' : 'Copy Link'}
-              </Button>
-            </div>
-
             <Alert>
-              <AlertCircleIcon className="size-4" />
               <AlertDescription className="text-xs">
-                Share this link via email, Slack, or any messaging app. Anyone with this link can join.
+                Invite link generated. Share it with <strong>{email}</strong>. It expires in 7 days.
               </AlertDescription>
             </Alert>
-
-            <div className="flex justify-end">
-              <Button size="sm" onClick={handleClose}>Done</Button>
+            <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-xs break-all font-mono">
+              {inviteLink}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={copyInviteLink} className="gap-1.5">
+                {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+                {copied ? 'Copied' : 'Copy link'}
+              </Button>
+              <Button onClick={() => handleClose(false)}>Done</Button>
             </div>
           </div>
         )}
@@ -249,19 +396,19 @@ function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
   )
 }
 
-// ─── Member Row ───────────────────────────────────────────────────────────────
-
 function MemberRow({
   member,
   onRoleChange,
+  onEditPermissions,
   onRemove,
 }: {
   member: Member
-  onRoleChange: (userId: string, role: 'admin' | 'agent') => void
-  onRemove: (userId: string, name: string) => void
+  onRoleChange: (userId: string, role: OrgRole) => void
+  onEditPermissions: (member: Member) => void
+  onRemove: (member: Member) => void
 }) {
-  const initials = (member.name || member.email).slice(0, 2).toUpperCase()
   const displayName = member.name || member.email
+  const initials = displayName.slice(0, 2).toUpperCase()
 
   return (
     <div className="flex items-center gap-3 py-3.5">
@@ -271,40 +418,32 @@ function MemberRow({
         </AvatarFallback>
       </Avatar>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold truncate">{displayName}</span>
           {member.isOwner && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-              <CrownIcon className="size-2.5" /> Owner
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              <CrownIcon className="size-2.5" />
+              Owner
             </span>
           )}
           {member.isCurrentUser && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+            <Badge variant="outline" className="text-[10px]">
               You
-            </span>
+            </Badge>
           )}
         </div>
-        {member.name && (
-          <p className="text-xs text-muted-foreground truncate">{member.email}</p>
-        )}
-        <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+
+        {member.name && <p className="text-xs text-muted-foreground truncate">{member.email}</p>}
+        <p className="text-[11px] text-muted-foreground">
           Joined {formatDistanceToNow(new Date(member.joinedAt), { addSuffix: true })}
         </p>
+        {member.role === 'agent' && <PermissionSummary permissions={member.permissions} />}
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <span className={cn(
-          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-          member.role === 'admin'
-            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
-            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-        )}>
-          {member.role === 'admin' ? <ShieldIcon className="size-2.5" /> : <UserIcon className="size-2.5" />}
-          {member.role}
-        </span>
+        <RolePill role={member.role} />
 
-        {/* No actions for owner or self */}
         {!member.isOwner && !member.isCurrentUser && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -312,19 +451,28 @@ function MemberRow({
                 <MoreHorizontalIcon className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-52">
               {member.role === 'agent' ? (
                 <DropdownMenuItem className="gap-2" onClick={() => onRoleChange(member.id, 'admin')}>
-                  <ShieldIcon className="size-3.5" /> Promote to Admin
+                  <ShieldIcon className="size-3.5" />
+                  Promote to admin
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem className="gap-2" onClick={() => onRoleChange(member.id, 'agent')}>
-                  <UserIcon className="size-3.5" /> Demote to Agent
+                  <UserIcon className="size-3.5" />
+                  Demote to agent
+                </DropdownMenuItem>
+              )}
+              {member.role === 'agent' && (
+                <DropdownMenuItem className="gap-2" onClick={() => onEditPermissions(member)}>
+                  <UsersIcon className="size-3.5" />
+                  Edit permissions
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" className="gap-2" onClick={() => onRemove(member.id, displayName)}>
-                <Trash2Icon className="size-3.5" /> Remove Member
+              <DropdownMenuItem variant="destructive" className="gap-2" onClick={() => onRemove(member)}>
+                <Trash2Icon className="size-3.5" />
+                Remove member
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -334,168 +482,161 @@ function MemberRow({
   )
 }
 
-// ─── Invitation Row ───────────────────────────────────────────────────────────
-
-export function InvitationRow({
-  invite,
+function InvitationRow({
+  invitation,
   onCancel,
 }: {
-  invite: Invitation
+  invitation: Invitation
   onCancel: (id: string) => void
 }) {
-  const [copied, setCopied] = useState(false)
-  const [fetchedLink, setFetchedLink] = useState<string | null>(null)
-  const isExpired = new Date(invite.expires_at) < new Date()
- 
-  // Lazy-fetch the link when user opens the dropdown
+  const [copied, setCopied] = React.useState(false)
+  const [cachedLink, setCachedLink] = React.useState<string | null>(null)
+  const isExpired = new Date(invitation.expires_at) < new Date()
+  const utils = trpc.useUtils()
+
   const getLinkQuery = trpc.team.getInviteLink.useQuery(
-    { invitationId: invite.id },
-    { enabled: false } // only fetch on demand
+    { invitationId: invitation.id },
+    { enabled: false }
   )
- 
-  async function handleCopyLink() {
-    let link = fetchedLink
- 
-    if (!link) {
-      // Fetch link on demand if not yet loaded
-      const result = await getLinkQuery.refetch()
-      link = result.data?.inviteLink ?? null
-      if (link) setFetchedLink(link)
-    }
- 
-    if (link) {
-      await navigator.clipboard.writeText(link)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    }
-  }
- 
-  const resendMutation = trpc.team.resendInvitation.useMutation({
+
+  const resendInvitation = trpc.team.resendInvitation.useMutation({
     onSuccess: (data) => {
-      setFetchedLink(data.inviteLink)
+      setCachedLink(data.inviteLink)
+      void utils.team.getPendingInvitations.invalidate()
     },
   })
- 
-  const utils = trpc.useUtils()
- 
+
+  async function copyLink() {
+    let link = cachedLink
+    if (!link) {
+      const result = await getLinkQuery.refetch()
+      link = result.data?.inviteLink ?? null
+      if (link) setCachedLink(link)
+    }
+    if (!link) return
+    await navigator.clipboard.writeText(link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="flex items-center gap-3 py-3.5">
-      <div className="size-10 rounded-full bg-muted/60 flex items-center justify-center shrink-0">
-        <span className="text-muted-foreground text-sm font-medium">
-          {invite.email.slice(0, 2).toUpperCase()}
-        </span>
+      <div className="flex size-10 items-center justify-center rounded-full bg-muted/60 text-sm font-semibold text-muted-foreground">
+        {invitation.email.slice(0, 2).toUpperCase()}
       </div>
- 
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium truncate">{invite.email}</p>
-        <span className={cn(
-          'inline-flex items-center gap-1 text-[11px] mt-0.5',
-          isExpired ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'
-        )}>
-          <ClockIcon className="size-3" />
-          {isExpired ? 'Expired' : `Expires ${formatDistanceToNow(new Date(invite.expires_at), { addSuffix: true })}`}
-        </span>
+
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-sm font-medium truncate">{invitation.email}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <RolePill role={invitation.role} />
+          {invitation.role === 'agent' && (
+            <Badge variant="outline" className="text-[10px]">
+              {countEnabledPermissions(invitation.permissions)} modules
+            </Badge>
+          )}
+          <span className={cn('text-[11px]', isExpired ? 'text-red-500' : 'text-muted-foreground')}>
+            {isExpired
+              ? 'Expired'
+              : `Expires ${formatDistanceToNow(new Date(invitation.expires_at), { addSuffix: true })}`}
+          </span>
+        </div>
       </div>
- 
-      <div className="flex items-center gap-2 shrink-0">
-        <span className={cn(
-          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase',
-          invite.role === 'admin'
-            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
-            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-        )}>
-          {invite.role}
-        </span>
- 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm">
-              <MoreHorizontalIcon className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {/* Copy Link — fetches on demand */}
-            <DropdownMenuItem
-              className="gap-2"
-              disabled={getLinkQuery.isFetching}
-              onClick={handleCopyLink}
-            >
-              {getLinkQuery.isFetching ? (
-                <Spinner className="size-3.5" />
-              ) : copied ? (
-                <CheckIcon className="size-3.5 text-emerald-500" />
-              ) : (
-                <CopyIcon className="size-3.5" />
-              )}
-              {copied ? 'Copied!' : 'Copy Invite Link'}
-            </DropdownMenuItem>
- 
-            {/* Resend — generates new token */}
-            <DropdownMenuItem
-              className="gap-2"
-              disabled={resendMutation.isPending}
-              onClick={() => {
-                resendMutation.mutate({ invitationId: invite.id })
-                void utils.team.getPendingInvitations.invalidate()
-              }}
-            >
-              {resendMutation.isPending ? <Spinner className="size-3.5" /> : <LinkIcon className="size-3.5" />}
-              Resend (new link)
-            </DropdownMenuItem>
- 
-            <DropdownMenuSeparator />
- 
-            <DropdownMenuItem
-              variant="destructive"
-              className="gap-2"
-              onClick={() => onCancel(invite.id)}
-            >
-              <XCircleIcon className="size-3.5" />
-              Cancel Invite
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm">
+            <MoreHorizontalIcon className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={copyLink} disabled={getLinkQuery.isFetching} className="gap-2">
+            {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+            {copied ? 'Copied' : 'Copy link'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="gap-2"
+            onClick={() => resendInvitation.mutate({ invitationId: invitation.id })}
+            disabled={resendInvitation.isPending}
+          >
+            {resendInvitation.isPending ? <Spinner className="size-3.5" /> : <LinkIcon className="size-3.5" />}
+            Resend
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" className="gap-2" onClick={() => onCancel(invitation.id)}>
+            <XCircleIcon className="size-3.5" />
+            Cancel invite
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
- 
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function TeamSettingsPage() {
   const activeOrg = useActiveOrg()
   const utils = trpc.useUtils()
 
-  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
-  const [removeTarget, setRemoveTarget] = useState<{ userId: string; name: string } | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [inviteDialogOpen, setInviteDialogOpen] = React.useState(false)
+  const [removeTarget, setRemoveTarget] = React.useState<Member | null>(null)
+  const [permissionsTarget, setPermissionsTarget] = React.useState<Member | null>(null)
+  const [permissionsDraft, setPermissionsDraft] = React.useState<TeamPermissions>(EMPTY_PERMISSIONS)
+  const [errorMsg, setErrorMsg] = React.useState('')
 
-  const { data: members = [], isLoading: membersLoading } = trpc.team.getMembers.useQuery(undefined, { staleTime: 30_000 })
-  const { data: invitations = [], isLoading: invitesLoading } = trpc.team.getPendingInvitations.useQuery(undefined, { staleTime: 30_000 })
+  const { data: members = [], isLoading: membersLoading } = trpc.team.getMembers.useQuery(undefined, {
+    staleTime: 30_000,
+  })
+  const { data: invitations = [], isLoading: invitesLoading } = trpc.team.getPendingInvitations.useQuery(undefined, {
+    staleTime: 30_000,
+  })
 
   const updateRole = trpc.team.updateMemberRole.useMutation({
-    onSuccess: () => utils.team.getMembers.invalidate(),
-    onError: (err) => setErrorMsg(err.message),
+    onSuccess: () => {
+      void utils.team.getMembers.invalidate()
+    },
+    onError: (error) => setErrorMsg(error.message),
+  })
+
+  const updatePermissions = trpc.team.updateMemberPermissions.useMutation({
+    onSuccess: () => {
+      void utils.team.getMembers.invalidate()
+      setPermissionsTarget(null)
+    },
+    onError: (error) => setErrorMsg(error.message),
   })
 
   const removeMember = trpc.team.removeMember.useMutation({
-    onSuccess: () => { void utils.team.getMembers.invalidate(); setRemoveTarget(null) },
-    onError: (err) => setErrorMsg(err.message),
+    onSuccess: () => {
+      void utils.team.getMembers.invalidate()
+      setRemoveTarget(null)
+    },
+    onError: (error) => setErrorMsg(error.message),
   })
 
   const cancelInvite = trpc.team.cancelInvitation.useMutation({
-    onSuccess: () => utils.team.getPendingInvitations.invalidate(),
-    onError: (err) => setErrorMsg(err.message),
+    onSuccess: () => {
+      void utils.team.getPendingInvitations.invalidate()
+    },
+    onError: (error) => setErrorMsg(error.message),
   })
 
-  const adminCount = members.filter((m) => m.role === 'admin').length
+  const adminCount = members.filter((member) => member.role === 'admin').length
+
+  function openPermissionsDialog(member: Member) {
+    setPermissionsTarget(member)
+    setPermissionsDraft(member.permissions ?? EMPTY_PERMISSIONS)
+  }
+
+  function savePermissions() {
+    if (!permissionsTarget) return
+    setErrorMsg('')
+    updatePermissions.mutate({
+      userId: permissionsTarget.id,
+      permissions: permissionsDraft,
+    })
+  }
 
   return (
-    // Full-width layout — no max-w constraint so it fills the page
     <div className="flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
-
-      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
@@ -506,41 +647,37 @@ export function TeamSettingsPage() {
             Manage members and invitations for <strong>{activeOrg.name}</strong>.
           </p>
         </div>
-        <Button size="sm" onClick={() => setInviteDialogOpen(true)} className="gap-1.5 shrink-0">
+        <Button size="sm" onClick={() => setInviteDialogOpen(true)} className="gap-1.5">
           <PlusIcon className="size-3.5" />
-          Invite Member
+          Invite member
         </Button>
       </div>
 
       {errorMsg && (
         <Alert variant="destructive">
-          <OctagonXIcon className="size-4" />
           <AlertDescription className="text-sm">{errorMsg}</AlertDescription>
         </Alert>
       )}
 
-      {/* Two-column grid for larger screens */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-        {/* Members — spans 2 cols on xl */}
-        <div className="xl:col-span-2 space-y-4">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
                     Members
                     {!membersLoading && (
-                      <Badge variant="outline" className="text-[10px] font-semibold">
-                        {members.length} total · {adminCount} admin{adminCount !== 1 ? 's' : ''}
+                      <Badge variant="outline" className="text-[10px]">
+                        {members.length} total | {adminCount} admin{adminCount !== 1 ? 's' : ''}
                       </Badge>
                     )}
                   </CardTitle>
-                  <CardDescription className="text-xs mt-0.5">
-                    Active members with access to this workspace.
+                  <CardDescription className="text-xs">
+                    Roles plus module-level access per organization.
                   </CardDescription>
                 </div>
-                <Button variant="ghost" size="icon-sm" onClick={() => utils.team.getMembers.invalidate()}>
+                <Button variant="ghost" size="icon-sm" onClick={() => void utils.team.getMembers.invalidate()}>
                   <RefreshCwIcon className="size-3.5" />
                 </Button>
               </div>
@@ -548,28 +685,32 @@ export function TeamSettingsPage() {
             <Separator />
             <CardContent className="pt-0">
               {membersLoading ? (
-                <div className="space-y-1 py-2">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-3 py-3">
-                      <Skeleton className="size-10 rounded-full shrink-0" />
+                <div className="space-y-2 py-3">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="flex items-center gap-3 py-2.5">
+                      <Skeleton className="size-10 rounded-full" />
                       <div className="flex-1 space-y-1.5">
-                        <Skeleton className="h-3.5 w-48" />
-                        <Skeleton className="h-3 w-64" />
+                        <Skeleton className="h-3.5 w-40" />
+                        <Skeleton className="h-3 w-52" />
                       </div>
                       <Skeleton className="h-5 w-16 rounded-full" />
                     </div>
                   ))}
                 </div>
               ) : members.length === 0 ? (
-                <div className="py-12 text-center text-sm text-muted-foreground">No members found.</div>
+                <div className="py-10 text-center text-sm text-muted-foreground">No members found.</div>
               ) : (
                 <div className="divide-y">
                   {members.map((member) => (
                     <MemberRow
                       key={member.membershipId}
                       member={member}
-                      onRoleChange={(userId, role) => { setErrorMsg(''); updateRole.mutate({ userId, role }) }}
-                      onRemove={(userId, name) => { setErrorMsg(''); setRemoveTarget({ userId, name }) }}
+                      onRoleChange={(userId, role) => {
+                        setErrorMsg('')
+                        updateRole.mutate({ userId, role })
+                      }}
+                      onEditPermissions={openPermissionsDialog}
+                      onRemove={setRemoveTarget}
                     />
                   ))}
                 </div>
@@ -577,39 +718,35 @@ export function TeamSettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Pending Invitations */}
           {(invitesLoading || invitations.length > 0) && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  Pending Invitations
-                  {!invitesLoading && invitations.length > 0 && (
-                    <Badge variant="outline" className="text-[10px]">{invitations.length}</Badge>
-                  )}
-                </CardTitle>
-                <CardDescription className="text-xs">Links that haven't been accepted yet.</CardDescription>
+                <CardTitle className="text-base">Pending invitations</CardTitle>
+                <CardDescription className="text-xs">
+                  Invite links waiting to be accepted.
+                </CardDescription>
               </CardHeader>
               <Separator />
               <CardContent className="pt-0">
                 {invitesLoading ? (
-                  <div className="space-y-1 py-2">
-                    {[0, 1].map((i) => (
-                      <div key={i} className="flex items-center gap-3 py-3">
-                        <Skeleton className="size-10 rounded-full shrink-0" />
+                  <div className="space-y-2 py-3">
+                    {Array.from({ length: 2 }).map((_, idx) => (
+                      <div key={idx} className="flex items-center gap-3 py-2.5">
+                        <Skeleton className="size-10 rounded-full" />
                         <div className="flex-1 space-y-1.5">
-                          <Skeleton className="h-3.5 w-48" /><Skeleton className="h-3 w-32" />
+                          <Skeleton className="h-3.5 w-40" />
+                          <Skeleton className="h-3 w-36" />
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="divide-y">
-                    {invitations.map((invite) => (
+                    {(invitations as Invitation[]).map((invitation) => (
                       <InvitationRow
-                        key={invite.id}
-                        invite={invite}
+                        key={invitation.id}
+                        invitation={invitation}
                         onCancel={(id) => cancelInvite.mutate({ invitationId: id })}
-                        // onResend={(id) => trpc.team.resendInvitation.useMutation}
                       />
                     ))}
                   </div>
@@ -619,90 +756,88 @@ export function TeamSettingsPage() {
           )}
         </div>
 
-        {/* Right column — role reference + quick invite */}
         <div className="space-y-4">
-          <Card className="border-dashed">
+          <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Role Permissions</CardTitle>
+              <CardTitle className="text-sm">Permission model</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 space-y-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-md bg-violet-100 dark:bg-violet-900/30">
-                    <ShieldIcon className="size-3.5 text-violet-600" />
+            <CardContent className="pt-0 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Admins always have full access in this organization. Agent access is module-based and can be edited at any time.
+              </p>
+              <div className="space-y-2">
+                {TEAM_PERMISSION_META.map((permission) => (
+                  <div key={permission.key} className="flex items-start gap-2">
+                    <Badge variant="outline" className="text-[10px]">
+                      {permission.label}
+                    </Badge>
+                    <p className="text-[11px] text-muted-foreground">{permission.description}</p>
                   </div>
-                  <p className="text-xs font-semibold">Admin</p>
-                </div>
-                <ul className="text-[11px] text-muted-foreground space-y-0.5 pl-8">
-                  <li>✓ Inbox, calls, knowledge base</li>
-                  <li>✓ Widget & voice settings</li>
-                  <li>✓ Team management</li>
-                  <li>✓ Organization settings</li>
-                </ul>
-              </div>
-              <Separator />
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/30">
-                    <UserIcon className="size-3.5 text-blue-600" />
-                  </div>
-                  <p className="text-xs font-semibold">Agent</p>
-                </div>
-                <ul className="text-[11px] text-muted-foreground space-y-0.5 pl-8">
-                  <li>✓ Inbox, calls, knowledge base</li>
-                  <li>✗ Widget & voice settings</li>
-                  <li>✗ Team management</li>
-                  <li>✗ Organization settings</li>
-                </ul>
-              </div>
-              <Separator />
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-md bg-amber-100 dark:bg-amber-900/30">
-                    <CrownIcon className="size-3.5 text-amber-600" />
-                  </div>
-                  <p className="text-xs font-semibold">Owner</p>
-                </div>
-                <p className="text-[11px] text-muted-foreground pl-8">
-                  Organization creator. Cannot be demoted or removed by anyone.
-                </p>
+                ))}
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Quick Invite</CardTitle>
-              <CardDescription className="text-xs">Add a team member right now.</CardDescription>
+              <CardTitle className="text-sm">Quick actions</CardTitle>
+              <CardDescription className="text-xs">
+                Invite teammates and set module access in one flow.
+              </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
               <Button size="sm" className="w-full gap-1.5" onClick={() => setInviteDialogOpen(true)}>
                 <PlusIcon className="size-3.5" />
-                Invite Member
+                Invite member
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Dialogs */}
       <InviteDialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen} />
 
-      <AlertDialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+      <Dialog open={Boolean(permissionsTarget)} onOpenChange={(open) => !open && setPermissionsTarget(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit agent permissions</DialogTitle>
+            <DialogDescription>
+              Update module access for {permissionsTarget?.name || permissionsTarget?.email}.
+            </DialogDescription>
+          </DialogHeader>
+          <PermissionEditor
+            value={permissionsDraft}
+            onChange={setPermissionsDraft}
+            disabled={updatePermissions.isPending}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPermissionsTarget(null)} disabled={updatePermissions.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={savePermissions} disabled={updatePermissions.isPending}>
+              {updatePermissions.isPending && <Spinner className="mr-1.5 size-3.5" />}
+              Save permissions
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={Boolean(removeTarget)} onOpenChange={(open) => !open && setRemoveTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove {removeTarget?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Remove {removeTarget?.name || removeTarget?.email}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will revoke their access to <strong>{activeOrg.name}</strong>. They can be re-invited later.
+              This will revoke access to <strong>{activeOrg.name}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => { if (removeTarget) removeMember.mutate({ userId: removeTarget.userId }) }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => removeTarget && removeMember.mutate({ userId: removeTarget.id })}
             >
-              {removeMember.isPending ? <><Spinner className="mr-1.5 size-3.5" /> Removing…</> : 'Remove Member'}
+              {removeMember.isPending ? <Spinner className="mr-1.5 size-3.5" /> : null}
+              Remove member
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

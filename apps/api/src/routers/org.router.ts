@@ -9,18 +9,7 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requireFeature } from '../lib/plan-guards'
-
-async function assertOrgAdmin(supabase: any, userId: string, orgId: string): Promise<void> {
-  const { data } = await supabase
-    .from('user_organizations')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('org_id', orgId)
-    .maybeSingle()
-  if (!data || data.role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can perform this action.' })
-  }
-}
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 export const orgRouter = router({
   getOrg: protectedProcedure
@@ -84,8 +73,7 @@ export const orgRouter = router({
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // ← ADMIN GUARD
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, 'widget', 'Widget access is required.')
       await requireFeature(ctx.supabase, ctx.userOrgId, 'widgetCustomization')
 
       const orgId = ctx.userOrgId

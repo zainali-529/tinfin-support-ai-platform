@@ -1,23 +1,11 @@
 /**
  * apps/web/app/(dashboard)/widget/page.tsx
  */
-import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { redirect } from 'next/navigation'
 import { WidgetCustomizationPage } from '@/components/widget/WidgetCustomizationPage'
+import { requireServerOrgPermission } from '@/lib/server-org-access'
 
 export default async function WidgetPage() {
-  const supabase = await createServerSupabaseClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const access = await requireServerOrgPermission('widget')
 
-  const { data: userRecord } = await supabase.from('users').select('org_id, active_org_id').eq('id', user.id).single()
-  if (!userRecord?.org_id) redirect('/dashboard')
-
-  const activeOrgId = userRecord.active_org_id ?? userRecord.org_id
-
-  // Admin-only gate
-  const { data: membership } = await supabase.from('user_organizations').select('role').eq('user_id', user.id).eq('org_id', activeOrgId).maybeSingle()
-  if (membership?.role !== 'admin') redirect('/dashboard')
-
-  return <WidgetCustomizationPage orgId={activeOrgId} />
+  return <WidgetCustomizationPage orgId={access.activeOrgId} />
 }

@@ -18,6 +18,12 @@ import {
 import { TooltipProvider } from '@workspace/ui/components/tooltip'
 import { ThemeToggle } from '@/components/nav/ThemeToggle'
 import { OrgProvider } from '@/components/org/OrgContext'
+import { getEffectiveTeamPermissions } from '@workspace/types'
+
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
+  const msg = (error?.message ?? '').toLowerCase()
+  return msg.includes('column') && msg.includes(column.toLowerCase())
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerSupabaseClient()
@@ -51,20 +57,55 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('org_id', activeOrg.id)
     .maybeSingle()
 
-  const { data: membership } = await supabase
+  let membershipResult = await supabase
     .from('user_organizations')
-    .select('role')
+    .select('role, permissions')
     .eq('user_id', user.id)
     .eq('org_id', activeOrgId)
     .maybeSingle()
 
-  const userRole = (membership?.role ?? 'agent') as 'admin' | 'agent'
+  if (membershipResult.error && isMissingColumnError(membershipResult.error, 'permissions')) {
+    membershipResult = await supabase
+      .from('user_organizations')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('org_id', activeOrgId)
+      .maybeSingle()
+  }
+
+  if (membershipResult.error || !membershipResult.data) {
+    const { data: fallbackMembership } = await supabase
+      .from('user_organizations')
+      .select('org_id')
+      .eq('user_id', user.id)
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (!fallbackMembership?.org_id) {
+      redirect('/login')
+    }
+
+    await supabase
+      .from('users')
+      .update({ active_org_id: fallbackMembership.org_id })
+      .eq('id', user.id)
+
+    redirect('/dashboard')
+  }
+
+  const userRole = (membershipResult.data?.role === 'admin' ? 'admin' : 'agent') as 'admin' | 'agent'
+  const userPermissions = getEffectiveTeamPermissions(
+    userRole,
+    membershipResult.data?.permissions ?? null
+  )
 
   const activeOrgWithRole = {
     id: activeOrg.id,
     name: activeOrg.name,
     plan: (activeSub?.plan as string | null) ?? activeOrg.plan,
     role: userRole,
+    permissions: userPermissions,
   }
 
   return (

@@ -143,3 +143,5 @@ export interface APIError {
     code: string
   }
 }
+
+export * from './team-permissions'

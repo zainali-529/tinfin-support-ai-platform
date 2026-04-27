@@ -56,7 +56,9 @@ export const userOrganizations = pgTable('user_organizations', {
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   role: text('role').default('agent').notNull(),
+  isOwner: boolean('is_owner').default(false).notNull(),
   isDefault: boolean('is_default').default(false).notNull(),
+  permissions: jsonb('permissions').default({}).notNull(),
   joinedAt: timestamp('joined_at').defaultNow().notNull(),
 })
 

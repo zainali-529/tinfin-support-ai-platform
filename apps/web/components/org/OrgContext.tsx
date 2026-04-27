@@ -16,6 +16,7 @@
  */
 
 import * as React from 'react'
+import type { TeamPermissionKey, TeamPermissions } from '@workspace/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ export interface ActiveOrg {
   plan: string
   /** The current user's role in this organization */
   role: 'admin' | 'agent'
+  /** Effective module permissions for the current user in this org */
+  permissions: TeamPermissions
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -63,4 +66,10 @@ export function useActiveOrgId(): string {
 /** Returns true if the current user is an admin in the active org. */
 export function useIsAdmin(): boolean {
   return useActiveOrg().role === 'admin'
+}
+
+export function useHasOrgPermission(permission: TeamPermissionKey): boolean {
+  const org = useActiveOrg()
+  if (org.role === 'admin') return true
+  return org.permissions[permission] === true
 }

@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { trpc } from '@/lib/trpc'
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ import {
   CheckIcon,
   ChevronsUpDownIcon,
   CreditCardIcon,
+  LayoutGridIcon,
   OctagonXIcon,
   PlusIcon,
 } from 'lucide-react'
@@ -90,7 +92,7 @@ function PlanOptionCard(props: {
   )
 }
 
-function CreateOrgDialog({
+export function CreateOrgDialog({
   open,
   onOpenChange,
   ownedOrgsCount,
@@ -275,9 +277,15 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
   })
 
   const activeOrg = orgs.find((o) => o.id === initialOrg.id) ?? initialOrg
-  const activeOrgRole = orgs.find((o) => o.id === activeOrg.id)?.role ?? 'admin'
-  const canCreateOrg = activeOrgRole === 'admin'
   const ownedOrgsCount = orgs.filter((org) => org.isOwner).length
+  const orderedOrgs = React.useMemo(() => {
+    if (orgs.length === 0) return []
+    const activeFirst = orgs.filter((org) => org.id === activeOrg.id)
+    const rest = orgs.filter((org) => org.id !== activeOrg.id)
+    return [...activeFirst, ...rest]
+  }, [orgs, activeOrg.id])
+  const quickOrgs = orderedOrgs.slice(0, 3)
+  const hiddenOrgCount = Math.max(0, orderedOrgs.length - quickOrgs.length)
 
   function handleSwitch(orgId: string) {
     if (orgId === activeOrg.id) return
@@ -325,8 +333,10 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
                   <Spinner className="size-3.5 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">Loading...</span>
                 </div>
+              ) : quickOrgs.length === 0 ? (
+                <div className="px-2 py-3 text-xs text-muted-foreground">No organizations found.</div>
               ) : (
-                orgs.map((org) => {
+                quickOrgs.map((org) => {
                   const isActive = org.id === activeOrg.id
                   return (
                     <DropdownMenuItem
@@ -351,25 +361,35 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
                 })
               )}
 
+              {hiddenOrgCount > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild className="p-0">
+                    <Link href="/organizations" className="flex w-full items-center gap-2.5 p-2 text-sm">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-dashed border-muted-foreground/40">
+                        <LayoutGridIcon className="size-3.5" />
+                      </div>
+                      <span className="flex-1 font-medium">View all organizations</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        +{hiddenOrgCount}
+                      </Badge>
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
+
               <DropdownMenuSeparator />
 
               <DropdownMenuItem
-                className={cn(
-                  'gap-2.5 p-2 text-muted-foreground hover:text-foreground',
-                  canCreateOrg ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
-                )}
-                disabled={!canCreateOrg}
+                className={cn('gap-2.5 p-2 text-muted-foreground hover:text-foreground cursor-pointer')}
                 onClick={() => {
-                  if (!canCreateOrg) return
                   setCreateDialogOpen(true)
                 }}
               >
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-dashed border-muted-foreground/40">
                   <PlusIcon className="size-3.5" />
                 </div>
-                <span className="text-sm font-medium">
-                  {canCreateOrg ? 'New Organization' : 'Admins can create organizations'}
-                </span>
+                <span className="text-sm font-medium">New Organization</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { useContact, useDeleteContact } from '@/hooks/useContacts'
-import { useActiveOrg } from '@/components/org/OrgContext'
+import { useHasOrgPermission } from '@/components/org/OrgContext'
 import { EditContactDialog } from './EditContactDialog'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Button } from '@workspace/ui/components/button'
@@ -104,8 +104,7 @@ interface Props {
 
 export function ContactDetail({ contactId, onDeleted }: Props) {
   const { contact, isLoading } = useContact(contactId)
-  const activeOrg = useActiveOrg()
-  const isAdmin = activeOrg.role === 'admin'
+  const canManageContacts = useHasOrgPermission('contacts')
   const router = useRouter()
   const deleteContact = useDeleteContact()
 
@@ -183,7 +182,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
             <EditIcon className="size-3.5" />
             Edit
           </Button>
-          {isAdmin && (
+          {canManageContacts && (
             <Button
               size="sm"
               variant="outline"

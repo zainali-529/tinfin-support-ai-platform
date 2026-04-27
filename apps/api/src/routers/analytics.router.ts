@@ -16,6 +16,7 @@
 
 import { z } from 'zod'
 import { router, protectedProcedure } from '../trpc/trpc'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 const periodSchema = z.object({
   period: z.enum(['7d', '30d', '90d']).default('30d'),
@@ -54,6 +55,7 @@ export const analyticsRouter = router({
   getOverview: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -192,6 +194,7 @@ export const analyticsRouter = router({
   getConversationTrend: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -228,6 +231,7 @@ export const analyticsRouter = router({
   getStatusBreakdown: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const startDate = getPeriodStart(period)
@@ -265,6 +269,7 @@ export const analyticsRouter = router({
   getMessageVolume: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -298,6 +303,7 @@ export const analyticsRouter = router({
   getContactGrowth: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -331,6 +337,7 @@ export const analyticsRouter = router({
   getResolutionTrend: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -367,6 +374,7 @@ export const analyticsRouter = router({
   getCallAnalytics: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -398,6 +406,7 @@ export const analyticsRouter = router({
   getHandlingBreakdown: protectedProcedure
     .input(periodSchema)
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'analytics', 'Analytics access is required.')
       const orgId = ctx.userOrgId
       const period = input?.period ?? '30d'
       const startDate = getPeriodStart(period)

@@ -36,12 +36,14 @@ import {
   Link2Icon,
   MailIcon,
   MessageSquareQuoteIcon,
+  Building2Icon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
 import { OrgSwitcher } from '@/components/org/OrgSwitcher'
 import { PlanBadge } from '@/components/billing/PlanGuard'
 import { usePlan } from '@/hooks/usePlan'
 import { createClient } from '@/lib/supabase'
+import type { TeamPermissionKey } from '@workspace/types'
 
 type NavItem = {
   label: string
@@ -50,6 +52,7 @@ type NavItem = {
   exact?: boolean
   badge?: string
   adminOnly?: boolean
+  permission?: TeamPermissionKey
 }
 
 type NavGroup = {
@@ -61,21 +64,21 @@ const navGroups: NavGroup[] = [
   {
     label: 'Main',
     items: [
-      { label: 'Dashboard',    href: '/dashboard',   icon: LayoutDashboardIcon, exact: true },
-      { label: 'Inbox',        href: '/inbox',        icon: InboxIcon },
-      { label: 'Contacts',     href: '/contacts',     icon: UsersIcon },
-      { label: 'Calls',        href: '/calls',        icon: PhoneCallIcon },
+      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboardIcon, exact: true, permission: 'dashboard' },
+      { label: 'Inbox', href: '/inbox', icon: InboxIcon, permission: 'inbox' },
+      { label: 'Contacts', href: '/contacts', icon: UsersIcon, permission: 'contacts' },
+      { label: 'Calls', href: '/calls', icon: PhoneCallIcon, permission: 'calls' },
     ],
   },
   {
     label: 'Management',
     items: [
-      { label: 'Knowledge Base',   href: '/knowledge',       icon: BookOpenIcon },
-      { label: 'Widget',           href: '/widget',          icon: CodeIcon, adminOnly: true },
-      { label: 'Embedding',        href: '/embedding',       icon: Link2Icon, adminOnly: true },
-      { label: 'Voice Assistant',  href: '/voice-assistant', icon: MicIcon, adminOnly: true },
-      { label: 'Canned Replies',   href: '/canned-responses', icon: MessageSquareQuoteIcon, adminOnly: true },
-      { label: 'Analytics',        href: '/analytics',       icon: BarChart2Icon },
+      { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon, permission: 'knowledge' },
+      { label: 'Widget', href: '/widget', icon: CodeIcon, permission: 'widget' },
+      { label: 'Embedding', href: '/embedding', icon: Link2Icon, permission: 'embedding' },
+      { label: 'Voice Assistant', href: '/voice-assistant', icon: MicIcon, permission: 'voiceAssistant' },
+      { label: 'Canned Replies', href: '/canned-responses', icon: MessageSquareQuoteIcon, permission: 'cannedResponses' },
+      { label: 'Analytics', href: '/analytics', icon: BarChart2Icon, permission: 'analytics' },
     ],
   },
   {
@@ -89,7 +92,8 @@ const navGroups: NavGroup[] = [
   {
     label: 'Account',
     items: [
-      { label: 'Channels', href: '/settings/channels', icon: MailIcon, adminOnly: true },
+      { label: 'Organizations', href: '/organizations', icon: Building2Icon },
+      { label: 'Channels', href: '/settings/channels', icon: MailIcon, permission: 'channels' },
       { label: 'Settings', href: '/settings', icon: SettingsIcon },
     ],
   },
@@ -141,7 +145,13 @@ function useUnreadCount(orgId: string): number {
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   user: { email?: string } | null
-  activeOrg: { id: string; name: string; plan: string; role: 'admin' | 'agent' }
+  activeOrg: {
+    id: string
+    name: string
+    plan: string
+    role: 'admin' | 'agent'
+    permissions: Record<TeamPermissionKey, boolean>
+  }
 }
 
 export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
@@ -164,7 +174,11 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
 
       <SidebarContent>
         {navGroups.map((group) => {
-          const visibleItems = group.items.filter((item) => !item.adminOnly || isAdmin)
+          const visibleItems = group.items.filter((item) => {
+            if (item.adminOnly && !isAdmin) return false
+            if (!item.permission) return true
+            return isAdmin || activeOrg.permissions[item.permission] === true
+          })
           if (visibleItems.length === 0) return null
           return (
             <SidebarGroup key={group.label} className="py-2">

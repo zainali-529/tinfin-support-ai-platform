@@ -15,6 +15,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 export const contactsRouter = router({
 
@@ -25,6 +26,7 @@ export const contactsRouter = router({
       limit: z.number().int().min(1).max(50).default(50),
     }).optional())
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
       const orgId = ctx.userOrgId
       const page = input?.page ?? 1
       const limit = input?.limit ?? 50
@@ -136,6 +138,7 @@ export const contactsRouter = router({
   getContact: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
       const orgId = ctx.userOrgId
 
       // Fetch contact
@@ -280,6 +283,7 @@ export const contactsRouter = router({
       phone: z.string().max(30).optional().or(z.literal('')),
     }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
       const orgId = ctx.userOrgId
 
       // Verify ownership
@@ -317,11 +321,8 @@ export const contactsRouter = router({
   deleteContact: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
       const orgId = ctx.userOrgId
-
-      if (ctx.userRole !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can delete contacts.' })
-      }
 
       const { data: existing } = await ctx.supabase
         .from('contacts')
@@ -354,6 +355,7 @@ export const contactsRouter = router({
       phone: z.string().max(30).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
       const orgId = ctx.userOrgId
 
       const { data, error } = await ctx.supabase
@@ -384,11 +386,8 @@ export const contactsRouter = router({
       })).max(500),
     }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
       const orgId = ctx.userOrgId
-
-      if (ctx.userRole !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can import contacts.' })
-      }
 
       const { contacts } = input
 

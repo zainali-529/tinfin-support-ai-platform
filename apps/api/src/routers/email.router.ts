@@ -6,7 +6,6 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
-import type { Context } from '../trpc/context'
 import {
   sendEmailViaResend,
   generateWebhookToken,
@@ -15,6 +14,7 @@ import {
   buildReferences,
 } from '../services/email.service'
 import { requireFeature } from '../lib/plan-guards'
+import { requirePermissionFromContext } from '../lib/org-permissions'
 
 interface EmailAccountRow {
   id: string
@@ -55,26 +55,10 @@ interface EmailMessageRow {
   created_at: string
 }
 
-async function assertOrgAdmin(
-  supabase: Context['supabase'],
-  userId: string,
-  orgId: string
-): Promise<void> {
-  const { data } = await supabase
-    .from('user_organizations')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('org_id', orgId)
-    .maybeSingle()
-
-  if (!data || (data as { role: string }).role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can manage email channel settings.' })
-  }
-}
-
 export const emailRouter = router({
 
   getAccount: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'channels', 'Channels access is required.')
     const orgId = ctx.userOrgId
 
     const { data } = await ctx.supabase
@@ -108,6 +92,7 @@ export const emailRouter = router({
   getMessages: protectedProcedure
     .input(z.object({ conversationId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       const orgId = ctx.userOrgId
 
       const { data, error } = await ctx.supabase
@@ -157,7 +142,7 @@ export const emailRouter = router({
       emailSignature: z.string().max(1000).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, 'channels', 'Channels access is required.')
       await requireFeature(ctx.supabase, ctx.userOrgId, 'emailChannel')
 
       const orgId = ctx.userOrgId
@@ -198,7 +183,7 @@ export const emailRouter = router({
     }),
 
   deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, 'channels', 'Channels access is required.')
 
     const { error } = await ctx.supabase
       .from('email_accounts')
@@ -210,7 +195,7 @@ export const emailRouter = router({
   }),
 
   regenerateWebhookToken: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, 'channels', 'Channels access is required.')
     await requireFeature(ctx.supabase, ctx.userOrgId, 'emailChannel')
 
     const newToken = generateWebhookToken()
@@ -224,7 +209,7 @@ export const emailRouter = router({
   }),
 
   testConnection: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, 'channels', 'Channels access is required.')
     await requireFeature(ctx.supabase, ctx.userOrgId, 'emailChannel')
 
     const { data } = await ctx.supabase
@@ -262,6 +247,7 @@ export const emailRouter = router({
       subject: z.string().min(1).max(200).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       const orgId = ctx.userOrgId
       await requireFeature(ctx.supabase, orgId, 'emailChannel')
 

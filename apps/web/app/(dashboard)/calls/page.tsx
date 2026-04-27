@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useActiveOrg } from '@/components/org/OrgContext'
+import { useActiveOrg, useHasOrgPermission } from '@/components/org/OrgContext'
 import { useCalls, useVapiAssistantConfig } from '@/hooks/useCalls'
 import { CallLogList, CallDetailPanel } from '@/components/calls/CallLogList'
 import { Card, CardContent } from '@workspace/ui/components/card'
@@ -59,9 +59,23 @@ function StatCard({
 
 export default function CallsPage() {
   const activeOrg = useActiveOrg()
-  const { calls, stats, isLoading, statsLoading, refetch, syncCalls } = useCalls(activeOrg.id)
+  const canAccessCalls = useHasOrgPermission('calls')
+  const canManageVoice = useHasOrgPermission('voiceAssistant')
+  const { calls, stats, isLoading, statsLoading, syncCalls } = useCalls(activeOrg.id)
   const { config: assistantConfig, isLoading: assistantLoading } = useVapiAssistantConfig()
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null)
+
+  if (!canAccessCalls) {
+    return (
+      <div className="mx-auto w-full max-w-2xl py-10">
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            You do not have permission to access call logs in this organization.
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   const avgDurationFmt = stats ? formatCallDuration(stats.today.avgDurationSeconds) : '—'
 
@@ -86,9 +100,11 @@ export default function CallsPage() {
             AI voice call logs, transcripts, and recordings
           </p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5 shrink-0" asChild>
-          <Link href="/voice-assistant">Configure Voice</Link>
-        </Button>
+        {canManageVoice && (
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" asChild>
+            <Link href="/voice-assistant">Configure Voice</Link>
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -126,7 +142,7 @@ export default function CallsPage() {
                 }
               </p>
             </div>
-            {!voiceIsConfigured && (
+            {!voiceIsConfigured && canManageVoice && (
               <Button size="sm" variant="outline" className="shrink-0 border-amber-300" asChild>
                 <Link href="/voice-assistant">Set Up Voice</Link>
               </Button>

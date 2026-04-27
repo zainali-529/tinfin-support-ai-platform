@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server"
 import { router, protectedProcedure } from "../trpc/trpc"
 import { requireFeature } from "../lib/plan-guards"
 import { sendWhatsAppMessage } from "../services/whatsapp.service"
-import type { Context } from "../trpc/context"
+import { requirePermissionFromContext } from "../lib/org-permissions"
 
 interface WhatsAppAccountRow {
   id: string
@@ -46,26 +46,6 @@ function parseMetaAuthErrorMessage(error: unknown): string | null {
   const msg = error.message
   if (!msg.includes('OAuthException') && !msg.includes('code\":190')) return null
   return 'WhatsApp authentication failed. Your Meta access token is expired or invalid. Please reconnect WhatsApp channel from Settings > Channels > WhatsApp.'
-}
-
-async function assertOrgAdmin(
-  supabase: Context["supabase"],
-  userId: string,
-  orgId: string
-): Promise<void> {
-  const { data } = await supabase
-    .from("user_organizations")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("org_id", orgId)
-    .maybeSingle()
-
-  if (!data || (data as { role: string }).role !== "admin") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Only admins can manage WhatsApp channel settings.",
-    })
-  }
 }
 
 function getWebhookBaseUrl(): string {
@@ -116,6 +96,7 @@ async function verifyMetaConnection(
 
 export const whatsappRouter = router({
   getAccount: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, "channels", "Channels access is required.")
     const { data } = await ctx.supabase
       .from("whatsapp_accounts")
       .select(
@@ -158,7 +139,7 @@ export const whatsappRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, "channels", "Channels access is required.")
       await requireFeature(ctx.supabase, ctx.userOrgId, "whatsappChannel")
 
       await verifyMetaConnection(input.phoneNumberId, input.accessToken)
@@ -200,7 +181,7 @@ export const whatsappRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+      requirePermissionFromContext(ctx, "channels", "Channels access is required.")
       await requireFeature(ctx.supabase, ctx.userOrgId, "whatsappChannel")
 
       const patch: Record<string, unknown> = {
@@ -228,7 +209,7 @@ export const whatsappRouter = router({
     }),
 
   deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, "channels", "Channels access is required.")
 
     const { error } = await ctx.supabase
       .from("whatsapp_accounts")
@@ -246,7 +227,7 @@ export const whatsappRouter = router({
   }),
 
   testConnection: protectedProcedure.mutation(async ({ ctx }) => {
-    await assertOrgAdmin(ctx.supabase, ctx.user.id, ctx.userOrgId)
+    requirePermissionFromContext(ctx, "channels", "Channels access is required.")
     await requireFeature(ctx.supabase, ctx.userOrgId, "whatsappChannel")
 
     const { data } = await ctx.supabase
@@ -276,6 +257,7 @@ export const whatsappRouter = router({
   getMessages: protectedProcedure
     .input(z.object({ conversationId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, "inbox", "Inbox access is required.")
       const { data, error } = await ctx.supabase
         .from("whatsapp_messages")
         .select("*")
@@ -321,6 +303,7 @@ export const whatsappRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, "inbox", "Inbox access is required.")
       await requireFeature(ctx.supabase, ctx.userOrgId, "whatsappChannel")
 
       const { data: convData } = await ctx.supabase

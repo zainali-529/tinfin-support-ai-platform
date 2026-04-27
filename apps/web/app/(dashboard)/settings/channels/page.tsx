@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useActiveOrg } from '@/components/org/OrgContext'
+import { useHasOrgPermission } from '@/components/org/OrgContext'
 import { useEmailAccount } from '@/hooks/useEmail'
 import { useWhatsAppAccount } from '@/hooks/useWhatsApp'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
@@ -23,19 +23,19 @@ function statusBadge(active: boolean) {
 }
 
 export default function ChannelsSettingsPage() {
-  const activeOrg = useActiveOrg()
+  const canManageChannels = useHasOrgPermission('channels')
   const { account: emailAccount, isLoading: emailLoading } = useEmailAccount()
   const { account: whatsappAccount, isLoading: whatsappLoading } =
     useWhatsAppAccount()
 
-  if (activeOrg.role !== 'admin') {
+  if (!canManageChannels) {
     return (
       <div className="mx-auto w-full max-w-2xl py-10">
         <Card>
           <CardContent className="flex items-center gap-3 p-6">
             <LockIcon className="size-5 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Only admins can manage channel settings.
+              You do not have permission to manage channel settings.
             </p>
           </CardContent>
         </Card>
