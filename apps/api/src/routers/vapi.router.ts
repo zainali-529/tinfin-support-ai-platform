@@ -108,8 +108,10 @@ export const vapiRouter = router({
     .input(
       z
         .object({
-          limit: z.number().int().min(1).max(100).default(50),
+          limit: z.number().int().min(1).max(100).default(10),
+          page: z.number().int().min(1).optional(),
           offset: z.number().int().min(0).default(0),
+          search: z.string().max(120).optional(),
           status: z.string().optional(),
           type: z.string().optional(),
           contactId: z.string().uuid().optional(),
@@ -119,12 +121,15 @@ export const vapiRouter = router({
     .query(async ({ ctx, input }) => {
       requirePermissionFromContext(ctx, 'calls', 'Calls access is required.')
       const orgId = ctx.userOrgId
-      const limit = input?.limit ?? 50
-      const offset = input?.offset ?? 0
+      const limit = input?.limit ?? 10
+      const page = input?.page ?? Math.floor((input?.offset ?? 0) / limit) + 1
+      const offset = (page - 1) * limit
+      const rawSearch = input?.search?.trim() ?? ''
+      const search = rawSearch.replace(/[,%()]/g, ' ').trim()
 
       let query = ctx.supabase
         .from('calls')
-        .select('*, contacts(id, name, email, phone)')
+        .select('*, contacts(id, name, email, phone)', { count: 'exact' })
         .eq('org_id', orgId)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
@@ -133,17 +138,58 @@ export const vapiRouter = router({
       if (input?.type) query = query.eq('type', input.type)
       if (input?.contactId) query = query.eq('contact_id', input.contactId)
 
-      const { data, error } = await query
+      if (search) {
+        const { data: matchedContacts, error: contactSearchError } = await ctx.supabase
+          .from('contacts')
+          .select('id')
+          .eq('org_id', orgId)
+          .or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`)
+          .limit(200)
+
+        if (contactSearchError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to search calls: ${contactSearchError.message}`,
+          })
+        }
+
+        const contactIds = Array.from(
+          new Set((matchedContacts ?? []).map((row) => row.id).filter(Boolean))
+        ) as string[]
+
+        const orSegments = [
+          `caller_number.ilike.%${search}%`,
+          `vapi_call_id.ilike.%${search}%`,
+          `summary.ilike.%${search}%`,
+        ]
+
+        if (contactIds.length > 0) {
+          orSegments.push(`contact_id.in.(${contactIds.join(',')})`)
+        }
+
+        query = query.or(orSegments.join(','))
+      }
+
+      const { data, error, count } = await query
       if (error)
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: `Failed to load calls: ${error.message}`,
         })
 
-      return (data ?? []).map((call) => ({
+      const totalCount = count ?? 0
+      const calls = (data ?? []).map((call) => ({
         ...call,
         durationFormatted: formatCallDuration(call.duration_seconds as number | null),
       }))
+
+      return {
+        calls,
+        totalCount,
+        page,
+        limit,
+        hasMore: page * limit < totalCount,
+      }
     }),
 
   getCall: protectedProcedure

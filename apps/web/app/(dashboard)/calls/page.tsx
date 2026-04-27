@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useActiveOrg, useHasOrgPermission } from '@/components/org/OrgContext'
 import { useCalls, useVapiAssistantConfig } from '@/hooks/useCalls'
 import { CallLogList, CallDetailPanel } from '@/components/calls/CallLogList'
@@ -9,12 +9,12 @@ import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
 import {
-  PhoneIcon,
-  PhoneCallIcon,
-  ClockIcon,
-  TrendingUpIcon,
   AlertCircleIcon,
   CheckCircleIcon,
+  ClockIcon,
+  PhoneCallIcon,
+  PhoneIcon,
+  TrendingUpIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -25,11 +25,12 @@ function formatCallDuration(seconds: number | null | undefined): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// ─── Stats Card ───────────────────────────────────────────────────────────────
-
 function StatCard({
-  label, value, sub,
-  icon: Icon, loading,
+  label,
+  value,
+  sub,
+  icon: Icon,
+  loading,
 }: {
   label: string
   value: string | number
@@ -45,25 +46,44 @@ function StatCard({
           <Icon className="size-3.5" />
         </div>
       </div>
-      {loading ? (
-        <Skeleton className="h-8 w-20" />
-      ) : (
-        <p className="text-3xl font-bold tabular-nums tracking-tight">{value}</p>
-      )}
+      {loading ? <Skeleton className="h-8 w-20" /> : <p className="text-3xl font-bold tabular-nums tracking-tight">{value}</p>}
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 export default function CallsPage() {
   const activeOrg = useActiveOrg()
   const canAccessCalls = useHasOrgPermission('calls')
   const canManageVoice = useHasOrgPermission('voiceAssistant')
-  const { calls, stats, isLoading, statsLoading, syncCalls } = useCalls(activeOrg.id)
-  const { config: assistantConfig, isLoading: assistantLoading } = useVapiAssistantConfig()
+
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null)
+
+  const {
+    calls,
+    totalCount,
+    stats,
+    isLoading,
+    statsLoading,
+    hasMore,
+    isFetchingMore,
+    loadMore,
+    syncCalls,
+  } = useCalls(activeOrg.id, {
+    search: debouncedSearch,
+    limit: 10,
+  })
+
+  const { config: assistantConfig, isLoading: assistantLoading } = useVapiAssistantConfig()
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim())
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [searchInput])
 
   if (!canAccessCalls) {
     return (
@@ -77,69 +97,94 @@ export default function CallsPage() {
     )
   }
 
-  const avgDurationFmt = stats ? formatCallDuration(stats.today.avgDurationSeconds) : '—'
-
-  // ── Determine voice setup status ──────────────────────────────────────────
-  // Show the "not configured" banner only when assistant config has loaded
-  // and there is genuinely no active assistant set up.
-  const voiceIsConfigured = !assistantLoading && !!(
-    assistantConfig?.vapi_assistant_id && assistantConfig?.is_active
-  )
+  const avgDurationFmt = stats ? formatCallDuration(stats.today.avgDurationSeconds) : '-'
+  const voiceIsConfigured =
+    !assistantLoading && Boolean(assistantConfig?.vapi_assistant_id && assistantConfig?.is_active)
 
   return (
     <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-6 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
-
-      {/* Page Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             <PhoneCallIcon className="size-6 text-primary" />
             Voice Calls
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            AI voice call logs, transcripts, and recordings
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">AI voice call logs, transcripts, and recordings</p>
         </div>
         {canManageVoice && (
-          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" asChild>
+          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
             <Link href="/voice-assistant">Configure Voice</Link>
           </Button>
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Calls Today"  value={statsLoading ? '...' : (stats?.today.count ?? 0)} sub="Total incoming" icon={PhoneIcon}    loading={statsLoading} />
-        <StatCard label="This Week"    value={statsLoading ? '...' : (stats?.thisWeek ?? 0)}    sub="7-day total"   icon={TrendingUpIcon} loading={statsLoading} />
-        <StatCard label="Avg Duration" value={statsLoading ? '...' : avgDurationFmt}            sub="Today's calls" icon={ClockIcon}      loading={statsLoading} />
-        <StatCard label="All Time"     value={statsLoading ? '...' : (stats?.allTime ?? 0)}     sub="Total calls"   icon={PhoneCallIcon}  loading={statsLoading} />
+        <StatCard
+          label="Calls Today"
+          value={statsLoading ? '...' : (stats?.today.count ?? 0)}
+          sub="Total incoming"
+          icon={PhoneIcon}
+          loading={statsLoading}
+        />
+        <StatCard
+          label="This Week"
+          value={statsLoading ? '...' : (stats?.thisWeek ?? 0)}
+          sub="7-day total"
+          icon={TrendingUpIcon}
+          loading={statsLoading}
+        />
+        <StatCard
+          label="Avg Duration"
+          value={statsLoading ? '...' : avgDurationFmt}
+          sub="Today's calls"
+          icon={ClockIcon}
+          loading={statsLoading}
+        />
+        <StatCard
+          label="All Time"
+          value={statsLoading ? '...' : (stats?.allTime ?? 0)}
+          sub="Total calls"
+          icon={PhoneCallIcon}
+          loading={statsLoading}
+        />
       </div>
 
-      {/* Voice setup status banner */}
       {!assistantLoading && (
-        <Card className={
-          voiceIsConfigured
-            ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-900/10'
-            : 'border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/10'
-        }>
+        <Card
+          className={
+            voiceIsConfigured
+              ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-900/10'
+              : 'border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/10'
+          }
+        >
           <CardContent className="flex items-center gap-3 p-4">
             {voiceIsConfigured ? (
-              <CheckCircleIcon className="size-5 text-emerald-600 shrink-0" />
+              <CheckCircleIcon className="size-5 shrink-0 text-emerald-600" />
             ) : (
-              <AlertCircleIcon className="size-5 text-amber-600 shrink-0" />
+              <AlertCircleIcon className="size-5 shrink-0 text-amber-600" />
             )}
             <div className="min-w-0 flex-1">
-              <p className={`text-sm font-medium ${voiceIsConfigured ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200'}`}>
+              <p
+                className={`text-sm font-medium ${
+                  voiceIsConfigured
+                    ? 'text-emerald-800 dark:text-emerald-200'
+                    : 'text-amber-800 dark:text-amber-200'
+                }`}
+              >
                 {voiceIsConfigured
                   ? `Voice assistant "${assistantConfig!.name}" is active`
-                  : 'Voice calling is not yet configured'
-                }
+                  : 'Voice calling is not yet configured'}
               </p>
-              <p className={`text-xs mt-0.5 ${voiceIsConfigured ? 'text-emerald-700/80 dark:text-emerald-300/80' : 'text-amber-700/80 dark:text-amber-300/80'}`}>
+              <p
+                className={`mt-0.5 text-xs ${
+                  voiceIsConfigured
+                    ? 'text-emerald-700/80 dark:text-emerald-300/80'
+                    : 'text-amber-700/80 dark:text-amber-300/80'
+                }`}
+              >
                 {voiceIsConfigured
-                  ? `Calls will appear here automatically via webhook. ${calls.length === 0 ? 'No calls yet — share your widget with visitors!' : ''}`
-                  : 'Go to Voice Assistant settings to create your AI voice assistant.'
-                }
+                  ? `Calls will appear here automatically via webhook. ${totalCount === 0 ? 'No calls yet - share your widget with visitors.' : ''}`
+                  : 'Go to Voice Assistant settings to create your AI voice assistant.'}
               </p>
             </div>
             {!voiceIsConfigured && canManageVoice && (
@@ -148,30 +193,33 @@ export default function CallsPage() {
               </Button>
             )}
             {voiceIsConfigured && (
-              <Badge variant="outline" className="border-emerald-300 text-emerald-700 shrink-0">
-                <CheckCircleIcon className="size-3 mr-1" /> Active
+              <Badge variant="outline" className="shrink-0 border-emerald-300 text-emerald-700">
+                <CheckCircleIcon className="mr-1 size-3" /> Active
               </Badge>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* Main Layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
-        {/* Left: Call List */}
-        <div className="w-[300px] xl:w-[340px] shrink-0 min-h-0 border-r overflow-hidden flex flex-col">
+        <div className="flex min-h-0 w-[300px] shrink-0 flex-col overflow-hidden border-r xl:w-[340px]">
           <CallLogList
             calls={calls}
+            totalCount={totalCount}
             loading={isLoading}
             selectedId={selectedCallId}
             onSelect={setSelectedCallId}
+            search={searchInput}
+            onSearchChange={setSearchInput}
+            hasMore={hasMore}
+            isFetchingMore={isFetchingMore}
+            onLoadMore={loadMore}
             onSync={() => syncCalls.mutate({ limit: 20 })}
             syncing={syncCalls.isPending}
           />
         </div>
 
-        {/* Right: Call Detail */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <CallDetailPanel callId={selectedCallId} orgId={activeOrg.id} />
         </div>
       </div>

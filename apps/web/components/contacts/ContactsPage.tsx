@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useContacts, useCreateContact } from '@/hooks/useContacts'
 import { ContactList } from './ContactList'
 import { ContactDetail, ContactDetailEmpty } from './ContactDetail'
@@ -105,7 +105,10 @@ export function ContactsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  const { contacts, totalCount, isLoading } = useContacts(debouncedSearch)
+  const { contacts, totalCount, isLoading, hasMore, isFetchingMore, loadMore } = useContacts({
+    search: debouncedSearch,
+    limit: 20,
+  })
 
   // Debounce search
   useEffect(() => {
@@ -147,6 +150,9 @@ export function ContactsPage() {
             onSearchChange={setSearch}
             onAddContact={() => setAddOpen(true)}
             onImport={() => setImportOpen(true)}
+            hasMore={hasMore}
+            isFetchingMore={isFetchingMore}
+            onLoadMore={loadMore}
           />
         </div>
 

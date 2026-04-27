@@ -27,7 +27,8 @@ import {
   SearchIcon,
 } from 'lucide-react'
 import { Input } from '@workspace/ui/components/input'
-import { useState } from 'react'
+import { Spinner } from '@workspace/ui/components/spinner'
+import { useCallback, type UIEvent } from 'react'
 import { trpc } from '@/lib/trpc'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -62,9 +63,15 @@ interface CallRecord {
 
 interface Props {
   calls: CallRecord[]
+  totalCount: number
   loading: boolean
   selectedId: string | null
   onSelect: (id: string) => void
+  search: string
+  onSearchChange: (value: string) => void
+  hasMore: boolean
+  isFetchingMore: boolean
+  onLoadMore: () => void
   onSync?: () => void
   syncing?: boolean
 }
@@ -148,20 +155,29 @@ function getCallTypeIcon(type: string, direction: string) {
 
 // ─── Call Log List ────────────────────────────────────────────────────────────
 
-export function CallLogList({ calls, loading, selectedId, onSelect, onSync, syncing }: Props) {
-  const [search, setSearch] = useState('')
-
-  const filtered = calls.filter(call => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    const label = getContactLabel(call).toLowerCase()
-    return (
-      label.includes(q) ||
-      (call.caller_number ?? '').includes(q) ||
-      call.status.includes(q) ||
-      (call.contacts?.email ?? '').toLowerCase().includes(q)
-    )
-  })
+export function CallLogList({
+  calls,
+  totalCount,
+  loading,
+  selectedId,
+  onSelect,
+  search,
+  onSearchChange,
+  hasMore,
+  isFetchingMore,
+  onLoadMore,
+  onSync,
+  syncing,
+}: Props) {
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!hasMore || isFetchingMore || loading) return
+      const node = event.currentTarget
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight
+      if (distanceFromBottom <= 120) onLoadMore()
+    },
+    [hasMore, isFetchingMore, loading, onLoadMore]
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
@@ -170,7 +186,7 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
         <div>
           <h2 className="text-sm font-semibold">Call Logs</h2>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            {loading ? '...' : `${calls.length} call${calls.length !== 1 ? 's' : ''}`}
+            {loading && calls.length === 0 ? '...' : `${totalCount} total`}
           </p>
         </div>
         {onSync && (
@@ -194,13 +210,13 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
             placeholder="Search by name, email, number..."
             className="h-8 border-0 bg-muted/50 pl-8 text-xs shadow-none focus-visible:ring-0"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(event) => onSearchChange(event.target.value)}
           />
         </div>
       </div>
 
       {/* List */}
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto" onScroll={handleScroll}>
         {loading ? (
           <div className="flex flex-col gap-0.5 p-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -214,7 +230,7 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : calls.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <div className="flex size-10 items-center justify-center rounded-full bg-muted">
               <PhoneOffIcon className="size-5 text-muted-foreground opacity-40" />
@@ -227,8 +243,9 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-0.5 p-2">
-            {filtered.map(call => {
+          <>
+            <div className="flex flex-col gap-0.5 p-2">
+              {calls.map(call => {
               const cfg = getStatusCfg(call.status)
               const isSelected = call.id === selectedId
               const label = getContactLabel(call)
@@ -339,10 +356,24 @@ export function CallLogList({ calls, loading, selectedId, onSelect, onSync, sync
                   </div>
                 </button>
               )
-            })}
-          </div>
+              })}
+            </div>
+
+            {(isFetchingMore || hasMore) && (
+              <div className="flex items-center justify-center gap-2 px-3 pb-4 pt-2 text-xs text-muted-foreground">
+                {isFetchingMore ? (
+                  <>
+                    <Spinner className="size-3.5" />
+                    Loading more calls...
+                  </>
+                ) : (
+                  'Scroll to load more'
+                )}
+              </div>
+            )}
+          </>
         )}
-      </ScrollArea>
+      </div>
     </div>
   )
 }

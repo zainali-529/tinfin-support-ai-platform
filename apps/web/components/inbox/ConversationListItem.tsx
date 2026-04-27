@@ -4,69 +4,77 @@ import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@workspace/ui/lib/utils'
 import type { Conversation } from '@/types/database'
 
-export const CHANNEL_ICONS: Record<string, string> = {
-  chat: '💬',
-  email: '📧',
-  whatsapp: '📱',
-  facebook: '👥',
-  instagram: '📸',
-  sms: '📲',
-  telegram: '✈️',
-  voice: '📞',
+const CHANNEL_LABELS: Record<string, string> = {
+  chat: 'Chat',
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  sms: 'SMS',
+  telegram: 'Telegram',
+  voice: 'Voice',
 }
 
 function getContactLabel(conversation: Conversation): string {
-  return (
-    conversation.contacts?.name ??
-    conversation.contacts?.email ??
-    conversation.contacts?.phone ??
-    'Anonymous'
-  )
+  return conversation.contacts?.name ?? conversation.contacts?.email ?? conversation.contacts?.phone ?? 'Anonymous'
 }
 
-function getLastMessageText(conversation: Conversation): string {
+function getLatestMessageContent(conversation: Conversation): string | null {
+  if (conversation.latest_message_content?.trim()) {
+    return conversation.latest_message_content.trim()
+  }
+
   const messages = conversation.messages ?? []
-  if (messages.length === 0) return 'No messages yet'
+  let latest: (typeof messages)[number] | null = null
 
-  const latest = messages.reduce((acc, current) => {
-    if (!acc) return current
-    return new Date(current.created_at).getTime() >=
-      new Date(acc.created_at).getTime()
-      ? current
-      : acc
-  }, messages[0])
+  for (const message of messages) {
+    if (!latest) {
+      latest = message
+      continue
+    }
 
-  return latest.content?.trim() || 'No messages yet'
+    if (new Date(message.created_at).getTime() >= new Date(latest.created_at).getTime()) {
+      latest = message
+    }
+  }
+
+  return latest?.content?.trim() || null
 }
 
-function getEmailSubject(conversation: Conversation): string | null {
-  const emailMessages = conversation.email_messages ?? []
-  if (emailMessages.length === 0) return null
+function getLatestEmailSubject(conversation: Conversation): string | null {
+  if (conversation.latest_email_subject?.trim()) {
+    return conversation.latest_email_subject.trim()
+  }
 
-  const latest = emailMessages.reduce((acc, current) => {
-    if (!acc) return current
-    return new Date(current.created_at).getTime() >=
-      new Date(acc.created_at).getTime()
-      ? current
-      : acc
-  }, emailMessages[0])
+  const emails = conversation.email_messages ?? []
+  let latest: (typeof emails)[number] | null = null
 
-  return latest.subject?.trim() || null
+  for (const email of emails) {
+    if (!latest) {
+      latest = email
+      continue
+    }
+
+    if (new Date(email.created_at).getTime() >= new Date(latest.created_at).getTime()) {
+      latest = email
+    }
+  }
+
+  return latest?.subject?.trim() || null
 }
 
 function getPreviewText(conversation: Conversation): string {
   if (conversation.channel === 'email') {
-    return getEmailSubject(conversation) ?? getLastMessageText(conversation)
+    return getLatestEmailSubject(conversation) ?? getLatestMessageContent(conversation) ?? 'No messages yet'
   }
-  return getLastMessageText(conversation)
+
+  return getLatestMessageContent(conversation) ?? 'No messages yet'
 }
 
 function statusClass(status: Conversation['status']): string {
   if (status === 'bot') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-  if (status === 'pending')
-    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-  if (status === 'open')
-    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (status === 'pending') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  if (status === 'open') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
   return 'bg-muted text-muted-foreground'
 }
 
@@ -81,7 +89,7 @@ export function ConversationListItem({
   isSelected,
   onSelect,
 }: ConversationListItemProps) {
-  const channelIcon = CHANNEL_ICONS[conversation.channel] ?? '💬'
+  const channelLabel = CHANNEL_LABELS[conversation.channel] ?? 'Chat'
   const contactLabel = getContactLabel(conversation)
   const previewText = getPreviewText(conversation)
 
@@ -97,10 +105,10 @@ export function ConversationListItem({
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className="inline-flex size-5 items-center justify-center rounded-md bg-muted text-xs"
+            className="inline-flex h-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10px] font-semibold"
             aria-label={`${conversation.channel} channel`}
           >
-            {channelIcon}
+            {channelLabel}
           </span>
           <span className="truncate text-sm font-semibold">{contactLabel}</span>
         </div>
@@ -122,9 +130,7 @@ export function ConversationListItem({
         >
           {conversation.status}
         </span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {conversation.channel}
-        </span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{channelLabel}</span>
       </div>
     </button>
   )

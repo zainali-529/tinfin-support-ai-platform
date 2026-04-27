@@ -1,23 +1,92 @@
 'use client'
 
-/**
- * apps/web/hooks/useContacts.ts
- *
- * tRPC hooks for the contacts management feature.
- */
-
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { trpc } from '@/lib/trpc'
 
-export function useContacts(search?: string) {
-  const { data, isLoading } = trpc.contacts.getContacts.useQuery(
-    { search: search || undefined, page: 1, limit: 50 },
+interface UseContactsOptions {
+  search?: string
+  limit?: number
+}
+
+interface ContactRow {
+  id: string
+  name: string | null
+  email: string | null
+  phone: string | null
+  createdAt: string
+  conversationCount: number
+  lastConversationAt: string | null
+  channel: string | null
+  callCount: number
+}
+
+export function useContacts(options?: UseContactsOptions) {
+  const search = options?.search?.trim() ?? ''
+  const limit = options?.limit ?? 20
+
+  const [page, setPage] = useState(1)
+  const [contacts, setContacts] = useState<ContactRow[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+
+  const query = trpc.contacts.getContacts.useQuery(
+    { search: search || undefined, page, limit },
     { staleTime: 30_000 }
   )
 
+  useEffect(() => {
+    setPage(1)
+    setContacts([])
+    setTotalCount(0)
+  }, [search, limit])
+
+  useEffect(() => {
+    const payload = query.data
+    if (!payload) return
+    if (payload.page !== page) return
+
+    const pageItems = (payload.contacts ?? []) as ContactRow[]
+    setTotalCount(payload.totalCount ?? 0)
+
+    setContacts((previous) => {
+      if (page <= 1) {
+        return pageItems
+      }
+
+      const seen = new Set(previous.map((row) => row.id))
+      const appended = pageItems.filter((row) => !seen.has(row.id))
+      return [...previous, ...appended]
+    })
+  }, [page, query.data])
+
+  const hasMore = useMemo(() => {
+    if (!query.data) return false
+    return query.data.hasMore
+  }, [query.data])
+
+  const isLoadingInitial = query.isLoading && page === 1 && contacts.length === 0
+  const isFetchingMore = query.isFetching && page > 1
+
+  const loadMore = useCallback(() => {
+    if (isLoadingInitial || isFetchingMore || !hasMore) return
+    setPage((current) => current + 1)
+  }, [hasMore, isFetchingMore, isLoadingInitial])
+
+  const refetch = useCallback(async () => {
+    if (page === 1) {
+      await query.refetch()
+      return
+    }
+    setPage(1)
+  }, [page, query.refetch])
+
   return {
-    contacts: data?.contacts ?? [],
-    totalCount: data?.totalCount ?? 0,
-    isLoading,
+    contacts,
+    totalCount,
+    isLoading: isLoadingInitial,
+    isFetchingMore,
+    hasMore,
+    loadMore,
+    refetch,
   }
 }
 

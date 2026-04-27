@@ -1,98 +1,106 @@
 'use client'
 
-/**
- * apps/web/hooks/useConversations.ts
- *
- * Real-time conversations list. Subscribes to Supabase realtime for live updates.
- * FIX: removed conversations.meta and conversations.resolved_at (don't exist in schema)
- */
-
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
 import type { Conversation } from '@/types/database'
 
-// ─── Minimal safe query (only columns that exist in the schema) ────────────────
-const CONVERSATIONS_QUERY = `
-  id,
-  org_id,
-  contact_id,
-  status,
-  channel,
-  assigned_to,
-  started_at,
-  email_messages (
-    id,
-    subject,
-    created_at
-  ),
-  contacts (
-    id,
-    name,
-    email,
-    phone
-  ),
-  messages (
-    id,
-    role,
-    content,
-    created_at
-  )
-`
+type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
+type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
 
 interface UseConversationsOptions {
-  channelFilter?: string | null
+  channelFilter?: ChannelFilter | null
+  statusFilter?: StatusFilter
+  search?: string
+  limit?: number
 }
 
 export function useConversations(orgId: string, options?: UseConversationsOptions) {
+  const limit = options?.limit ?? 10
+  const channelFilter = options?.channelFilter ?? 'all'
+  const statusFilter = options?.statusFilter ?? 'all'
+  const search = options?.search?.trim() ?? ''
+
+  const [page, setPage] = useState(1)
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [loading, setLoading] = useState(true)
-  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
-  const channelFilter = options?.channelFilter ?? null
+  const [totalCount, setTotalCount] = useState(0)
 
-  const fetchConversations = useCallback(async () => {
-    if (!orgId) return
-
-    const supabase = createClient()
-    let query = supabase
-      .from('conversations')
-      .select(CONVERSATIONS_QUERY)
-      .eq('org_id', orgId)
-      .order('started_at', { ascending: false })
-      .limit(200)
-
-    if (channelFilter && channelFilter !== 'all') {
-      query = query.eq('channel', channelFilter)
+  const query = trpc.chat.getConversations.useQuery(
+    {
+      page,
+      limit,
+      channel: channelFilter,
+      status: statusFilter,
+      search: search || undefined,
+    },
+    {
+      enabled: Boolean(orgId),
+      staleTime: 30_000,
     }
+  )
 
-    const { data, error } = await query
+  useEffect(() => {
+    setPage(1)
+    setConversations([])
+    setTotalCount(0)
+  }, [orgId, channelFilter, statusFilter, search, limit])
 
-    if (error) {
-      console.error('[useConversations] fetch error:', error.message)
+  useEffect(() => {
+    const payload = query.data
+    if (!payload) return
+    if (payload.page !== page) return
+
+    const pageItems = (payload.items ?? []) as Conversation[]
+
+    setTotalCount(payload.totalCount ?? 0)
+    setConversations((previous) => {
+      if (page <= 1) {
+        return pageItems
+      }
+
+      const seen = new Set(previous.map((item) => item.id))
+      const appended = pageItems.filter((item) => !seen.has(item.id))
+      return [...previous, ...appended]
+    })
+  }, [page, query.data])
+
+  const hasMore = useMemo(() => {
+    if (!query.data) return false
+    return query.data.hasMore
+  }, [query.data])
+
+  const isLoadingInitial = query.isLoading && page === 1 && conversations.length === 0
+  const isFetchingMore = query.isFetching && page > 1
+
+  const loadMore = useCallback(() => {
+    if (isLoadingInitial || isFetchingMore || !hasMore) return
+    setPage((current) => current + 1)
+  }, [hasMore, isFetchingMore, isLoadingInitial])
+
+  const refreshFirstPage = useCallback(async () => {
+    if (page === 1) {
+      await query.refetch()
       return
     }
+    setPage(1)
+  }, [page, query.refetch])
 
-    setConversations((data as unknown as Conversation[]) ?? [])
-    setLoading(false)
-  }, [channelFilter, orgId])
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Initial fetch
-  useEffect(() => {
-    setLoading(true)
-    void fetchConversations()
-  }, [fetchConversations])
-
-  // Realtime subscription
   useEffect(() => {
     if (!orgId) return
 
     const supabase = createClient()
-
-    if (channelRef.current) {
-      void supabase.removeChannel(channelRef.current)
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) return
+      refreshTimerRef.current = setTimeout(() => {
+        refreshTimerRef.current = null
+        void refreshFirstPage()
+      }, 600)
     }
 
     const channel = supabase
-      .channel(`conversations:${orgId}`)
+      .channel(`inbox:list:${orgId}`)
       .on(
         'postgres_changes',
         {
@@ -101,9 +109,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
           table: 'conversations',
           filter: `org_id=eq.${orgId}`,
         },
-        () => {
-          void fetchConversations()
-        }
+        scheduleRefresh
       )
       .on(
         'postgres_changes',
@@ -111,24 +117,38 @@ export function useConversations(orgId: string, options?: UseConversationsOption
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
+          filter: `org_id=eq.${orgId}`,
         },
-        () => {
-          // Debounce: only refetch once if multiple messages arrive quickly
-          void fetchConversations()
-        }
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'email_messages',
+          filter: `org_id=eq.${orgId}`,
+        },
+        scheduleRefresh
       )
       .subscribe()
 
-    channelRef.current = channel
-
     return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current)
+        refreshTimerRef.current = null
+      }
       void supabase.removeChannel(channel)
     }
-  }, [orgId, fetchConversations])
+  }, [orgId, refreshFirstPage])
 
   return {
     conversations,
-    loading,
-    refetch: fetchConversations,
+    totalCount,
+    loading: isLoadingInitial,
+    hasMore,
+    isFetchingMore,
+    loadMore,
+    refetch: refreshFirstPage,
   }
 }

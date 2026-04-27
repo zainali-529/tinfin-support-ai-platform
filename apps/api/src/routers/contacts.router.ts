@@ -132,6 +132,7 @@ export const contactsRouter = router({
         totalCount: count ?? 0,
         page,
         limit,
+        hasMore: page * limit < (count ?? 0),
       }
     }),
 

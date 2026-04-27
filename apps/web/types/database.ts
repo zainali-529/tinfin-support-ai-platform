@@ -73,6 +73,11 @@ export interface Conversation {
   messages?: Message[]
   /** Joined email message previews for subject-based list snippets */
   email_messages?: EmailMessagePreview[]
+  /** Precomputed preview fields from API list endpoints */
+  latest_message_content?: string | null
+  latest_message_at?: string | null
+  latest_email_subject?: string | null
+  latest_email_at?: string | null
 }
 
 // ─── Email Message ────────────────────────────────────────────────────────────

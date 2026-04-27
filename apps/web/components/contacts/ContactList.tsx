@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, type UIEvent } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Input } from '@workspace/ui/components/input'
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { Badge } from '@workspace/ui/components/badge'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Button } from '@workspace/ui/components/button'
+import { Spinner } from '@workspace/ui/components/spinner'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   SearchIcon,
@@ -35,12 +35,15 @@ interface Props {
   contacts: Contact[]
   loading: boolean
   totalCount: number
+  hasMore: boolean
+  isFetchingMore: boolean
   selectedId: string | null
   onSelect: (id: string) => void
   search: string
   onSearchChange: (s: string) => void
   onAddContact: () => void
   onImport: () => void
+  onLoadMore: () => void
 }
 
 const CHANNEL_DOT: Record<string, string> = {
@@ -73,13 +76,29 @@ export function ContactList({
   contacts,
   loading,
   totalCount,
+  hasMore,
+  isFetchingMore,
   selectedId,
   onSelect,
   search,
   onSearchChange,
   onAddContact,
   onImport,
+  onLoadMore,
 }: Props) {
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!hasMore || isFetchingMore || loading) return
+
+      const node = event.currentTarget
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight
+      if (distanceFromBottom <= 120) {
+        onLoadMore()
+      }
+    },
+    [hasMore, isFetchingMore, loading, onLoadMore]
+  )
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       {/* Header */}
@@ -114,7 +133,7 @@ export function ContactList({
       </div>
 
       {/* List */}
-      <ScrollArea className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1 overflow-y-auto" onScroll={handleScroll}>
         {loading ? (
           <div className="flex flex-col gap-0.5 p-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -144,8 +163,9 @@ export function ContactList({
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-0.5 p-2">
-            {contacts.map(contact => {
+          <>
+            <div className="flex flex-col gap-0.5 p-2">
+              {contacts.map(contact => {
               const isSelected = contact.id === selectedId
               const initials = getInitials(contact.name, contact.email)
               const displayName = getDisplayName(contact)
@@ -220,10 +240,24 @@ export function ContactList({
                   </div>
                 </button>
               )
-            })}
-          </div>
+              })}
+            </div>
+
+            {(isFetchingMore || hasMore) && (
+              <div className="flex items-center justify-center gap-2 px-3 pb-4 pt-2 text-xs text-muted-foreground">
+                {isFetchingMore ? (
+                  <>
+                    <Spinner className="size-3.5" />
+                    Loading more contacts...
+                  </>
+                ) : (
+                  'Scroll to load more'
+                )}
+              </div>
+            )}
+          </>
         )}
-      </ScrollArea>
+      </div>
     </div>
   )
 }
