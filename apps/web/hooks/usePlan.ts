@@ -32,7 +32,6 @@ export type LimitKey =
   | 'teamMembers'
   | 'knowledgeBases'
   | 'kbChunks'
-  | 'organizations'
 
 export function usePlan() {
   const { data: sub, isLoading: subLoading } = trpc.billing.getSubscription.useQuery(undefined, {
@@ -107,6 +106,7 @@ export function usePlan() {
     isActive: sub?.isActive ?? true,
     cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: sub?.currentPeriodEnd ?? null,
+    canManageBilling: sub?.canManageBilling ?? false,
     usage: usageData?.usage ?? null,
     limits: usageData?.limits ?? null,
     periodStart: usageData?.periodStart ?? null,

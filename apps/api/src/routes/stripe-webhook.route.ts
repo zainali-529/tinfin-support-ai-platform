@@ -1,18 +1,5 @@
 /**
  * apps/api/src/routes/stripe-webhook.route.ts
- *
- * Stripe webhook handler.
- * Events handled:
- *   checkout.session.completed      → activate subscription
- *   customer.subscription.updated   → plan change / renewal
- *   customer.subscription.deleted   → downgrade to free
- *   invoice.payment_failed          → mark past_due
- *
- * IMPORTANT: Must use raw body. Register BEFORE express.json() in index.ts.
- *
- * Register in index.ts:
- *   import { stripeWebhookRoute } from './routes/stripe-webhook.route'
- *   app.use('/api/stripe-webhook', express.raw({ type: 'application/json' }), stripeWebhookRoute)
  */
 
 import { Router, type Request, type Response } from 'express'
@@ -33,11 +20,107 @@ function getSupabase(): SupabaseClient {
   )
 }
 
-/** Map Stripe price ID → our plan ID */
 function priceIdToPlanId(priceId: string): string {
+  if (priceId === process.env.STRIPE_PRICE_STARTER) return 'starter'
   if (priceId === process.env.STRIPE_PRICE_PRO) return 'pro'
   if (priceId === process.env.STRIPE_PRICE_SCALE) return 'scale'
   return 'free'
+}
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 48)
+}
+
+function shortId(): string {
+  return Math.random().toString(36).substring(2, 8)
+}
+
+async function buildUniqueSlug(
+  supabase: SupabaseClient,
+  preferredSlug: string | null,
+  orgName: string
+): Promise<string> {
+  const baseSlug = (preferredSlug && preferredSlug.trim()) || slugify(orgName) || 'organization'
+  let slug = baseSlug
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const { data: existing } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle()
+
+    if (!existing) return slug
+    slug = `${baseSlug}-${shortId()}`
+  }
+
+  return `${baseSlug}-${shortId()}`
+}
+
+async function ensureOrganizationForCreateAction(
+  supabase: SupabaseClient,
+  params: {
+    orgId: string
+    orgName: string
+    orgSlug: string | null
+    ownerUserId: string
+    planId: string
+  }
+): Promise<void> {
+  const existingOrg = await supabase
+    .from('organizations')
+    .select('id')
+    .eq('id', params.orgId)
+    .maybeSingle()
+
+  if (existingOrg.data?.id) {
+    await supabase
+      .from('organizations')
+      .update({ plan: params.planId })
+      .eq('id', params.orgId)
+  } else {
+    const slug = await buildUniqueSlug(supabase, params.orgSlug, params.orgName)
+
+    const orgInsert = await supabase
+      .from('organizations')
+      .insert({
+        id: params.orgId,
+        name: params.orgName,
+        slug,
+        plan: params.planId,
+      })
+      .select('id')
+      .maybeSingle()
+
+    if (orgInsert.error && !orgInsert.error.message.toLowerCase().includes('duplicate key')) {
+      console.error('[stripe-webhook] Failed to create organization:', orgInsert.error.message)
+      return
+    }
+  }
+
+  await supabase.from('widget_configs').upsert({ org_id: params.orgId }, { onConflict: 'org_id' })
+
+  await supabase
+    .from('user_organizations')
+    .upsert(
+      {
+        user_id: params.ownerUserId,
+        org_id: params.orgId,
+        role: 'admin',
+        is_default: false,
+        is_owner: true,
+      },
+      { onConflict: 'user_id,org_id' }
+    )
+
+  await supabase
+    .from('users')
+    .update({ active_org_id: params.orgId })
+    .eq('id', params.ownerUserId)
 }
 
 async function upsertSubscription(
@@ -56,12 +139,35 @@ async function upsertSubscription(
     .from('subscriptions')
     .upsert({ org_id: orgId, ...data }, { onConflict: 'org_id' })
 
-  if (error) console.error('[stripe-webhook] DB upsert error:', error.message)
-
-  // Also update organizations.plan for quick access
-  if (data.plan) {
-    await supabase.from('organizations').update({ plan: data.plan }).eq('id', orgId)
+  if (error) {
+    console.error('[stripe-webhook] DB upsert error:', error.message)
+    return
   }
+
+  if (data.plan) {
+    const { error: orgUpdateError } = await supabase
+      .from('organizations')
+      .update({ plan: data.plan })
+      .eq('id', orgId)
+
+    if (orgUpdateError) {
+      console.error('[stripe-webhook] Failed to sync organization plan:', orgUpdateError.message)
+    }
+  }
+}
+
+async function resolveOrgIdFromSubscription(stripe: Stripe, sub: Stripe.Subscription): Promise<string | null> {
+  const fromMeta = sub.metadata?.org_id
+  if (fromMeta) return fromMeta
+
+  if (typeof sub.customer !== 'string') {
+    if ('deleted' in sub.customer && sub.customer.deleted) return null
+    return sub.customer.metadata?.org_id ?? null
+  }
+
+  const customer = await stripe.customers.retrieve(sub.customer)
+  if ('deleted' in customer && customer.deleted) return null
+  return customer.metadata?.org_id ?? null
 }
 
 stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
@@ -84,24 +190,44 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid signature' })
   }
 
-  // Always respond 200 quickly
   res.status(200).json({ received: true })
 
   try {
     switch (event.type) {
-
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         if (session.mode !== 'subscription') break
 
         const orgId = session.metadata?.org_id
+        const action = session.metadata?.action ?? 'org_upgrade'
         const planId = session.metadata?.plan_id ?? 'free'
-        const customerId = session.customer as string
-        const subId = session.subscription as string
+        const customerId = session.customer as string | null
+        const subId = session.subscription as string | null
 
-        if (!orgId) { console.warn('[stripe-webhook] No org_id in checkout metadata'); break }
+        if (!orgId || !subId) {
+          console.warn('[stripe-webhook] Missing org_id or subscription id in checkout metadata')
+          break
+        }
 
-        // Fetch subscription to get period_end
+        if (action === 'org_create') {
+          const ownerUserId = session.metadata?.owner_user_id
+          const orgName = session.metadata?.org_name ?? 'Organization'
+          const orgSlug = session.metadata?.org_slug ?? null
+
+          if (!ownerUserId) {
+            console.warn('[stripe-webhook] Missing owner_user_id for org_create checkout')
+            break
+          }
+
+          await ensureOrganizationForCreateAction(supabase, {
+            orgId,
+            orgName,
+            orgSlug,
+            ownerUserId,
+            planId,
+          })
+        }
+
         const sub = await stripe.subscriptions.retrieve(subId)
         const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
 
@@ -114,17 +240,30 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
           cancel_at_period_end: false,
         })
 
-        console.log(`[stripe-webhook] checkout.session.completed: org=${orgId} plan=${planId}`)
+        console.log(`[stripe-webhook] checkout.session.completed: org=${orgId} plan=${planId} action=${action}`)
         break
       }
 
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription
-        const orgId = sub.metadata?.org_id
+        const orgId = await resolveOrgIdFromSubscription(stripe, sub)
         if (!orgId) break
 
+        if (sub.metadata?.action === 'org_create' && sub.metadata?.owner_user_id) {
+          await ensureOrganizationForCreateAction(supabase, {
+            orgId,
+            orgName: sub.metadata?.org_name ?? 'Organization',
+            orgSlug: sub.metadata?.org_slug ?? null,
+            ownerUserId: sub.metadata.owner_user_id,
+            planId: sub.metadata?.plan_id ?? 'free',
+          })
+        }
+
         const priceId = sub.items.data[0]?.price?.id ?? ''
-        const planId = priceIdToPlanId(priceId)
+        const planIdFromPrice = priceIdToPlanId(priceId)
+        const planId = planIdFromPrice === 'free'
+          ? (sub.metadata?.plan_id ?? 'free')
+          : planIdFromPrice
         const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
 
         await upsertSubscription(supabase, orgId, {
@@ -142,7 +281,7 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription
-        const orgId = sub.metadata?.org_id
+        const orgId = await resolveOrgIdFromSubscription(stripe, sub)
         if (!orgId) break
 
         await upsertSubscription(supabase, orgId, {
@@ -152,7 +291,7 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
           cancel_at_period_end: false,
         })
 
-        console.log(`[stripe-webhook] subscription.deleted: org=${orgId} → downgraded to free`)
+        console.log(`[stripe-webhook] subscription.deleted: org=${orgId} downgraded to free`)
         break
       }
 
@@ -162,7 +301,7 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
         if (!subId) break
 
         const sub = await stripe.subscriptions.retrieve(subId)
-        const orgId = sub.metadata?.org_id
+        const orgId = await resolveOrgIdFromSubscription(stripe, sub)
         if (!orgId) break
 
         await upsertSubscription(supabase, orgId, { status: 'past_due' })

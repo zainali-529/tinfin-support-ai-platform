@@ -2,28 +2,21 @@
  * apps/api/src/lib/plans.ts
  *
  * Single source of truth for all subscription plan definitions.
- * These constants are shared by the billing router, middleware, and frontend.
- *
- * Plans:
- *   free   — default for new orgs, no credit card
- *   pro    — $29/month — small teams
- *   scale  — $79/month — growing businesses
  */
 
 export const PLANS = {
   free: {
     id: 'free',
     name: 'Free',
-    description: 'Get started — forever free',
+    description: 'Get started - forever free',
     price: 0,
     stripePriceId: null,
     limits: {
-      teamMembers: 1,          // admin only, no agents
+      teamMembers: 1,
       knowledgeBases: 1,
-      kbChunks: 100,           // ~200 pages
+      kbChunks: 100,
       conversationsPerMonth: 50,
-      voiceMinutesPerMonth: 0, // no voice
-      organizations: 1,
+      voiceMinutesPerMonth: 0,
     },
     features: {
       chatWidget: true,
@@ -34,6 +27,34 @@ export const PLANS = {
       widgetCustomization: false,
       voiceCalls: false,
       teamMembers: false,
+      analytics: false,
+      customBranding: false,
+      prioritySupport: false,
+    },
+  },
+
+  starter: {
+    id: 'starter',
+    name: 'Starter',
+    description: 'For solo operators and early teams',
+    price: 19,
+    stripePriceId: process.env.STRIPE_PRICE_STARTER ?? '',
+    limits: {
+      teamMembers: 2,
+      knowledgeBases: 3,
+      kbChunks: 750,
+      conversationsPerMonth: 300,
+      voiceMinutesPerMonth: 0,
+    },
+    features: {
+      chatWidget: true,
+      aiResponses: true,
+      knowledgeBase: true,
+      emailChannel: true,
+      whatsappChannel: true,
+      widgetCustomization: true,
+      voiceCalls: false,
+      teamMembers: true,
       analytics: false,
       customBranding: false,
       prioritySupport: false,
@@ -52,7 +73,6 @@ export const PLANS = {
       kbChunks: 2000,
       conversationsPerMonth: 1000,
       voiceMinutesPerMonth: 100,
-      organizations: 1,
     },
     features: {
       chatWidget: true,
@@ -79,9 +99,8 @@ export const PLANS = {
       teamMembers: 20,
       knowledgeBases: 20,
       kbChunks: 20000,
-      conversationsPerMonth: -1,  // unlimited (-1 = no limit)
+      conversationsPerMonth: -1,
       voiceMinutesPerMonth: 500,
-      organizations: 3,
     },
     features: {
       chatWidget: true,
@@ -107,20 +126,19 @@ export function getPlan(planId: string | null | undefined): Plan {
   return PLANS[id] ?? PLANS.free
 }
 
-/**
- * Check if a plan allows a specific feature.
- * Usage: canUsePlan('pro', 'voiceCalls') => true
- */
-export function planAllows(planId: string | null | undefined, feature: keyof Plan['features']): boolean {
+export function planAllows(
+  planId: string | null | undefined,
+  feature: keyof Plan['features']
+): boolean {
   return getPlan(planId).features[feature]
 }
 
-/**
- * Check if a numeric limit is within the plan's allowed amount.
- * -1 means unlimited.
- */
-export function withinLimit(planId: string | null | undefined, limit: keyof Plan['limits'], current: number): boolean {
+export function withinLimit(
+  planId: string | null | undefined,
+  limit: keyof Plan['limits'],
+  current: number
+): boolean {
   const max = getPlan(planId).limits[limit]
-  if (max === -1) return true  // unlimited
+  if (max === -1) return true
   return current < max
 }

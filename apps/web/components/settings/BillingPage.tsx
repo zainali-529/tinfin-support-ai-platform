@@ -26,7 +26,7 @@ import { PlanBadge, UsageBar } from '../billing/PlanGuard'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   CheckIcon, XIcon, ArrowRightIcon, CreditCardIcon, CheckCircleIcon,
-  AlertCircleIcon, DownloadIcon, ExternalLinkIcon, ZapIcon, StarIcon,
+  AlertCircleIcon, DownloadIcon, ExternalLinkIcon, StarIcon,
   ReceiptIcon, CalendarIcon, MessageSquareIcon, PhoneCallIcon, UsersIcon,
 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -38,16 +38,19 @@ function PlanCard({
   currentPlanId,
   onUpgrade,
   onPortal,
+  canManageBilling,
   isLoading,
 }: {
   plan: { id: string; name: string; description: string; price: number; limits: Record<string, number>; features: Record<string, boolean> }
   currentPlanId: string
-  onUpgrade: (planId: 'pro' | 'scale') => void
+  onUpgrade: (planId: 'starter' | 'pro' | 'scale') => void
   onPortal: () => void
+  canManageBilling: boolean
   isLoading: boolean
 }) {
   const isCurrent = plan.id === currentPlanId
-  const currentPrice = currentPlanId === 'free' ? 0 : currentPlanId === 'pro' ? 29 : 79
+  const currentPrice = ({ free: 0, starter: 19, pro: 29, scale: 79 } as Record<string, number>)[currentPlanId] ?? 0
+  const currentPlanIsPaid = currentPlanId !== 'free'
   const teamMembersLimit = plan.limits.teamMembers ?? 1
   const conversationsLimit = plan.limits.conversationsPerMonth ?? 50
   const kbChunksLimit = plan.limits.kbChunks ?? 100
@@ -60,6 +63,7 @@ function PlanCard({
     <div className={cn(
       'relative rounded-2xl border p-6 flex flex-col gap-4 transition-all',
       isCurrent ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30',
+      plan.id === 'starter' && !isCurrent && 'border-sky-200 dark:border-sky-800',
       plan.id === 'scale' && !isCurrent && 'border-violet-200 dark:border-violet-800'
     )}>
       {isCurrent && (
@@ -90,6 +94,7 @@ function PlanCard({
           `${kbChunksLimit.toLocaleString()} KB chunks`,
           `${knowledgeBasesLimit} knowledge base${knowledgeBasesLimit > 1 ? 's' : ''}`,
           voiceMinutesLimit === 0 ? 'No voice calls' : `${voiceMinutesLimit} voice min/month`,
+          'Per-organization billing',
         ].map((feat) => (
           <li key={feat} className="flex items-start gap-2">
             <CheckIcon className={cn('size-3.5 mt-0.5 shrink-0', feat.startsWith('No') ? 'text-muted-foreground/40' : 'text-emerald-500')} />
@@ -115,9 +120,9 @@ function PlanCard({
 
       {isCurrent ? (
         plan.id !== 'free' ? (
-          <Button variant="outline" size="sm" onClick={onPortal} disabled={isLoading} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={onPortal} disabled={isLoading || !canManageBilling} className="gap-1.5">
             {isLoading ? <Spinner className="size-3.5" /> : <CreditCardIcon className="size-3.5" />}
-            Manage Billing
+            {canManageBilling ? 'Manage Billing' : 'Billing managed elsewhere'}
           </Button>
         ) : (
           <p className="text-center text-xs text-muted-foreground py-1 flex items-center justify-center gap-1.5">
@@ -125,18 +130,44 @@ function PlanCard({
           </p>
         )
       ) : plan.id === 'free' ? (
-        <Button variant="outline" size="sm" onClick={onPortal} disabled={isLoading} className="text-muted-foreground gap-1.5 text-xs">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onPortal}
+          disabled={isLoading || !canManageBilling}
+          className="text-muted-foreground gap-1.5 text-xs"
+        >
           Cancel subscription
+        </Button>
+      ) : currentPlanIsPaid ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isLoading || !canManageBilling}
+          className="gap-1.5"
+          onClick={onPortal}
+        >
+          {isLoading ? <Spinner className="size-3.5" /> : <CreditCardIcon className="size-3.5" />}
+          {canManageBilling ? 'Change in Portal' : 'Admin access required'}
         </Button>
       ) : (
         <Button
           size="sm"
-          disabled={isLoading}
-          className={cn('gap-1.5', plan.id === 'scale' ? 'bg-violet-600 hover:bg-violet-700 text-white border-0' : '')}
-          onClick={() => onUpgrade(plan.id as 'pro' | 'scale')}
+          disabled={isLoading || !canManageBilling}
+          className={cn(
+            'gap-1.5',
+            plan.id === 'starter'
+              ? 'bg-sky-600 hover:bg-sky-700 text-white border-0'
+              : plan.id === 'scale'
+                ? 'bg-violet-600 hover:bg-violet-700 text-white border-0'
+                : ''
+          )}
+          onClick={() => onUpgrade(plan.id as 'starter' | 'pro' | 'scale')}
         >
           {isLoading ? <Spinner className="size-3.5" /> : <ArrowRightIcon className="size-3.5" />}
-          {plan.price > currentPrice ? 'Upgrade' : 'Switch'} to {plan.name}
+          {!canManageBilling
+            ? 'Billing managed elsewhere'
+            : `${plan.price > currentPrice ? 'Upgrade' : 'Switch'} to ${plan.name}`}
         </Button>
       )}
     </div>
@@ -198,7 +229,18 @@ function InvoiceRow({ inv }: {
 
 function BillingInner() {
   const searchParams = useSearchParams()
-  const { planId, planName, currentPeriodEnd, cancelAtPeriodEnd, status, usage, limits, isLoading } = usePlan()
+  const {
+    planId,
+    planName,
+    planDetails,
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+    status,
+    usage,
+    limits,
+    isLoading,
+    canManageBilling,
+  } = usePlan()
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
@@ -243,7 +285,7 @@ function BillingInner() {
       {cancelled && (
         <Alert>
           <AlertCircleIcon className="size-4" />
-          <AlertDescription className="text-sm">Checkout was cancelled. Your plan hasn't changed.</AlertDescription>
+          <AlertDescription className="text-sm">Checkout was cancelled. Your plan hasn&apos;t changed.</AlertDescription>
         </Alert>
       )}
 
@@ -289,7 +331,7 @@ function BillingInner() {
                       </div>
                       <div className="space-y-0.5">
                         <p className="text-xs text-muted-foreground">Amount</p>
-                        <p className="font-semibold">${planId === 'pro' ? '29.00' : '79.00'}/month</p>
+                        <p className="font-semibold">${(planDetails?.price ?? 0).toFixed(2)}/month</p>
                       </div>
                     </>
                   )}
@@ -299,11 +341,11 @@ function BillingInner() {
                 <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
                   <AlertCircleIcon className="size-4 text-amber-600" />
                   <AlertDescription className="text-xs text-amber-800 dark:text-amber-200">
-                    Your subscription will cancel on {currentPeriodEnd ? format(new Date(currentPeriodEnd), 'MMMM d, yyyy') : ''}. You'll be moved to the Free plan after that.
+                    Your subscription will cancel on {currentPeriodEnd ? format(new Date(currentPeriodEnd), 'MMMM d, yyyy') : ''}. You&apos;ll be moved to the Free plan after that.
                   </AlertDescription>
                 </Alert>
               )}
-              {planId !== 'free' && (
+              {planId !== 'free' && canManageBilling && (
                 <div className="flex gap-2 pt-1">
                   <Button size="sm" variant="outline" onClick={() => { setPortalLoading(true); createPortal.mutate({}) }} disabled={portalLoading} className="gap-1.5">
                     {portalLoading ? <Spinner className="size-3.5" /> : <CreditCardIcon className="size-3.5" />}
@@ -369,7 +411,7 @@ function BillingInner() {
                 </div>
               ) : invoices.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
-                  No invoices yet. They'll appear here once you subscribe.
+                  No invoices yet. They&apos;ll appear here once you subscribe.
                 </div>
               ) : (
                 <div>
@@ -386,7 +428,7 @@ function BillingInner() {
         <div className="space-y-4">
           <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Available Plans</p>
           {plansLoading ? (
-            Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-80 rounded-2xl" />)
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-80 rounded-2xl" />)
           ) : (
             plans.map((plan) => (
               <PlanCard
@@ -395,6 +437,7 @@ function BillingInner() {
                 currentPlanId={planId}
                 onUpgrade={(id) => { setCheckoutLoading(id); createCheckout.mutate({ planId: id }) }}
                 onPortal={() => { setPortalLoading(true); createPortal.mutate({}) }}
+                canManageBilling={canManageBilling}
                 isLoading={checkoutLoading === plan.id || portalLoading}
               />
             ))
@@ -409,32 +452,47 @@ function BillingInner() {
         </CardHeader>
         <Separator />
         <CardContent className="pt-4 overflow-x-auto">
-          <div className="min-w-[520px]">
-            <div className="grid grid-cols-4 gap-4 pb-3 border-b">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-5 gap-4 pb-3 border-b">
               <div />
-              {['Free', 'Pro', 'Scale'].map((n) => (
-                <div key={n} className={cn('text-center text-sm font-bold', n === 'Scale' ? 'text-violet-600' : n === 'Pro' ? 'text-primary' : '')}>{n}</div>
+              {['Free', 'Starter', 'Pro', 'Scale'].map((n) => (
+                <div
+                  key={n}
+                  className={cn(
+                    'text-center text-sm font-bold',
+                    n === 'Scale'
+                      ? 'text-violet-600'
+                      : n === 'Starter'
+                        ? 'text-sky-600'
+                        : n === 'Pro'
+                          ? 'text-primary'
+                          : ''
+                  )}
+                >
+                  {n}
+                </div>
               ))}
             </div>
             {[
-              { label: 'Team members', free: '1', pro: '5', scale: '20' },
-              { label: 'Chats / month', free: '50', pro: '1,000', scale: 'Unlimited' },
-              { label: 'KB chunks', free: '100', pro: '2,000', scale: '20,000' },
-              { label: 'Knowledge bases', free: '1', pro: '5', scale: '20' },
-              { label: 'Voice min / month', free: '0', pro: '100', scale: '500' },
-              { label: 'Organizations', free: '1', pro: '1', scale: '3' },
-              { label: 'Chat widget', free: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'Email channel', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'WhatsApp channel', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'Widget customization', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'Voice calls', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'Team management', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'Analytics', free: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'Priority support', free: <Tick yes={false} />, pro: <Tick yes={false} />, scale: <Tick yes /> },
+              { label: 'Team members', free: '1', starter: '2', pro: '5', scale: '20' },
+              { label: 'Chats / month', free: '50', starter: '300', pro: '1,000', scale: 'Unlimited' },
+              { label: 'KB chunks', free: '100', starter: '750', pro: '2,000', scale: '20,000' },
+              { label: 'Knowledge bases', free: '1', starter: '3', pro: '5', scale: '20' },
+              { label: 'Voice min / month', free: '0', starter: '0', pro: '100', scale: '500' },
+              { label: 'Billing model', free: 'Per org', starter: 'Per org', pro: 'Per org', scale: 'Per org' },
+              { label: 'Chat widget', free: <Tick yes />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Email channel', free: <Tick yes={false} />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'WhatsApp channel', free: <Tick yes={false} />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Widget customization', free: <Tick yes={false} />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Voice calls', free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Team management', free: <Tick yes={false} />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Analytics', free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Priority support', free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes={false} />, scale: <Tick yes /> },
             ].map((row) => (
-              <div key={row.label} className="grid grid-cols-4 items-center gap-4 py-2.5 border-b last:border-0">
+              <div key={row.label} className="grid grid-cols-5 items-center gap-4 py-2.5 border-b last:border-0">
                 <div className="text-sm text-muted-foreground">{row.label}</div>
                 <div className="text-center text-sm font-medium">{row.free}</div>
+                <div className="text-center text-sm font-medium">{row.starter}</div>
                 <div className="text-center text-sm font-medium">{row.pro}</div>
                 <div className="text-center text-sm font-medium">{row.scale}</div>
               </div>

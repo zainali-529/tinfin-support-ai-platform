@@ -1,22 +1,15 @@
 /**
  * apps/api/src/routers/billing.router.ts
  *
- * Stripe billing integration.
- *
- * Procedures:
- *   getSubscription  — current plan + subscription status for the active org
- *   createCheckout   — Stripe checkout session (upgrade)
- *   createPortal     — Stripe customer portal (manage / cancel)
- *   getPlans         — public plan list for pricing page
+ * Stripe billing integration with per-organization subscriptions.
  */
 
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import Stripe from 'stripe'
 import { router, protectedProcedure, publicProcedure } from '../trpc/trpc'
-import { PLANS, getPlan, type PlanId } from '../lib/plans'
-
-// ─── Stripe client ─────────────────────────────────────────────────────────────
+import { PLANS, type PlanId } from '../lib/plans'
+import { getOrgSubscription } from '../lib/subscriptions'
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY
@@ -24,41 +17,64 @@ function getStripe(): Stripe {
   return new Stripe(key, { apiVersion: '2024-06-20' })
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+async function assertOrgAdmin(supabase: any, userId: string, orgId: string): Promise<void> {
+  const { data: membership, error } = await supabase
+    .from('user_organizations')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('org_id', orgId)
+    .maybeSingle()
 
-async function assertAdmin(supabase: any, userId: string, orgId: string) {
-  const { data } = await supabase.from('user_organizations').select('role').eq('user_id', userId).eq('org_id', orgId).maybeSingle()
-  if (!data || data.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can manage billing.' })
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to verify billing permissions: ${error.message}`,
+    })
+  }
+
+  if (membership?.role !== 'admin') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only organization admins can manage billing.',
+    })
+  }
 }
 
-async function getOrCreateStripeCustomer(supabase: any, stripe: Stripe, orgId: string, orgName: string): Promise<string> {
-  // Check if stripe_customer_id already saved
-  const { data: sub } = await supabase.from('subscriptions').select('stripe_customer_id').eq('org_id', orgId).maybeSingle()
+async function getOrCreateStripeCustomer(
+  supabase: any,
+  stripe: Stripe,
+  orgId: string,
+  orgName: string
+): Promise<string> {
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('stripe_customer_id')
+    .eq('org_id', orgId)
+    .maybeSingle()
 
   if (sub?.stripe_customer_id) return sub.stripe_customer_id as string
 
-  // Create new Stripe customer
   const customer = await stripe.customers.create({
     name: orgName,
     metadata: { org_id: orgId },
   })
 
-  // Upsert subscription row with customer id
-  await supabase.from('subscriptions').upsert(
-    { org_id: orgId, stripe_customer_id: customer.id, plan: 'free', status: 'active' },
-    { onConflict: 'org_id' }
-  )
+  await supabase
+    .from('subscriptions')
+    .upsert(
+      {
+        org_id: orgId,
+        stripe_customer_id: customer.id,
+        plan: 'free',
+        status: 'active',
+      },
+      { onConflict: 'org_id' }
+    )
 
   return customer.id
 }
 
-// ─── Router ───────────────────────────────────────────────────────────────────
-
 export const billingRouter = router({
-
-  /**
-   * Public plan list for the pricing page.
-   */
   getPlans: publicProcedure.query(() => {
     return Object.values(PLANS).map((plan) => ({
       id: plan.id,
@@ -70,38 +86,24 @@ export const billingRouter = router({
     }))
   }),
 
-  /**
-   * Current subscription for the active org.
-   */
   getSubscription: protectedProcedure.query(async ({ ctx }) => {
-    const orgId = ctx.userOrgId
-
-    const { data: sub } = await ctx.supabase
-      .from('subscriptions')
-      .select('plan, status, stripe_sub_id, stripe_customer_id, current_period_end, cancel_at_period_end')
-      .eq('org_id', orgId)
-      .maybeSingle()
-
-    const planId = (sub?.plan ?? 'free') as PlanId
-    const plan = getPlan(planId)
+    const orgSub = await getOrgSubscription(ctx.supabase, ctx.userOrgId)
 
     return {
-      plan: planId,
-      planDetails: plan,
-      status: (sub?.status ?? 'active') as string,
-      stripeSubId: (sub?.stripe_sub_id ?? null) as string | null,
-      currentPeriodEnd: (sub?.current_period_end ?? null) as string | null,
-      cancelAtPeriodEnd: (sub?.cancel_at_period_end ?? false) as boolean,
-      isActive: !sub || sub.status === 'active' || sub.status === 'trialing',
+      plan: orgSub.planId as PlanId,
+      planDetails: orgSub.plan,
+      status: orgSub.status,
+      stripeSubId: orgSub.stripeSubId,
+      currentPeriodEnd: orgSub.currentPeriodEnd,
+      cancelAtPeriodEnd: orgSub.cancelAtPeriodEnd,
+      isActive: orgSub.status === 'active' || orgSub.status === 'trialing',
+      canManageBilling: ctx.userRole === 'admin',
     }
   }),
 
-  /**
-   * Invoice history from Stripe for the active org.
-   */
   getInvoices: protectedProcedure.query(async ({ ctx }) => {
     const orgId = ctx.userOrgId
-    await assertAdmin(ctx.supabase, ctx.user.id, orgId)
+    await assertOrgAdmin(ctx.supabase, ctx.user.id, orgId)
 
     const { data: sub } = await ctx.supabase
       .from('subscriptions')
@@ -122,7 +124,7 @@ export const billingRouter = router({
 
       if (!res.ok) return []
 
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         data: Array<{
           id: string
           amount_paid: number
@@ -154,19 +156,17 @@ export const billingRouter = router({
     }
   }),
 
-  /**
-   * Create a Stripe Checkout session for upgrading.
-   * Returns a URL the frontend redirects to.
-   */
   createCheckout: protectedProcedure
-    .input(z.object({
-      planId: z.enum(['pro', 'scale']),
-      successUrl: z.string().url().optional(),
-      cancelUrl: z.string().url().optional(),
-    }))
+    .input(
+      z.object({
+        planId: z.enum(['starter', 'pro', 'scale']),
+        successUrl: z.string().url().optional(),
+        cancelUrl: z.string().url().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.userOrgId
-      await assertAdmin(ctx.supabase, ctx.user.id, orgId)
+      await assertOrgAdmin(ctx.supabase, ctx.user.id, orgId)
 
       const targetPlan = PLANS[input.planId]
       if (!targetPlan.stripePriceId) {
@@ -175,11 +175,35 @@ export const billingRouter = router({
 
       const stripe = getStripe()
 
-      const { data: org } = await ctx.supabase.from('organizations').select('name').eq('id', orgId).single()
-      const customerId = await getOrCreateStripeCustomer(ctx.supabase, stripe, orgId, org?.name ?? 'Organization')
+      const { data: org } = await ctx.supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', orgId)
+        .single()
 
-      // Check if already has a subscription (upgrade scenario)
-      const { data: existingSub } = await ctx.supabase.from('subscriptions').select('stripe_sub_id').eq('org_id', orgId).maybeSingle()
+      const customerId = await getOrCreateStripeCustomer(
+        ctx.supabase,
+        stripe,
+        orgId,
+        org?.name ?? 'Organization'
+      )
+
+      const { data: existingSub } = await ctx.supabase
+        .from('subscriptions')
+        .select('stripe_sub_id,status')
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (
+        existingSub?.stripe_sub_id &&
+        existingSub.status &&
+        ['active', 'trialing', 'past_due', 'unpaid'].includes(existingSub.status)
+      ) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This organization already has a Stripe subscription. Use Billing Portal to change plan.',
+        })
+      }
 
       const webUrl = process.env.WEB_URL || 'http://localhost:3000'
 
@@ -188,31 +212,38 @@ export const billingRouter = router({
         mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [{ price: targetPlan.stripePriceId, quantity: 1 }],
-        success_url: input.successUrl ?? `${webUrl}/settings/billing?success=true`,
-        cancel_url: input.cancelUrl ?? `${webUrl}/settings/billing?cancelled=true`,
-        metadata: { org_id: orgId, plan_id: input.planId },
-        subscription_data: {
-          metadata: { org_id: orgId, plan_id: input.planId },
+        success_url: input.successUrl ?? `${webUrl}/billing?success=true`,
+        cancel_url: input.cancelUrl ?? `${webUrl}/billing?cancelled=true`,
+        metadata: {
+          action: 'org_upgrade',
+          org_id: orgId,
+          plan_id: input.planId,
         },
-        // Allow proration for upgrades
-        ...(existingSub?.stripe_sub_id ? { customer_update: { name: 'auto' } } : {}),
+        subscription_data: {
+          metadata: {
+            action: 'org_upgrade',
+            org_id: orgId,
+            plan_id: input.planId,
+          },
+        },
       })
 
       return { url: session.url! }
     }),
 
-  /**
-   * Create a Stripe Customer Portal session for managing subscription.
-   */
   createPortal: protectedProcedure
     .input(z.object({ returnUrl: z.string().url().optional() }))
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.userOrgId
-      await assertAdmin(ctx.supabase, ctx.user.id, orgId)
+      await assertOrgAdmin(ctx.supabase, ctx.user.id, orgId)
 
       const stripe = getStripe()
 
-      const { data: sub } = await ctx.supabase.from('subscriptions').select('stripe_customer_id').eq('org_id', orgId).maybeSingle()
+      const { data: sub } = await ctx.supabase
+        .from('subscriptions')
+        .select('stripe_customer_id')
+        .eq('org_id', orgId)
+        .maybeSingle()
 
       if (!sub?.stripe_customer_id) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No billing account found. Please upgrade first.' })
@@ -222,7 +253,7 @@ export const billingRouter = router({
 
       const session = await stripe.billingPortal.sessions.create({
         customer: sub.stripe_customer_id as string,
-        return_url: input.returnUrl ?? `${webUrl}/settings/billing`,
+        return_url: input.returnUrl ?? `${webUrl}/billing`,
       })
 
       return { url: session.url }

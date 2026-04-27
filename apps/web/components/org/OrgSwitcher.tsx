@@ -14,35 +14,34 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@workspace/ui/components/dialog'
+import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import { Badge } from '@workspace/ui/components/badge'
 import { Button } from '@workspace/ui/components/button'
 import { Input } from '@workspace/ui/components/input'
 import { Label } from '@workspace/ui/components/label'
-import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { Spinner } from '@workspace/ui/components/spinner'
 import {
   SidebarMenu,
-  SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuItem,
   useSidebar,
 } from '@workspace/ui/components/sidebar'
 import {
-  ChevronsUpDownIcon,
-  PlusIcon,
   BuildingIcon,
   CheckIcon,
+  ChevronsUpDownIcon,
+  CreditCardIcon,
   OctagonXIcon,
+  PlusIcon,
 } from 'lucide-react'
 import { cn } from '@workspace/ui/lib/utils'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface OrgSwitcherProps {
-  /** The org name + id passed from the server layout for the initial render */
   initialOrg: {
     id: string
     name: string
@@ -50,27 +49,85 @@ interface OrgSwitcherProps {
   }
 }
 
-// ─── Create Org Dialog ────────────────────────────────────────────────────────
+type PlanId = 'free' | 'starter' | 'pro' | 'scale'
+
+function PlanOptionCard(props: {
+  id: PlanId
+  name: string
+  description: string
+  price: number
+  selected: boolean
+  disabled?: boolean
+  onSelect: (id: PlanId) => void
+}) {
+  const isPaid = props.price > 0
+  return (
+    <button
+      type="button"
+      onClick={() => props.onSelect(props.id)}
+      disabled={props.disabled}
+      className={cn(
+        'w-full rounded-xl border p-3 text-left transition',
+        props.selected ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30',
+        props.disabled && 'cursor-not-allowed opacity-60'
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{props.name}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{props.description}</p>
+        </div>
+        <Badge variant={isPaid ? 'default' : 'outline'} className="shrink-0">
+          {isPaid ? `$${props.price}/mo` : 'Free'}
+        </Badge>
+      </div>
+      {props.disabled && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Free is only available for your first owned organization.
+        </p>
+      )}
+    </button>
+  )
+}
 
 function CreateOrgDialog({
   open,
   onOpenChange,
+  ownedOrgsCount,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  ownedOrgsCount: number
 }) {
   const router = useRouter()
   const utils = trpc.useUtils()
   const [name, setName] = React.useState('')
+  const [planId, setPlanId] = React.useState<PlanId>('starter')
   const [error, setError] = React.useState('')
 
+  const { data: plans = [] } = trpc.billing.getPlans.useQuery(undefined, {
+    staleTime: 60_000,
+  })
+
+  const firstOwnedOrg = ownedOrgsCount === 0
+  const freeAllowed = firstOwnedOrg
+
+  React.useEffect(() => {
+    if (!open) return
+    setName('')
+    setError('')
+    setPlanId(freeAllowed ? 'free' : 'starter')
+  }, [open, freeAllowed])
+
   const createOrg = trpc.orgMembership.createOrg.useMutation({
-    onSuccess: async () => {
-      // Invalidate all cached queries so every component gets fresh org-scoped data
+    onSuccess: async (data) => {
+      if (data.requiresCheckout && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl
+        return
+      }
+
       await utils.invalidate()
       onOpenChange(false)
-      setName('')
-      setError('')
       router.refresh()
     },
     onError: (err) => {
@@ -81,20 +138,50 @@ function CreateOrgDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
+    if (!freeAllowed && planId === 'free') {
+      setError('Additional organizations require a paid plan.')
+      return
+    }
+
     setError('')
-    createOrg.mutate({ name: name.trim() })
+    createOrg.mutate({
+      name: name.trim(),
+      planId,
+      successUrl: `${window.location.origin}/dashboard?orgCreated=true`,
+      cancelUrl: `${window.location.origin}/dashboard?orgCreateCancelled=true`,
+    })
   }
+
+  const planOrder: PlanId[] = ['free', 'starter', 'pro', 'scale']
+  const resolvedPlans = planOrder
+    .map((id) => plans.find((plan) => plan.id === id))
+    .filter(Boolean) as Array<{
+    id: string
+    name: string
+    description: string
+    price: number
+  }>
+  const displayPlans = resolvedPlans.length > 0
+    ? resolvedPlans
+    : [
+      { id: 'free', name: 'Free', description: 'Get started with one free organization', price: 0 },
+      { id: 'starter', name: 'Starter', description: 'For solo operators and early teams', price: 19 },
+      { id: 'pro', name: 'Pro', description: 'For growing support teams', price: 29 },
+      { id: 'scale', name: 'Scale', description: 'For larger support operations', price: 79 },
+    ]
+
+  const submitLabel = planId === 'free' ? 'Create Organization' : 'Continue to Payment'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 mb-1">
+          <div className="mb-1 flex size-9 items-center justify-center rounded-xl bg-primary/10">
             <BuildingIcon className="size-4 text-primary" />
           </div>
-          <DialogTitle className="text-base">New Organization</DialogTitle>
+          <DialogTitle className="text-base">Create Organization</DialogTitle>
           <DialogDescription className="text-sm">
-            Create a new workspace. You'll be switched to it automatically.
+            First owned organization can be Free. Every additional organization requires a paid plan.
           </DialogDescription>
         </DialogHeader>
 
@@ -105,7 +192,7 @@ function CreateOrgDialog({
             </Label>
             <Input
               id="org-name"
-              placeholder="e.g. Acme Corp"
+              placeholder="e.g. Acme Support"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -113,6 +200,36 @@ function CreateOrgDialog({
               autoFocus
             />
           </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Select plan</Label>
+            <div className="space-y-2">
+              {displayPlans.map((plan) => (
+                <PlanOptionCard
+                  key={plan.id}
+                  id={plan.id as PlanId}
+                  name={plan.name}
+                  description={plan.description}
+                  price={plan.price}
+                  selected={planId === plan.id}
+                  disabled={plan.id === 'free' && !freeAllowed}
+                  onSelect={(id) => {
+                    if (id === 'free' && !freeAllowed) return
+                    setPlanId(id)
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {planId !== 'free' && (
+            <Alert>
+              <CreditCardIcon className="size-4" />
+              <AlertDescription className="text-xs">
+                You will be redirected to secure Stripe checkout. Organization is activated after successful payment.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {error && (
             <Alert variant="destructive">
@@ -131,13 +248,9 @@ function CreateOrgDialog({
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={createOrg.isPending || !name.trim()}
-            >
+            <Button type="submit" size="sm" disabled={createOrg.isPending || !name.trim()}>
               {createOrg.isPending && <Spinner className="mr-1.5 size-3.5" />}
-              {createOrg.isPending ? 'Creating…' : 'Create Organization'}
+              {createOrg.isPending ? 'Processing...' : submitLabel}
             </Button>
           </DialogFooter>
         </form>
@@ -146,14 +259,11 @@ function CreateOrgDialog({
   )
 }
 
-// ─── OrgSwitcher ─────────────────────────────────────────────────────────────
-
 export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
   const router = useRouter()
   const { isMobile } = useSidebar()
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
 
-  // Fetch all orgs the user belongs to
   const { data: orgs = [], isLoading } = trpc.orgMembership.getMyOrgs.useQuery(undefined, {
     staleTime: 30_000,
   })
@@ -164,19 +274,14 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
     },
   })
 
-  // Active org is the one matching initialOrg.id (server-rendered), or the first in the list
   const activeOrg = orgs.find((o) => o.id === initialOrg.id) ?? initialOrg
+  const activeOrgRole = orgs.find((o) => o.id === activeOrg.id)?.role ?? 'admin'
+  const canCreateOrg = activeOrgRole === 'admin'
+  const ownedOrgsCount = orgs.filter((org) => org.isOwner).length
 
   function handleSwitch(orgId: string) {
     if (orgId === activeOrg.id) return
     switchOrg.mutate({ orgId })
-  }
-
-  const planBadgeColor: Record<string, string> = {
-    free: 'bg-muted text-muted-foreground',
-    pro: 'bg-primary/10 text-primary',
-    scale: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
-    enterprise: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   }
 
   return (
@@ -190,18 +295,14 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 disabled={switchOrg.isPending}
               >
-                {/* Org Avatar */}
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold shadow-sm">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm">
                   {activeOrg.name.slice(0, 2).toUpperCase()}
                 </div>
 
-                {/* Org Info */}
-                <div className="grid flex-1 text-left leading-tight min-w-0">
-                  <span className="truncate text-sm font-semibold">
-                    {activeOrg.name}
-                  </span>
-                  <span className="truncate text-[11px] text-muted-foreground capitalize">
-                    {switchOrg.isPending ? 'Switching…' : (activeOrg.plan ?? 'free')}
+                <div className="grid min-w-0 flex-1 text-left leading-tight">
+                  <span className="truncate text-sm font-semibold">{activeOrg.name}</span>
+                  <span className="truncate text-[11px] capitalize text-muted-foreground">
+                    {switchOrg.isPending ? 'Switching...' : (activeOrg.plan ?? 'free')}
                   </span>
                 </div>
 
@@ -215,14 +316,14 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
               side={isMobile ? 'bottom' : 'right'}
               sideOffset={6}
             >
-              <DropdownMenuLabel className="text-xs text-muted-foreground font-medium px-2 py-1.5">
+              <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
                 Your Organizations
               </DropdownMenuLabel>
 
               {isLoading ? (
                 <div className="flex items-center gap-2 px-2 py-3">
                   <Spinner className="size-3.5 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Loading…</span>
+                  <span className="text-xs text-muted-foreground">Loading...</span>
                 </div>
               ) : (
                 orgs.map((org) => {
@@ -231,28 +332,20 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
                     <DropdownMenuItem
                       key={org.id}
                       onClick={() => handleSwitch(org.id)}
-                      className={cn(
-                        'gap-2.5 p-2 cursor-pointer',
-                        isActive && 'bg-accent'
-                      )}
+                      className={cn('cursor-pointer gap-2.5 p-2', isActive && 'bg-accent')}
                     >
-                      {/* Mini avatar */}
-                      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary text-xs font-bold">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-bold text-primary">
                         {org.name.slice(0, 2).toUpperCase()}
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate text-sm font-medium leading-none">
-                          {org.name}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">
-                          {org.role} · {org.plan}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium leading-none">{org.name}</p>
+                        <p className="mt-0.5 text-[10px] capitalize text-muted-foreground">
+                          {org.role} - {org.plan}
                         </p>
                       </div>
 
-                      {isActive && (
-                        <CheckIcon className="size-3.5 text-primary shrink-0" />
-                      )}
+                      {isActive && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                   )
                 })
@@ -261,13 +354,22 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
               <DropdownMenuSeparator />
 
               <DropdownMenuItem
-                className="gap-2.5 p-2 cursor-pointer text-muted-foreground hover:text-foreground"
-                onClick={() => setCreateDialogOpen(true)}
+                className={cn(
+                  'gap-2.5 p-2 text-muted-foreground hover:text-foreground',
+                  canCreateOrg ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                )}
+                disabled={!canCreateOrg}
+                onClick={() => {
+                  if (!canCreateOrg) return
+                  setCreateDialogOpen(true)
+                }}
               >
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-dashed border-muted-foreground/40">
                   <PlusIcon className="size-3.5" />
                 </div>
-                <span className="text-sm font-medium">New Organization</span>
+                <span className="text-sm font-medium">
+                  {canCreateOrg ? 'New Organization' : 'Admins can create organizations'}
+                </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -277,6 +379,7 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
       <CreateOrgDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+        ownedOrgsCount={ownedOrgsCount}
       />
     </>
   )

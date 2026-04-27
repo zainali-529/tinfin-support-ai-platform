@@ -109,7 +109,7 @@ export function WhatsAppSetupPage() {
           <LockIcon className="size-4 text-amber-700 dark:text-amber-300" />
           <AlertDescription className="flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
             <span>
-              WhatsApp channel setup is available on Pro and Scale plans.
+              WhatsApp channel setup is available on Starter, Pro, and Scale plans.
             </span>
             <Button size="sm" className="h-7" asChild>
               <Link href="/billing">Upgrade</Link>

@@ -21,10 +21,12 @@ import { OrgProvider } from '@/components/org/OrgContext'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerSupabaseClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   if (!user) redirect('/login')
 
-  // ── Fetch user record including active_org_id ───────────────────────────────
   const { data: userRecord } = await supabase
     .from('users')
     .select('org_id, active_org_id')
@@ -35,7 +37,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const activeOrgId = userRecord.active_org_id ?? userRecord.org_id
 
-  // ── Fetch active org details ─────────────────────────────────────────────────
   const { data: activeOrg } = await supabase
     .from('organizations')
     .select('id, name, plan')
@@ -44,7 +45,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!activeOrg) redirect('/login')
 
-  // ── Fetch user's role in the active org ───────────────────────────────────
+  const { data: activeSub } = await supabase
+    .from('subscriptions')
+    .select('plan')
+    .eq('org_id', activeOrg.id)
+    .maybeSingle()
+
   const { data: membership } = await supabase
     .from('user_organizations')
     .select('role')
@@ -54,11 +60,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const userRole = (membership?.role ?? 'agent') as 'admin' | 'agent'
 
-  // Combine org + role into one object for the context
   const activeOrgWithRole = {
     id: activeOrg.id,
     name: activeOrg.name,
-    plan: activeOrg.plan,
+    plan: (activeSub?.plan as string | null) ?? activeOrg.plan,
     role: userRole,
   }
 

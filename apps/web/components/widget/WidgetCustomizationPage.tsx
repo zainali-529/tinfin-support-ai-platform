@@ -398,7 +398,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               Preview mode on Free plan: all customization controls are visible for exploration, but editing is locked.
             </span>
             <Button size="sm" className="h-7 gap-1.5" asChild>
-              <Link href="/billing">Upgrade to Pro</Link>
+              <Link href="/billing">Upgrade to Starter</Link>
             </Button>
           </AlertDescription>
         </Alert>
@@ -831,13 +831,13 @@ export function WidgetCustomizationPage({ orgId }: Props) {
           <AlertDialogHeader>
             <AlertDialogTitle>Upgrade Required for Editing</AlertDialogTitle>
             <AlertDialogDescription>
-              You're currently in preview mode on the Free plan. Upgrade to Pro to unlock widget customization and save changes.
+              You're currently in preview mode on the Free plan. Upgrade to Starter to unlock widget customization and save changes.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Maybe Later</AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Link href="/billing">Upgrade to Pro</Link>
+              <Link href="/billing">Upgrade to Starter</Link>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

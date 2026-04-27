@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { getPlan } from '../lib/plans'
+import { getOrgSubscription } from '../lib/subscriptions'
 import { protectedProcedure, router } from '../trpc/trpc'
 
 type DashboardPeriod = 'today' | '7d' | '30d'
@@ -543,11 +544,7 @@ export const dashboardRouter = router({
       conversationResult,
       handledResult,
     ] = await Promise.all([
-      ctx.supabase
-        .from('subscriptions')
-        .select('plan')
-        .eq('org_id', ctx.userOrgId)
-        .maybeSingle(),
+      getOrgSubscription(ctx.supabase, ctx.userOrgId),
 
       ctx.supabase
         .from('widget_configs')
@@ -584,7 +581,6 @@ export const dashboardRouter = router({
     ])
 
     const queryErrors = [
-      subscriptionResult.error,
       widgetResult.error,
       knowledgeResult.error,
       emailResult.error,
@@ -600,9 +596,7 @@ export const dashboardRouter = router({
       })
     }
 
-    const planId =
-      ((subscriptionResult.data as { plan?: string } | null)?.plan ?? 'free') ||
-      'free'
+    const planId = subscriptionResult.planId || 'free'
     const plan = getPlan(planId)
     const isAdmin = ctx.userRole === 'admin'
 

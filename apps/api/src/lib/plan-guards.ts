@@ -13,14 +13,10 @@
 import { TRPCError } from '@trpc/server'
 import { getPlan, planAllows, withinLimit, type Plan } from './plans'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getOrgPlanId } from './subscriptions'
 
 async function getOrgPlan(supabase: SupabaseClient, orgId: string): Promise<string> {
-  const { data } = await supabase
-    .from('subscriptions')
-    .select('plan')
-    .eq('org_id', orgId)
-    .maybeSingle()
-  return (data?.plan as string | null) ?? 'free'
+  return getOrgPlanId(supabase, orgId)
 }
 
 const FEATURE_NAMES: Record<string, string> = {
@@ -43,18 +39,23 @@ const LIMIT_NAMES: Record<string, string> = {
   teamMembers: 'team members',
   knowledgeBases: 'knowledge bases',
   kbChunks: 'knowledge base storage',
-  organizations: 'organizations',
 }
 
-const REQUIRED_PLAN: Record<string, 'pro' | 'scale'> = {
-  emailChannel: 'pro',
-  whatsappChannel: 'pro',
-  widgetCustomization: 'pro',
+const REQUIRED_PLAN: Record<string, 'starter' | 'pro' | 'scale'> = {
+  emailChannel: 'starter',
+  whatsappChannel: 'starter',
+  widgetCustomization: 'starter',
   voiceCalls: 'pro',
-  teamMembers: 'pro',
+  teamMembers: 'starter',
   analytics: 'pro',
   customBranding: 'pro',
   prioritySupport: 'scale',
+}
+
+const PLAN_NAMES: Record<'starter' | 'pro' | 'scale', string> = {
+  starter: 'Starter',
+  pro: 'Pro',
+  scale: 'Scale',
 }
 
 /**
@@ -68,11 +69,11 @@ export async function requireFeature(
 ): Promise<void> {
   const planId = await getOrgPlan(supabase, orgId)
   if (!planAllows(planId, feature)) {
-    const requiredPlan = REQUIRED_PLAN[feature as string] ?? 'pro'
+    const requiredPlan = REQUIRED_PLAN[feature as string] ?? 'starter'
     const featureName = FEATURE_NAMES[feature as string] ?? feature
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: `${featureName} requires the ${requiredPlan === 'scale' ? 'Scale' : 'Pro'} plan. Please upgrade at /settings/billing.`,
+      message: `${featureName} requires the ${PLAN_NAMES[requiredPlan]} plan. Please upgrade at /billing.`,
     })
   }
 }
@@ -94,7 +95,7 @@ export async function requireLimit(
     const name = LIMIT_NAMES[limitKey as string] ?? limitKey
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: `You've reached the ${maxVal} ${name} limit on your ${plan.name} plan. Upgrade at /settings/billing to add more.`,
+      message: `You've reached the ${maxVal} ${name} limit on your ${plan.name} plan. Upgrade at /billing to add more.`,
     })
   }
 }

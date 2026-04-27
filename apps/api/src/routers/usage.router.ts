@@ -2,75 +2,45 @@
  * apps/api/src/routers/usage.router.ts
  *
  * Real-time usage tracking per org per billing period.
- * All values computed live from existing tables — no extra tracking table needed.
- *
- * Tracked metrics:
- *   - conversationsThisMonth  → count from conversations where started_at >= period_start
- *   - voiceMinutesThisMonth   → sum(duration_seconds)/60 from calls
- *   - teamMembersCount        → count from user_organizations
- *   - knowledgeBasesCount     → count from knowledge_bases
- *   - kbChunksCount           → count from kb_chunks
- *   - organizationsCount      → count of orgs the user belongs to
  */
 
 import { router, protectedProcedure } from '../trpc/trpc'
-import { getPlan } from '../lib/plans'
-
-// ─── Helper: billing period start ────────────────────────────────────────────
+import { getOrgSubscription } from '../lib/subscriptions'
 
 function getBillingPeriodStart(currentPeriodEnd: string | null): Date {
   if (currentPeriodEnd) {
-    // Billing period is monthly → start = end - 30 days
     const end = new Date(currentPeriodEnd)
     const start = new Date(end)
     start.setMonth(start.getMonth() - 1)
     return start
   }
-  // Free plan: always use calendar month start
+
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), 1)
 }
 
-// ─── Router ───────────────────────────────────────────────────────────────────
-
 export const usageRouter = router({
-
-  /**
-   * Full usage stats for the active org in the current billing period.
-   * Returns both current usage AND plan limits for UI progress bars.
-   */
   getUsage: protectedProcedure.query(async ({ ctx }) => {
     const orgId = ctx.userOrgId
+    const orgSub = await getOrgSubscription(ctx.supabase, orgId)
+    const plan = orgSub.plan
 
-    // Get subscription info (plan + period)
-    const { data: sub } = await ctx.supabase
-      .from('subscriptions')
-      .select('plan, status, current_period_end, stripe_customer_id')
-      .eq('org_id', orgId)
-      .maybeSingle()
-
-    const planId = (sub?.plan ?? 'free') as string
-    const plan = getPlan(planId)
-    const periodStart = getBillingPeriodStart(sub?.current_period_end ?? null)
+    const periodStart = getBillingPeriodStart(orgSub.currentPeriodEnd ?? null)
     const periodStartIso = periodStart.toISOString()
 
-    // Run all usage queries in parallel
     const [
       conversationsResult,
       voiceResult,
       membersResult,
       kbResult,
       chunksResult,
-      orgsResult,
     ] = await Promise.all([
-      // Conversations this billing period
       ctx.supabase
         .from('conversations')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId)
         .gte('started_at', periodStartIso),
 
-      // Voice minutes this billing period (sum duration_seconds from calls)
       ctx.supabase
         .from('calls')
         .select('duration_seconds')
@@ -78,74 +48,62 @@ export const usageRouter = router({
         .gte('created_at', periodStartIso)
         .not('duration_seconds', 'is', null),
 
-      // Team members
       ctx.supabase
         .from('user_organizations')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId),
 
-      // Knowledge bases
       ctx.supabase
         .from('knowledge_bases')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId),
 
-      // KB chunks
       ctx.supabase
         .from('kb_chunks')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId),
-
-      // Organizations this user belongs to (for org limit)
-      ctx.supabase
-        .from('user_organizations')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', ctx.user.id),
     ])
 
     const conversationsCount = conversationsResult.count ?? 0
-
-    // Sum voice seconds and convert to minutes
     const voiceSeconds = (voiceResult.data ?? []).reduce(
-      (sum, call) => sum + ((call.duration_seconds as number) || 0), 0
+      (sum, call) => sum + ((call.duration_seconds as number) || 0),
+      0
     )
     const voiceMinutes = Math.ceil(voiceSeconds / 60)
 
-    const membersCount = membersResult.count ?? 0
-    const kbCount = kbResult.count ?? 0
-    const chunksCount = chunksResult.count ?? 0
-    const orgsCount = orgsResult.count ?? 0
-
     return {
-      planId,
+      planId: orgSub.planId,
       planName: plan.name,
       periodStart: periodStartIso,
-      periodEnd: sub?.current_period_end ?? null,
+      periodEnd: orgSub.currentPeriodEnd ?? null,
       usage: {
         conversations: conversationsCount,
         voiceMinutes,
-        teamMembers: membersCount,
-        knowledgeBases: kbCount,
-        kbChunks: chunksCount,
-        organizations: orgsCount,
+        teamMembers: membersResult.count ?? 0,
+        knowledgeBases: kbResult.count ?? 0,
+        kbChunks: chunksResult.count ?? 0,
       },
       limits: {
-        conversations: plan.limits.conversationsPerMonth,   // -1 = unlimited
+        conversations: plan.limits.conversationsPerMonth,
         voiceMinutes: plan.limits.voiceMinutesPerMonth,
         teamMembers: plan.limits.teamMembers,
         knowledgeBases: plan.limits.knowledgeBases,
         kbChunks: plan.limits.kbChunks,
-        organizations: plan.limits.organizations,
       },
     }
   }),
 
-  /**
-   * Invoice history from Stripe.
-   * Returns last 12 invoices with amount, date, status, and PDF link.
-   */
   getInvoices: protectedProcedure.query(async ({ ctx }) => {
     const orgId = ctx.userOrgId
+
+    const { data: membership } = await ctx.supabase
+      .from('user_organizations')
+      .select('role')
+      .eq('user_id', ctx.user.id)
+      .eq('org_id', orgId)
+      .maybeSingle()
+
+    if (membership?.role !== 'admin') return []
 
     const { data: sub } = await ctx.supabase
       .from('subscriptions')
@@ -159,9 +117,10 @@ export const usageRouter = router({
     if (!stripeKey) return []
 
     try {
-      // Fetch invoices from Stripe API directly
       const res = await fetch(
-        `https://api.stripe.com/v1/invoices?customer=${encodeURIComponent(sub.stripe_customer_id as string)}&limit=12`,
+        `https://api.stripe.com/v1/invoices?customer=${encodeURIComponent(
+          sub.stripe_customer_id as string
+        )}&limit=12`,
         {
           headers: { Authorization: `Bearer ${stripeKey}` },
         }
@@ -169,7 +128,7 @@ export const usageRouter = router({
 
       if (!res.ok) return []
 
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         data: Array<{
           id: string
           amount_paid: number

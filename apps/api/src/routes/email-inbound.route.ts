@@ -23,6 +23,7 @@ import {
 } from '../services/email.service'
 import { queryRAG } from '@workspace/ai'
 import { planAllows } from '../lib/plans'
+import { getOrgPlanId } from '../lib/subscriptions'
 
 export const emailInboundRoute: Router = Router()
 
@@ -82,13 +83,7 @@ async function isEmailChannelAllowed(
   supabase: SupabaseClient,
   orgId: string
 ): Promise<boolean> {
-  const { data } = await supabase
-    .from('subscriptions')
-    .select('plan')
-    .eq('org_id', orgId)
-    .maybeSingle()
-
-  const planId = (data as { plan?: string | null } | null)?.plan ?? 'free'
+  const planId = await getOrgPlanId(supabase, orgId)
   return planAllows(planId, 'emailChannel')
 }
 

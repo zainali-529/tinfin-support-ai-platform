@@ -14,18 +14,16 @@
 
 import Link from 'next/link'
 import { Button } from '@workspace/ui/components/button'
-import { Badge } from '@workspace/ui/components/badge'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
-import { Progress } from '@workspace/ui/components/progress'
 import { cn } from '@workspace/ui/lib/utils'
 import { ZapIcon, LockIcon, ArrowRightIcon, AlertTriangleIcon } from 'lucide-react'
-import type { FeatureKey, LimitKey } from '@/hooks/usePlan'
 
 // ─── PlanBadge ────────────────────────────────────────────────────────────────
 
 export function PlanBadge({ planId, size = 'sm' }: { planId: string; size?: 'xs' | 'sm' }) {
   const colors: Record<string, string> = {
     free:  'bg-muted text-muted-foreground',
+    starter: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 border-sky-200',
     pro:   'bg-primary/10 text-primary border-primary/20',
     scale: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200',
   }
@@ -47,18 +45,25 @@ export function PlanBadge({ planId, size = 'sm' }: { planId: string; size?: 'xs'
 
 interface UpgradePromptProps {
   feature: string
-  requiredPlan?: 'pro' | 'scale'
+  requiredPlan?: 'starter' | 'pro' | 'scale'
   description?: string
   compact?: boolean
 }
 
 export function UpgradePrompt({
   feature,
-  requiredPlan = 'pro',
+  requiredPlan = 'starter',
   description,
   compact = false,
 }: UpgradePromptProps) {
+  const planLabel: Record<'starter' | 'pro' | 'scale', string> = {
+    starter: 'Starter',
+    pro: 'Pro',
+    scale: 'Scale',
+  }
+
   const planColors = {
+    starter: 'border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-900/20',
     pro:   'border-primary/20 bg-primary/5',
     scale: 'border-violet-200 bg-violet-50 dark:border-violet-800 dark:bg-violet-900/20',
   }
@@ -73,7 +78,7 @@ export function UpgradePrompt({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">
             {feature} requires{' '}
-            <span className="capitalize font-bold">{requiredPlan}</span>
+            <span className="capitalize font-bold">{planLabel[requiredPlan]}</span>
           </p>
         </div>
         <Button size="sm" variant="outline" className="shrink-0 gap-1" asChild>
@@ -92,19 +97,37 @@ export function UpgradePrompt({
     )}>
       <div className={cn(
         'flex size-14 items-center justify-center rounded-2xl',
-        requiredPlan === 'scale' ? 'bg-violet-100 dark:bg-violet-900/30' : 'bg-primary/10'
+        requiredPlan === 'scale'
+          ? 'bg-violet-100 dark:bg-violet-900/30'
+          : requiredPlan === 'starter'
+            ? 'bg-sky-100 dark:bg-sky-900/30'
+            : 'bg-primary/10'
       )}>
-        <ZapIcon className={cn('size-7', requiredPlan === 'scale' ? 'text-violet-600' : 'text-primary')} />
+        <ZapIcon className={cn(
+          'size-7',
+          requiredPlan === 'scale'
+            ? 'text-violet-600'
+            : requiredPlan === 'starter'
+              ? 'text-sky-600'
+              : 'text-primary'
+        )} />
       </div>
       <div className="space-y-1.5 max-w-xs">
         <h3 className="text-base font-bold">{feature}</h3>
         <p className="text-sm text-muted-foreground">
-          {description ?? `This feature is available on the ${requiredPlan === 'scale' ? 'Scale' : 'Pro'} plan and above.`}
+          {description ?? `This feature is available on the ${planLabel[requiredPlan]} plan and above.`}
         </p>
       </div>
-      <Button asChild className={cn('gap-2', requiredPlan === 'scale' ? 'bg-violet-600 hover:bg-violet-700 text-white border-0' : '')}>
+      <Button asChild className={cn(
+        'gap-2',
+        requiredPlan === 'scale'
+          ? 'bg-violet-600 hover:bg-violet-700 text-white border-0'
+          : requiredPlan === 'starter'
+            ? 'bg-sky-600 hover:bg-sky-700 text-white border-0'
+            : ''
+      )}>
         <Link href="/billing">
-          Upgrade to {requiredPlan === 'scale' ? 'Scale' : 'Pro'}
+          Upgrade to {planLabel[requiredPlan]}
           <ArrowRightIcon className="size-4" />
         </Link>
       </Button>

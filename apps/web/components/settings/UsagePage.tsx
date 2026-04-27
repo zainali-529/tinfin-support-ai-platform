@@ -1,15 +1,5 @@
 'use client'
 
-/**
- * apps/web/components/settings/UsagePage.tsx
- *
- * Live usage dashboard showing:
- *   - Current plan + period
- *   - Progress bars for each metric
- *   - Refresh button for live updates
- *   - CTA to upgrade when approaching limits
- */
-
 import { trpc } from '@/lib/trpc'
 import { usePlan } from '@/hooks/usePlan'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
@@ -20,9 +10,16 @@ import { Separator } from '@workspace/ui/components/separator'
 import { PlanBadge, PlanLimitAlert, UsageBar } from '../billing/PlanGuard'
 import { cn } from '@workspace/ui/lib/utils'
 import {
-  MessageSquareIcon, PhoneCallIcon, UsersIcon, BookOpenIcon,
-  DatabaseIcon, BuildingIcon, RefreshCwIcon, ZapIcon, CalendarIcon,
+  MessageSquareIcon,
+  PhoneCallIcon,
+  UsersIcon,
+  BookOpenIcon,
+  DatabaseIcon,
+  RefreshCwIcon,
+  ZapIcon,
+  CalendarIcon,
   ArrowRightIcon,
+  CheckIcon,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
@@ -47,22 +44,21 @@ export function UsagePage() {
   const { planId, planName, periodStart, currentPeriodEnd, isLoading, usage, limits, canUse } = usePlan()
   const utils = trpc.useUtils()
 
+  const isFreePlan = planId === 'free'
+  const isStarterPlan = planId === 'starter'
+
   function handleRefresh() {
     void utils.usage.getUsage.invalidate()
   }
 
   const periodLabel = currentPeriodEnd
-    ? `${periodStart ? format(new Date(periodStart), 'MMM d') : ''} – ${format(new Date(currentPeriodEnd), 'MMM d, yyyy')}`
+    ? `${periodStart ? format(new Date(periodStart), 'MMM d') : ''} - ${format(new Date(currentPeriodEnd), 'MMM d, yyyy')}`
     : periodStart
-    ? `${format(new Date(periodStart), 'MMMM yyyy')}`
-    : 'Current month'
-
-  const isFreePlan = planId === 'free'
+      ? `${format(new Date(periodStart), 'MMMM yyyy')}`
+      : 'Current month'
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
-
-      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
@@ -79,7 +75,6 @@ export function UsagePage() {
         </Button>
       </div>
 
-      {/* Period + Plan banner */}
       <div className="flex items-center gap-3 rounded-xl border bg-muted/20 px-5 py-4">
         <CalendarIcon className="size-5 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
@@ -97,11 +92,7 @@ export function UsagePage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-        {/* Usage metrics — 2 cols */}
         <div className="xl:col-span-2 space-y-4">
-
-          {/* Conversations */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Conversations</CardTitle>
@@ -111,7 +102,9 @@ export function UsagePage() {
             </CardHeader>
             <Separator />
             <CardContent className="pt-4">
-              {isLoading ? <Skeleton className="h-12 w-full" /> : (
+              {isLoading ? (
+                <Skeleton className="h-12 w-full" />
+              ) : (
                 <div className="space-y-3">
                   <UsageBar
                     label="Conversations this period"
@@ -129,7 +122,6 @@ export function UsagePage() {
             </CardContent>
           </Card>
 
-          {/* Voice */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Voice Minutes</CardTitle>
@@ -139,37 +131,38 @@ export function UsagePage() {
             </CardHeader>
             <Separator />
             <CardContent className="pt-4">
-              {isLoading ? <Skeleton className="h-12 w-full" /> : (
-                limits?.voiceMinutes === 0 ? (
-                  <div className="flex items-center justify-between gap-4 py-2">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <PhoneCallIcon className="size-4" />
-                      <span>Voice calls</span>
-                    </div>
-                    <Badge variant="outline" className="text-xs">Not available on {planName} plan</Badge>
+              {isLoading ? (
+                <Skeleton className="h-12 w-full" />
+              ) : limits?.voiceMinutes === 0 ? (
+                <div className="flex items-center justify-between gap-4 py-2">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <PhoneCallIcon className="size-4" />
+                    <span>Voice calls</span>
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <UsageBar
-                      label="Voice minutes this period"
-                      current={usage?.voiceMinutes ?? 0}
-                      limit={limits?.voiceMinutes ?? 0}
-                      unit="min"
-                      icon={<PhoneCallIcon className="size-4" />}
-                    />
-                    <PlanLimitAlert
-                      feature="Voice Minutes"
-                      current={usage?.voiceMinutes ?? 0}
-                      limit={limits?.voiceMinutes ?? 0}
-                      unit="min"
-                    />
-                  </div>
-                )
+                  <Badge variant="outline" className="text-xs">
+                    Not available on {planName} plan
+                  </Badge>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <UsageBar
+                    label="Voice minutes this period"
+                    current={usage?.voiceMinutes ?? 0}
+                    limit={limits?.voiceMinutes ?? 0}
+                    unit="min"
+                    icon={<PhoneCallIcon className="size-4" />}
+                  />
+                  <PlanLimitAlert
+                    feature="Voice Minutes"
+                    current={usage?.voiceMinutes ?? 0}
+                    limit={limits?.voiceMinutes ?? 0}
+                    unit="min"
+                  />
+                </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Team + KB */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Resources</CardTitle>
@@ -179,7 +172,9 @@ export function UsagePage() {
             </CardHeader>
             <Separator />
             <CardContent className="pt-4 space-y-5">
-              {isLoading ? <UsageSkeleton /> : (
+              {isLoading ? (
+                <UsageSkeleton />
+              ) : (
                 <>
                   <UsageBar
                     label="Team members"
@@ -192,6 +187,7 @@ export function UsagePage() {
                     current={usage?.teamMembers ?? 0}
                     limit={limits?.teamMembers ?? 1}
                   />
+
                   <UsageBar
                     label="Knowledge bases"
                     current={usage?.knowledgeBases ?? 0}
@@ -203,6 +199,7 @@ export function UsagePage() {
                     current={usage?.knowledgeBases ?? 0}
                     limit={limits?.knowledgeBases ?? 1}
                   />
+
                   <UsageBar
                     label="KB chunks (indexed pages)"
                     current={usage?.kbChunks ?? 0}
@@ -214,32 +211,26 @@ export function UsagePage() {
                     current={usage?.kbChunks ?? 0}
                     limit={limits?.kbChunks ?? 100}
                   />
-                  <UsageBar
-                    label="Organizations"
-                    current={usage?.organizations ?? 0}
-                    limit={limits?.organizations ?? 1}
-                    icon={<BuildingIcon className="size-4" />}
-                  />
-                  <PlanLimitAlert
-                    feature="Organizations"
-                    current={usage?.organizations ?? 0}
-                    limit={limits?.organizations ?? 1}
-                  />
+
                 </>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Right column */}
         <div className="space-y-4">
-
-          {/* Plan summary */}
-          <Card className={cn(
-            'border',
-            planId === 'scale' ? 'border-violet-200 dark:border-violet-800' :
-            planId === 'pro' ? 'border-primary/20' : ''
-          )}>
+          <Card
+            className={cn(
+              'border',
+              planId === 'scale'
+                ? 'border-violet-200 dark:border-violet-800'
+                : planId === 'starter'
+                  ? 'border-sky-200 dark:border-sky-800'
+                  : planId === 'pro'
+                    ? 'border-primary/20'
+                    : ''
+            )}
+          >
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center justify-between">
                 Your Plan
@@ -248,8 +239,17 @@ export function UsagePage() {
             </CardHeader>
             <CardContent className="pt-0 space-y-2 text-sm">
               {[
-                { label: 'Chats/month', value: limits?.conversations === -1 ? 'Unlimited' : limits?.conversations?.toLocaleString() ?? '50' },
-                { label: 'Voice min/month', value: limits?.voiceMinutes === 0 ? 'None' : `${limits?.voiceMinutes ?? 0}` },
+                {
+                  label: 'Chats/month',
+                  value:
+                    limits?.conversations === -1
+                      ? 'Unlimited'
+                      : limits?.conversations?.toLocaleString() ?? '50',
+                },
+                {
+                  label: 'Voice min/month',
+                  value: limits?.voiceMinutes === 0 ? 'None' : `${limits?.voiceMinutes ?? 0}`,
+                },
                 { label: 'Email channel', value: canUse('emailChannel') ? 'Included' : 'Preview only' },
                 { label: 'WhatsApp channel', value: canUse('whatsappChannel') ? 'Included' : 'Preview only' },
                 { label: 'Team members', value: `${limits?.teamMembers ?? 1}` },
@@ -261,6 +261,7 @@ export function UsagePage() {
                   <span className="font-medium">{value}</span>
                 </div>
               ))}
+
               {isFreePlan && (
                 <Button size="sm" className="w-full mt-3 gap-1.5" asChild>
                   <Link href="/billing">
@@ -271,21 +272,52 @@ export function UsagePage() {
             </CardContent>
           </Card>
 
-          {/* Upgrade prompt for free/pro users */}
           {isFreePlan && (
             <Card className="border-primary/20 bg-primary/5">
               <CardContent className="pt-4 space-y-3">
-                <p className="text-sm font-semibold">Unlock more with Pro</p>
+                <p className="text-sm font-semibold">Unlock more with Starter</p>
                 <ul className="text-xs text-muted-foreground space-y-1.5">
-                  {['Email channel', 'WhatsApp channel', '5 team members', '1,000 chats/month', '100 voice minutes', 'Widget customization', 'Analytics'].map(f => (
+                  {[
+                    'Email channel',
+                    'WhatsApp channel',
+                    '2 team members',
+                    '300 chats/month',
+                    'Widget customization',
+                    '3 knowledge bases',
+                  ].map((f) => (
                     <li key={f} className="flex items-center gap-1.5">
-                      <span className="size-4 flex items-center justify-center rounded-full bg-primary/10 text-primary text-[10px]">✓</span>
+                      <CheckIcon className="size-3.5 text-primary" />
                       {f}
                     </li>
                   ))}
                 </ul>
                 <Button size="sm" className="w-full gap-1.5" asChild>
-                  <Link href="/billing">Upgrade to Pro — $29/mo</Link>
+                  <Link href="/billing">Upgrade to Starter - $19/mo</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {isStarterPlan && (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="pt-4 space-y-3">
+                <p className="text-sm font-semibold">Pro for voice + analytics</p>
+                <ul className="text-xs text-muted-foreground space-y-1.5">
+                  {[
+                    '100 voice minutes',
+                    'Analytics',
+                    'Custom branding',
+                    '5 team members',
+                    '1,000 chats/month',
+                  ].map((f) => (
+                    <li key={f} className="flex items-center gap-1.5">
+                      <CheckIcon className="size-3.5 text-primary" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Button size="sm" className="w-full gap-1.5" asChild>
+                  <Link href="/billing">Upgrade to Pro - $29/mo</Link>
                 </Button>
               </CardContent>
             </Card>
@@ -296,15 +328,21 @@ export function UsagePage() {
               <CardContent className="pt-4 space-y-3">
                 <p className="text-sm font-semibold text-violet-800 dark:text-violet-200">Scale for more</p>
                 <ul className="text-xs text-muted-foreground space-y-1.5">
-                  {['20 team members', 'Unlimited chats', '500 voice minutes', '3 organizations', 'Priority support'].map(f => (
+                  {[
+                    '20 team members',
+                    'Unlimited chats',
+                    '500 voice minutes',
+                    'Dedicated per-org billing controls',
+                    'Priority support',
+                  ].map((f) => (
                     <li key={f} className="flex items-center gap-1.5">
-                      <span className="size-4 flex items-center justify-center rounded-full bg-violet-100 text-violet-600 text-[10px]">✓</span>
+                      <CheckIcon className="size-3.5 text-violet-600" />
                       {f}
                     </li>
                   ))}
                 </ul>
                 <Button size="sm" className="w-full bg-violet-600 hover:bg-violet-700 text-white border-0 gap-1.5" asChild>
-                  <Link href="/billing">Upgrade to Scale — $79/mo</Link>
+                  <Link href="/billing">Upgrade to Scale - $79/mo</Link>
                 </Button>
               </CardContent>
             </Card>

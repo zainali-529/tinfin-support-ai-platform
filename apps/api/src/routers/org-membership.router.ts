@@ -1,121 +1,447 @@
 /**
- * apps/api/src/routers/org-membership.router.ts  (Updated)
- *
- * Fix: createOrg now sets is_owner=true for the creator's user_organizations row.
- * This ensures the owner can never be demoted or removed via team management.
+ * apps/api/src/routers/org-membership.router.ts
  */
 
 import { z } from 'zod'
+import Stripe from 'stripe'
+import { randomUUID } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
-import { requireLimit } from '../lib/plan-guards'
+import { PLANS } from '../lib/plans'
 
 function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 48)
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 48)
 }
 
 function shortId(): string {
   return Math.random().toString(36).substring(2, 8)
 }
 
+function getStripe(): Stripe {
+  const key = process.env.STRIPE_SECRET_KEY
+  if (!key) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Stripe is not configured.',
+    })
+  }
+  return new Stripe(key, { apiVersion: '2024-06-20' })
+}
+
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
+  const msg = (error?.message ?? '').toLowerCase()
+  return msg.includes('column') && msg.includes(column.toLowerCase())
+}
+
+async function buildUniqueSlug(supabase: any, orgName: string): Promise<string> {
+  const baseSlug = slugify(orgName) || 'organization'
+  let slug = baseSlug
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const { data: existing } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle()
+
+    if (!existing) return slug
+    slug = `${baseSlug}-${shortId()}`
+  }
+
+  return `${baseSlug}-${shortId()}`
+}
+
+async function assertOrgAdmin(supabase: any, userId: string, orgId: string): Promise<void> {
+  const { data: membership, error } = await supabase
+    .from('user_organizations')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to verify permissions: ${error.message}`,
+    })
+  }
+
+  if (!membership || membership.role !== 'admin') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only organization admins can create a new organization.',
+    })
+  }
+}
+
+async function getOwnedOrganizationsCount(supabase: any, userId: string): Promise<number> {
+  const ownerCount = await supabase
+    .from('user_organizations')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('is_owner', true)
+
+  if (!ownerCount.error) return ownerCount.count ?? 0
+
+  if (isMissingColumnError(ownerCount.error, 'is_owner')) {
+    const adminCount = await supabase
+      .from('user_organizations')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('role', 'admin')
+
+    if (adminCount.error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to evaluate organization ownership: ${adminCount.error.message}`,
+      })
+    }
+
+    return adminCount.count ?? 0
+  }
+
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `Failed to evaluate organization ownership: ${ownerCount.error.message}`,
+  })
+}
+
+async function getSubscriptionPlanMap(supabase: any, orgIds: string[]): Promise<Map<string, string>> {
+  if (orgIds.length === 0) return new Map()
+
+  const { data } = await supabase
+    .from('subscriptions')
+    .select('org_id, plan')
+    .in('org_id', orgIds)
+
+  const map = new Map<string, string>()
+  for (const row of (data ?? []) as Array<{ org_id: string; plan: string | null }>) {
+    map.set(row.org_id, row.plan ?? 'free')
+  }
+
+  return map
+}
+
+async function getOrgWithSubscriptionPlan(supabase: any, orgId: string) {
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('id, name, slug, plan')
+    .eq('id', orgId)
+    .single()
+
+  if (!org) return null
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('plan')
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  return {
+    id: org.id as string,
+    name: org.name as string,
+    slug: org.slug as string,
+    plan: ((sub?.plan as string | null) ?? (org.plan as string) ?? 'free') as string,
+  }
+}
+
 export const orgMembershipRouter = router({
   getMyOrgs: protectedProcedure.query(async ({ ctx }) => {
-    const { data, error } = await ctx.supabase
+    const membershipsResult = await ctx.supabase
       .from('user_organizations')
-      .select(`id, role, is_owner, is_default, joined_at, organizations (id, name, slug, plan, created_at)`)
+      .select(
+        `id, role, is_owner, is_default, joined_at, organizations (id, name, slug, plan, created_at)`
+      )
       .eq('user_id', ctx.user.id)
       .order('joined_at', { ascending: true })
 
-    if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to fetch organizations: ${error.message}` })
+    if (membershipsResult.error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to fetch organizations: ${membershipsResult.error.message}`,
+      })
+    }
 
-    return (data ?? []).map((row) => ({
-      membershipId: row.id,
-      role: row.role as 'admin' | 'agent',
-      isOwner: (row.is_owner as boolean) ?? false,
-      isDefault: row.is_default,
-      joinedAt: row.joined_at,
-      ...((Array.isArray(row.organizations) ? row.organizations[0] : row.organizations) as unknown as {
-        id: string; name: string; slug: string; plan: string; created_at: string
-      }),
+    const normalized = ((membershipsResult.data ?? []) as Array<any>).map((row) => {
+      const org = (Array.isArray(row.organizations) ? row.organizations[0] : row.organizations) as {
+        id: string
+        name: string
+        slug: string
+        plan: string
+        created_at: string
+      }
+
+      return {
+        membershipId: row.id,
+        role: row.role as 'admin' | 'agent',
+        isOwner: (row.is_owner as boolean) ?? false,
+        isDefault: row.is_default,
+        joinedAt: row.joined_at,
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        plan: org.plan,
+        created_at: org.created_at,
+      }
+    })
+
+    const orgIds = normalized.map((org) => org.id)
+    const planMap = await getSubscriptionPlanMap(ctx.supabase, orgIds)
+
+    return normalized.map((org) => ({
+      ...org,
+      plan: planMap.get(org.id) ?? org.plan ?? 'free',
     }))
   }),
 
   getActiveOrg: protectedProcedure.query(async ({ ctx }) => {
-    const { data: user } = await ctx.supabase.from('users').select('active_org_id, org_id').eq('id', ctx.user.id).single()
+    const { data: user } = await ctx.supabase
+      .from('users')
+      .select('active_org_id, org_id')
+      .eq('id', ctx.user.id)
+      .single()
+
     const activeOrgId = user?.active_org_id ?? user?.org_id
     if (!activeOrgId) return null
 
-    const { data: org } = await ctx.supabase.from('organizations').select('id, name, slug, plan').eq('id', activeOrgId).single()
-    const { data: membership } = await ctx.supabase.from('user_organizations').select('role').eq('user_id', ctx.user.id).eq('org_id', activeOrgId).maybeSingle()
+    const org = await getOrgWithSubscriptionPlan(ctx.supabase, activeOrgId)
+    if (!org) return null
 
-    return org ? { ...org, role: (membership?.role ?? 'agent') as 'admin' | 'agent' } : null
+    const { data: membership } = await ctx.supabase
+      .from('user_organizations')
+      .select('role')
+      .eq('user_id', ctx.user.id)
+      .eq('org_id', activeOrgId)
+      .maybeSingle()
+
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      plan: org.plan,
+      role: (membership?.role ?? 'agent') as 'admin' | 'agent',
+    }
   }),
 
   switchOrg: protectedProcedure
     .input(z.object({ orgId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const { data: membership } = await ctx.supabase.from('user_organizations').select('id, role').eq('user_id', ctx.user.id).eq('org_id', input.orgId).maybeSingle()
-      if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'You are not a member of this organization.' })
+      const { data: membership } = await ctx.supabase
+        .from('user_organizations')
+        .select('id, role')
+        .eq('user_id', ctx.user.id)
+        .eq('org_id', input.orgId)
+        .maybeSingle()
 
-      const { error } = await ctx.supabase.from('users').update({ active_org_id: input.orgId }).eq('id', ctx.user.id)
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to switch organization: ${error.message}` })
+      if (!membership) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You are not a member of this organization.',
+        })
+      }
 
-      const { data: org } = await ctx.supabase.from('organizations').select('id, name, slug, plan').eq('id', input.orgId).single()
+      const { error } = await ctx.supabase
+        .from('users')
+        .update({ active_org_id: input.orgId })
+        .eq('id', ctx.user.id)
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to switch organization: ${error.message}`,
+        })
+      }
+
+      const org = await getOrgWithSubscriptionPlan(ctx.supabase, input.orgId)
       return { success: true, org, role: membership.role }
     }),
 
   createOrg: protectedProcedure
-    .input(z.object({ name: z.string().min(1, 'Organization name is required').max(80) }))
+    .input(
+      z.object({
+        name: z.string().min(1, 'Organization name is required').max(80),
+        planId: z.enum(['free', 'starter', 'pro', 'scale']).default('free'),
+        successUrl: z.string().url().optional(),
+        cancelUrl: z.string().url().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.user.id
+      const orgName = input.name.trim()
 
-      const { count: orgCount } = await ctx.supabase
-        .from('user_organizations')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-      await requireLimit(ctx.supabase, ctx.userOrgId, 'organizations', orgCount ?? 0)
+      await assertOrgAdmin(ctx.supabase, userId, ctx.userOrgId)
 
-      const baseSlug = slugify(input.name) || 'organization'
-      let slug = baseSlug
+      const ownedCount = await getOwnedOrganizationsCount(ctx.supabase, userId)
 
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const { data: existing } = await ctx.supabase.from('organizations').select('id').eq('slug', slug).maybeSingle()
-        if (!existing) break
-        slug = `${baseSlug}-${shortId()}`
+      if (ownedCount <= 0 && input.planId !== 'free') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Your first organization must start on the Free plan.',
+        })
       }
 
-      const { data: org, error: orgError } = await ctx.supabase
-        .from('organizations')
-        .insert({ name: input.name.trim(), slug, plan: 'free' })
-        .select()
-        .single()
-
-      if (orgError || !org) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to create organization: ${orgError?.message ?? 'Unknown error'}` })
-
-      await ctx.supabase.from('widget_configs').insert({ org_id: org.id }).select().maybeSingle()
-
-      // ← OWNER FLAG: creator is marked as owner
-      const { error: memberError } = await ctx.supabase
-        .from('user_organizations')
-        .insert({ user_id: userId, org_id: org.id, role: 'admin', is_default: false, is_owner: true })
-
-      if (memberError) {
-        await ctx.supabase.from('organizations').delete().eq('id', org.id)
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to add membership: ${memberError.message}` })
+      if (ownedCount >= 1 && input.planId === 'free') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Only your first owned organization can be created on Free. Choose a paid plan.',
+        })
       }
 
-      await ctx.supabase.from('users').update({ active_org_id: org.id }).eq('id', userId)
-      return { org, role: 'admin' as const }
+      const slug = await buildUniqueSlug(ctx.supabase, orgName)
+
+      if (input.planId === 'free') {
+        const orgInsert = await ctx.supabase
+          .from('organizations')
+          .insert({
+            name: orgName,
+            slug,
+            plan: 'free',
+          })
+          .select('id, name, slug, plan, created_at')
+          .single()
+
+        const org = orgInsert.data
+        const orgError = orgInsert.error
+
+        if (orgError || !org) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to create organization: ${orgError?.message ?? 'Unknown error'}`,
+          })
+        }
+
+        const subInsert = await ctx.supabase
+          .from('subscriptions')
+          .upsert(
+            {
+              org_id: org.id,
+              plan: 'free',
+              status: 'active',
+            },
+            { onConflict: 'org_id' }
+          )
+
+        if (subInsert.error) {
+          await ctx.supabase.from('organizations').delete().eq('id', org.id)
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to initialize subscription: ${subInsert.error.message}`,
+          })
+        }
+
+        await ctx.supabase.from('widget_configs').upsert({ org_id: org.id }, { onConflict: 'org_id' })
+
+        const { error: memberError } = await ctx.supabase
+          .from('user_organizations')
+          .insert({
+            user_id: userId,
+            org_id: org.id,
+            role: 'admin',
+            is_default: false,
+            is_owner: true,
+          })
+
+        if (memberError) {
+          await ctx.supabase.from('organizations').delete().eq('id', org.id)
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to add membership: ${memberError.message}`,
+          })
+        }
+
+        await ctx.supabase.from('users').update({ active_org_id: org.id }).eq('id', userId)
+
+        return {
+          requiresCheckout: false,
+          checkoutUrl: null as string | null,
+          org,
+          role: 'admin' as const,
+        }
+      }
+
+      const targetPlan = PLANS[input.planId]
+      if (!targetPlan?.stripePriceId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This plan is not available for purchase.',
+        })
+      }
+
+      const stripe = getStripe()
+      const webUrl = process.env.WEB_URL || 'http://localhost:3000'
+      const pendingOrgId = randomUUID()
+
+      const customer = await stripe.customers.create({
+        name: orgName,
+        metadata: {
+          org_id: pendingOrgId,
+          action: 'org_create',
+          owner_user_id: userId,
+        },
+      })
+
+      const metadata = {
+        action: 'org_create',
+        org_id: pendingOrgId,
+        org_name: orgName,
+        org_slug: slug,
+        owner_user_id: userId,
+        plan_id: input.planId,
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customer.id,
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [{ price: targetPlan.stripePriceId, quantity: 1 }],
+        success_url: input.successUrl ?? `${webUrl}/dashboard?orgCreated=true`,
+        cancel_url: input.cancelUrl ?? `${webUrl}/dashboard?orgCreateCancelled=true`,
+        metadata,
+        subscription_data: {
+          metadata,
+        },
+      })
+
+      return {
+        requiresCheckout: true,
+        checkoutUrl: session.url!,
+        org: null,
+        role: null,
+      }
     }),
 
   renameOrg: protectedProcedure
     .input(z.object({ orgId: z.string().uuid(), name: z.string().min(1).max(80) }))
     .mutation(async ({ ctx, input }) => {
-      const { data: membership } = await ctx.supabase.from('user_organizations').select('role').eq('user_id', ctx.user.id).eq('org_id', input.orgId).maybeSingle()
-      if (!membership || membership.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can rename an organization.' })
+      const { data: membership } = await ctx.supabase
+        .from('user_organizations')
+        .select('role')
+        .eq('user_id', ctx.user.id)
+        .eq('org_id', input.orgId)
+        .maybeSingle()
 
-      const { data, error } = await ctx.supabase.from('organizations').update({ name: input.name.trim() }).eq('id', input.orgId).select().single()
-      if (error) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to rename: ${error.message}` })
+      if (!membership || membership.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admins can rename an organization.' })
+      }
+
+      const { data, error } = await ctx.supabase
+        .from('organizations')
+        .update({ name: input.name.trim() })
+        .eq('id', input.orgId)
+        .select()
+        .single()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to rename: ${error.message}`,
+        })
+      }
+
       return data
     }),
 
@@ -124,26 +450,74 @@ export const orgMembershipRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.user.id
 
-      // Owner cannot leave their own org
-      const { data: membership } = await ctx.supabase.from('user_organizations').select('role, is_owner').eq('user_id', userId).eq('org_id', input.orgId).maybeSingle()
+      const { data: membership } = await ctx.supabase
+        .from('user_organizations')
+        .select('role, is_owner')
+        .eq('user_id', userId)
+        .eq('org_id', input.orgId)
+        .maybeSingle()
+
       if (membership?.is_owner) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'As the organization owner, you cannot leave. Transfer ownership first.' })
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'As the organization owner, you cannot leave. Transfer ownership first.',
+        })
       }
 
-      const { count: orgCount } = await ctx.supabase.from('user_organizations').select('id', { count: 'exact', head: true }).eq('user_id', userId)
-      if ((orgCount ?? 0) <= 1) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot leave your only organization.' })
+      const { count: orgCount } = await ctx.supabase
+        .from('user_organizations')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+
+      if ((orgCount ?? 0) <= 1) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'You cannot leave your only organization.',
+        })
+      }
 
       if (membership?.role === 'admin') {
-        const { count: adminCount } = await ctx.supabase.from('user_organizations').select('id', { count: 'exact', head: true }).eq('org_id', input.orgId).eq('role', 'admin')
-        if ((adminCount ?? 0) <= 1) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are the last admin. Transfer ownership before leaving.' })
+        const { count: adminCount } = await ctx.supabase
+          .from('user_organizations')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', input.orgId)
+          .eq('role', 'admin')
+
+        if ((adminCount ?? 0) <= 1) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'You are the last admin. Transfer ownership before leaving.',
+          })
+        }
       }
 
-      await ctx.supabase.from('user_organizations').delete().eq('user_id', userId).eq('org_id', input.orgId)
+      await ctx.supabase
+        .from('user_organizations')
+        .delete()
+        .eq('user_id', userId)
+        .eq('org_id', input.orgId)
 
-      const { data: user } = await ctx.supabase.from('users').select('active_org_id, org_id').eq('id', userId).single()
+      const { data: user } = await ctx.supabase
+        .from('users')
+        .select('active_org_id, org_id')
+        .eq('id', userId)
+        .single()
+
       if (user?.active_org_id === input.orgId || user?.org_id === input.orgId) {
-        const { data: nextMembership } = await ctx.supabase.from('user_organizations').select('org_id').eq('user_id', userId).order('joined_at', { ascending: true }).limit(1).maybeSingle()
-        if (nextMembership) await ctx.supabase.from('users').update({ active_org_id: nextMembership.org_id }).eq('id', userId)
+        const { data: nextMembership } = await ctx.supabase
+          .from('user_organizations')
+          .select('org_id')
+          .eq('user_id', userId)
+          .order('joined_at', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+        if (nextMembership) {
+          await ctx.supabase
+            .from('users')
+            .update({ active_org_id: nextMembership.org_id })
+            .eq('id', userId)
+        }
       }
 
       return { success: true }
@@ -152,7 +526,13 @@ export const orgMembershipRouter = router({
   getOrgMembers: protectedProcedure
     .input(z.object({ orgId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { data: membership } = await ctx.supabase.from('user_organizations').select('role').eq('user_id', ctx.user.id).eq('org_id', input.orgId).maybeSingle()
+      const { data: membership } = await ctx.supabase
+        .from('user_organizations')
+        .select('role')
+        .eq('user_id', ctx.user.id)
+        .eq('org_id', input.orgId)
+        .maybeSingle()
+
       if (!membership) throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a member.' })
 
       const { data } = await ctx.supabase
@@ -166,8 +546,11 @@ export const orgMembershipRouter = router({
         role: row.role as 'admin' | 'agent',
         isOwner: (row.is_owner as boolean) ?? false,
         joinedAt: row.joined_at,
-        ...((Array.isArray(row.users) ? row.users[0] : row.users) as unknown as {
-          id: string; email: string; name: string | null; avatar_url: string | null
+        ...((Array.isArray(row.users) ? row.users[0] : row.users) as {
+          id: string
+          email: string
+          name: string | null
+          avatar_url: string | null
         }),
       }))
     }),

@@ -40,8 +40,8 @@ export default async function TeamPageRoute() {
       <div className="mx-auto w-full max-w-2xl py-6">
         <UpgradePrompt
           feature="Team Management"
-          requiredPlan="pro"
-          description="Invite and manage team members on the Pro or Scale plan."
+          requiredPlan="starter"
+          description="Invite and manage team members on Starter, Pro, or Scale."
         />
       </div>
     )

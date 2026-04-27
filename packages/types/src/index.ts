@@ -3,7 +3,7 @@ export interface Organization {
   id: string
   name: string
   slug: string
-  plan: 'free' | 'pro' | 'scale' | 'enterprise'
+  plan: 'free' | 'starter' | 'pro' | 'scale' | 'enterprise'
   settings: Record<string, unknown>
   createdAt: string
 }

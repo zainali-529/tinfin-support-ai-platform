@@ -8,7 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { IncomingMessage } from 'http'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { queryRAG, isHandoffConfirmation } from '@workspace/ai'
-import { getPlan } from '../lib/plans'
+import { getOrgSubscription } from '../lib/subscriptions'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -504,13 +504,12 @@ async function getOrCreateConversation(params: { orgId: string; visitorId: strin
     contactId = newContact?.id ?? null
   }
 
-  const { data: sub } = await supabase.from('subscriptions').select('plan, current_period_end')
-    .eq('org_id', params.orgId).maybeSingle()
-  const periodStart = getBillingPeriodStart((sub?.current_period_end as string | null) ?? null)
+  const orgSub = await getOrgSubscription(supabase, params.orgId)
+  const periodStart = getBillingPeriodStart(orgSub.currentPeriodEnd ?? null)
   const { count: convCount } = await supabase.from('conversations').select('id', { count: 'exact', head: true })
     .eq('org_id', params.orgId).gte('started_at', periodStart.toISOString())
 
-  const plan = getPlan((sub?.plan as string | null) ?? 'free')
+  const plan = orgSub.plan
   const limit = plan.limits.conversationsPerMonth
   if (limit !== -1 && (convCount ?? 0) >= limit) throw new Error('CHAT_LIMIT_REACHED')
 
