@@ -75,7 +75,7 @@ export const contacts = pgTable('contacts', {
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
-  contactId: uuid('contact_id').references(() => contacts.id),
+  contactId: uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
   status: text('status').default('bot').notNull(),
   assignedTo: uuid('assigned_to').references(() => users.id),
   aiContext: jsonb('ai_context').default({}).notNull(),

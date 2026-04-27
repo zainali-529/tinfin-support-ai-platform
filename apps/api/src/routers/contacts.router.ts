@@ -336,6 +336,34 @@ export const contactsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Contact not found.' })
       }
 
+      // Preserve activity history by unlinking the contact before deletion.
+      const { error: unlinkConversationsError } = await ctx.supabase
+        .from('conversations')
+        .update({ contact_id: null })
+        .eq('org_id', orgId)
+        .eq('contact_id', input.id)
+
+      if (unlinkConversationsError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to unlink conversations before deleting contact: ${unlinkConversationsError.message}`,
+        })
+      }
+
+      // Defensive unlink for older environments where FK behavior may differ.
+      const { error: unlinkCallsError } = await ctx.supabase
+        .from('calls')
+        .update({ contact_id: null })
+        .eq('org_id', orgId)
+        .eq('contact_id', input.id)
+
+      if (unlinkCallsError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to unlink calls before deleting contact: ${unlinkCallsError.message}`,
+        })
+      }
+
       const { error } = await ctx.supabase
         .from('contacts')
         .delete()

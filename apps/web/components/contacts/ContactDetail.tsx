@@ -11,7 +11,6 @@ import { Badge } from '@workspace/ui/components/badge'
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@workspace/ui/components/tabs'
-import { Separator } from '@workspace/ui/components/separator'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -110,6 +109,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   if (isLoading) {
     return (
@@ -143,9 +143,14 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
   }
 
   const handleDelete = async () => {
-    await deleteContact.mutateAsync({ id: contactId })
-    setDeleteOpen(false)
-    onDeleted?.()
+    setDeleteError('')
+    try {
+      await deleteContact.mutateAsync({ id: contactId })
+      setDeleteOpen(false)
+      onDeleted?.()
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete contact.')
+    }
   }
 
   return (
@@ -186,7 +191,10 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setDeleteOpen(true)}
+              onClick={() => {
+                setDeleteError('')
+                setDeleteOpen(true)
+              }}
               className="h-7 gap-1.5 text-xs border-destructive/30 text-destructive hover:bg-destructive/5"
             >
               <Trash2Icon className="size-3.5" />
@@ -200,7 +208,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
         <StatCard label="Conversations" value={contact.stats.totalConversations} icon={MessageSquareIcon} />
         <StatCard label="Resolved" value={contact.stats.resolvedConversations} icon={CheckCircleIcon} />
         <StatCard label="Calls" value={contact.stats.totalCalls} icon={PhoneCallIcon} />
-        <StatCard label="Emails" value={contact.stats.totalEmails} icon={MailIcon} />
+        <StatCard label="Email Threads" value={contact.stats.totalEmails} icon={MailIcon} />
       </div>
 
       {/* Tabs */}
@@ -209,17 +217,18 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
           <div className="border-b px-6 pt-3 pb-0 shrink-0">
             <TabsList className="h-8 gap-0 bg-transparent p-0 border-0">
               {[
-                { value: 'conversations', label: 'Conversations', count: contact.stats.totalConversations },
+                { value: 'conversations', label: 'All Conversations', count: contact.stats.totalConversations },
                 { value: 'calls', label: 'Calls', count: contact.stats.totalCalls },
-                { value: 'emails', label: 'Emails', count: contact.stats.totalEmails },
+                { value: 'emails', label: 'Email Threads', count: contact.stats.totalEmails },
               ].map(({ value, label, count }) => (
-                <button
+                <TabsTrigger
                   key={value}
-                  onClick={() => {}}
-                  data-value={value}
+                  value={value}
                   className={cn(
-                    'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-                    'text-muted-foreground hover:text-foreground border-transparent'
+                    'inline-flex h-8 items-center gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 py-2 text-xs font-medium shadow-none transition-colors',
+                    'text-muted-foreground hover:text-foreground',
+                    'data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary',
+                    'data-[state=inactive]:bg-transparent'
                   )}
                 >
                   {label}
@@ -228,9 +237,12 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
                       {count}
                     </span>
                   )}
-                </button>
+                </TabsTrigger>
               ))}
             </TabsList>
+            <p className="pb-3 text-[10px] text-muted-foreground">
+              Conversations include all channels (chat, email, whatsapp, and others). Email Threads shows email-only threads.
+            </p>
           </div>
 
           <div className="flex-1 min-h-0">
@@ -367,14 +379,18 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
               This will permanently delete <strong>{displayName}</strong> and cannot be undone.
               Their conversations may be preserved but will be unlinked.
             </AlertDialogDescription>
+            {deleteError && (
+              <p className="text-xs font-medium text-destructive">{deleteError}</p>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
+              disabled={deleteContact.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete Contact
+              {deleteContact.isPending ? 'Deleting...' : 'Delete Contact'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
