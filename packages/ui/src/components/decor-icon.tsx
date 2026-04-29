@@ -1,4 +1,4 @@
-import { cn } from "../lib/utils";
+import { cn } from "@workspace/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 
 const DecorIconVariants = cva(

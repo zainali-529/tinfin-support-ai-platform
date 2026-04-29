@@ -20,6 +20,7 @@ type PillarCardProps = {
   status: string
   description: string
   href: string
+  highlights?: string[]
   className?: string
   children: React.ReactNode
 }
@@ -45,9 +46,15 @@ const CHANNEL_ROWS = [
 
 const ANALYTICS_BARS = [44, 66, 51, 74, 59, 84, 71]
 
+// const PILLAR_METRICS = [
+//   { label: 'First Response Time', value: '1m 48s', note: 'Across channels' },
+//   { label: 'AI Deflection', value: '41%', note: 'Tickets auto-resolved' },
+//   { label: 'Voice Pickup', value: '99.2%', note: 'Instant call readiness' },
+// ]
+
 export function ProductPillarsSection() {
   return (
-    <section className="relative overflow-hidden bg-background py-20 md:py-24">
+    <section className="relative overflow-hidden bg-background pb-20 md:pb-24">
       <style>{`
         @keyframes pillar-msg-loop {
           0%, 12% { opacity: 0; transform: translateY(10px) scale(0.98); }
@@ -138,6 +145,11 @@ export function ProductPillarsSection() {
           50% { transform: translateY(-3px); }
         }
 
+        @keyframes pillar-metric-glow {
+          0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+          45% { box-shadow: 0 0 0 8px hsl(var(--primary) / 0.08); }
+        }
+
         .pillar-anim {
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
@@ -151,41 +163,36 @@ export function ProductPillarsSection() {
         }
       `}</style>
 
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: [
-            'linear-gradient(to right, hsl(var(--primary) / 0.05) 1px, transparent 1px)',
-            'linear-gradient(to bottom, hsl(var(--primary) / 0.04) 1px, transparent 1px)',
-          ].join(','),
-          backgroundSize: '90px 90px',
-          maskImage: 'radial-gradient(circle at center, black 35%, transparent 90%)',
-        }}
-      />
-
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(ellipse 45% 38% at 22% 14%, hsl(var(--primary) / 0.12), transparent 70%), radial-gradient(ellipse 35% 28% at 84% 78%, hsl(var(--primary) / 0.12), transparent 78%)',
-        }}
-      />
-
-      <div className="relative z-10 mx-auto w-full max-w-7xl px-4 md:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto w-full max-w-[86rem] px-4 md:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 px-4 py-1.5 text-xs text-muted-foreground backdrop-blur-sm">
+          {/* <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 px-4 py-1.5 text-xs text-muted-foreground backdrop-blur-sm">
             Product Pillars
-          </div>
+          </div> */}
           <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
             One support platform, six workflows, always in motion.
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+          {/* <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
             See inbox automation, channel routing, voice handling, knowledge chunking, widget
             conversations, and analytics insights working together as a single smooth loop.
-          </p>
+          </p> */}
         </div>
+
+        {/* <div className="mx-auto mt-7 grid max-w-5xl grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {PILLAR_METRICS.map((metric, index) => (
+            <div
+              key={metric.label}
+              className="rounded-xl border border-border/80 bg-background/75 px-3 py-2 text-center backdrop-blur-sm"
+              style={{
+                animation: 'pillar-metric-glow 5.4s ease-in-out infinite',
+                animationDelay: `${index * 0.55}s`,
+              }}
+            >
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{metric.label}</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{metric.value}</p>
+              <p className="text-[10px] text-muted-foreground">{metric.note}</p>
+            </div>
+          ))}
+        </div> */}
 
         <div className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <PillarCard
@@ -193,6 +200,7 @@ export function ProductPillarsSection() {
             status="Live"
             description="Resolve more conversations from one unified, real-time workspace."
             href="/inbox"
+            highlights={['Live routing', 'Smart handoff']}
             className="order-1 lg:col-span-6"
           >
             <InboxPreview />
@@ -203,6 +211,7 @@ export function ProductPillarsSection() {
             status="Connected"
             description="Route chat, email, and WhatsApp into one queue with zero context switching."
             href="/settings/channels"
+            highlights={['Email + WhatsApp', 'Unified queue']}
             className="order-2 lg:col-span-3"
           >
             <ChannelsPreview />
@@ -213,6 +222,7 @@ export function ProductPillarsSection() {
             status="Synced"
             description="Ingest docs, split chunks, and keep answers grounded in trusted sources."
             href="/knowledge"
+            highlights={['Source chunking', 'Citation ready']}
             className="order-3 lg:col-span-3"
           >
             <KnowledgePreview />
@@ -223,6 +233,7 @@ export function ProductPillarsSection() {
             status="Always On"
             description="Handle calls with live waveform intelligence and instant transcripts."
             href="/voice-assistant"
+            highlights={['Realtime transcript', 'AI call control']}
             className="order-4 lg:col-span-3"
           >
             <VoicePreview />
@@ -233,6 +244,7 @@ export function ProductPillarsSection() {
             status="Active"
             description="Convert site visitors with embedded support journeys end to end."
             href="/widget"
+            highlights={['On-page assist', 'Conversion flow']}
             className="order-5 lg:col-span-3"
           >
             <WidgetPreview />
@@ -243,6 +255,7 @@ export function ProductPillarsSection() {
             status="Insight Ready"
             description="Track deflection, trend lines, and channel performance in one glance."
             href="/analytics"
+            highlights={['Trend intelligence', 'KPI snapshots']}
             className="order-6 lg:col-span-6"
           >
             <AnalyticsPreview />
@@ -253,7 +266,7 @@ export function ProductPillarsSection() {
   )
 }
 
-function PillarCard({ title, status, description, href, className, children }: PillarCardProps) {
+function PillarCard({ title, status, description, href, highlights, className, children }: PillarCardProps) {
   return (
     <article
       className={cn(
@@ -283,19 +296,34 @@ function PillarCard({ title, status, description, href, className, children }: P
           </span>
         </div>
 
-        <div className="mt-4 min-h-[220px] flex-1 overflow-hidden rounded-2xl border border-border/70 bg-background/70 p-3 backdrop-blur-sm md:p-4">
+        <div className="mt-4 min-h-[232px] flex-1 overflow-hidden rounded-2xl border border-border/70 bg-background/70 p-3 backdrop-blur-sm md:p-4">
           {children}
         </div>
 
-        <div className="mt-4 flex items-end justify-between gap-4">
-          <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
-          <Link
-            href={href}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/30 hover:text-primary"
-          >
-            Explore
-            <ArrowUpRightIcon className="size-3.5" />
-          </Link>
+        <div className="mt-4">
+          {highlights?.length ? (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {highlights.map((item, index) => (
+                <span
+                  key={`${title}-highlight-${index}-${item}`}
+                  className="rounded-full border border-border/80 bg-background/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="flex items-end justify-between gap-4">
+            <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+            <Link
+              href={href}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/30 hover:text-primary"
+            >
+              Explore
+              <ArrowUpRightIcon className="size-3.5" />
+            </Link>
+          </div>
         </div>
       </div>
     </article>

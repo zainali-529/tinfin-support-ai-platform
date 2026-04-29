@@ -177,3 +177,10 @@
     }
 }
 
+body{
+  overflow-x: hidden;
+}
+
+.btn{
+  cursor: pointer;
+}

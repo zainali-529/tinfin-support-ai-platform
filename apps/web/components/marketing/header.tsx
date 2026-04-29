@@ -61,7 +61,7 @@ export function Header() {
 					scrolled,
 			})}
 		>
-			<nav className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4">
+			<nav className="mx-auto flex h-14 w-full max-w-[86rem] items-center justify-between px-4 md:px-6 lg:px-8">
 				<div className="flex items-center gap-5">
 					<a href="#" className="hover:bg-accent rounded-md p-2">
 						<WordmarkIcon className="h-4" />

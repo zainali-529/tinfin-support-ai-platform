@@ -1,8 +1,6 @@
 "use client"
 
-import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
-import { Header } from "./header"
 
 // ─── Grid Configuration ───────────────────────────────────────────────────────
 // Grid is 14 cols × 10 rows — positioned using % of viewport so it's responsive
@@ -76,15 +74,6 @@ function blockBg(b: GridBlock): string {
   return `color-mix(in oklch, var(--primary) ${b.op}%, transparent)`
 }
 
-// ─── Nav links ────────────────────────────────────────────────────────────────
-const NAV_LINKS = [
-  { label: "Home",     href: "/",         active: true  },
-  { label: "Features", href: "/features", active: false },
-  { label: "Pricing",  href: "/pricing",  active: false },
-  { label: "Docs",     href: "/docs",     active: false },
-  { label: "Blog",     href: "/blog",     active: false },
-]
-
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function HeroSection() {
   return (
@@ -156,11 +145,9 @@ export default function HeroSection() {
           }}
         />
 
-        {/* ── Navigation — plain background, sits above grid ── */}
-        <Header />
-
         {/* ── Hero content — vertically centred in remaining viewport ── */}
-        <div className="relative z-20 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4 py-16 text-center">
+        <div className="relative z-20 flex min-h-[calc(100vh-4rem)] w-full items-center justify-center px-4 py-16 text-center">
+          <div className="mx-auto flex w-full max-w-[86rem] flex-col items-center">
 
           {/* Badge pill */}
           <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 backdrop-blur-sm px-4 py-1.5 text-xs text-muted-foreground mb-8">
@@ -168,7 +155,7 @@ export default function HeroSection() {
           </div>
 
           {/* Headline */}
-          <h1 className="max-w-3xl lg:max-w-5xl text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[1.1] mb-6">
+          <h1 className="max-w-4xl lg:max-w-6xl xl:max-w-7xl text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[1.1] mb-6">
             {/* "Support" — primary colour */}
             <span className="text-primary">Support</span>
             {" "}
@@ -196,7 +183,7 @@ export default function HeroSection() {
           </h1>
 
           {/* Subtitle */}
-          <p className="max-w-lg lg:max-w-2xl text-base md:text-lg lg:text-xl text-muted-foreground leading-relaxed mb-10">
+          <p className="max-w-xl lg:max-w-3xl text-base md:text-lg lg:text-xl text-muted-foreground leading-relaxed mb-10">
             It is a long established fact that a reader will be distracted by the
             readable content of a page when looking at its layout. The point of
             using Lorem Ipsum is that it has a more-or-less normal distribution
@@ -211,6 +198,7 @@ export default function HeroSection() {
             <Button className="min-w-[128px] lg:min-w-[160px] lg:h-12 lg:text-lg rounded-full">
               Free Trial
             </Button>
+          </div>
           </div>
         </div>
       </section>
