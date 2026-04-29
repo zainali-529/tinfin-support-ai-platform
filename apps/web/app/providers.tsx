@@ -6,6 +6,7 @@ import { httpBatchLink } from '@trpc/client'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
 import { ThemeProvider } from 'next-themes'
+import { TooltipProvider } from '@workspace/ui/components/tooltip'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -51,7 +52,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     >
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          {children}
+          <TooltipProvider delayDuration={0}>
+            {children}
+          </TooltipProvider>
         </QueryClientProvider>
       </trpc.Provider>
     </ThemeProvider>

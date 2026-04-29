@@ -4,6 +4,7 @@ import { Button } from '@workspace/ui/components/button';
 import { cn } from '@workspace/ui/lib/utils';
 import { MenuToggleIcon } from '@workspace/ui/components/menu-toggle-cion';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import {
 	NavigationMenu,
 	NavigationMenuContent,
@@ -29,6 +30,7 @@ import {
 	BarChart,
 	PlugIcon,
 } from 'lucide-react';
+import { ThemeToggle } from '../nav/ThemeToggle';
 
 type LinkItem = {
 	title: string;
@@ -122,20 +124,23 @@ export function Header() {
 					</NavigationMenu>
 				</div>
 				<div className="hidden items-center gap-2 md:flex">
+					<ThemeToggle />
 					<Button variant="outline">Sign In</Button>
-					<Button>Get Started</Button>
+					<Button asChild><Link href="/dashboard">Get Started</Link></Button>
 				</div>
-				<Button
-					size="icon"
-					variant="outline"
-					onClick={() => setOpen(!open)}
-					className="md:hidden"
-					aria-expanded={open}
-					aria-controls="mobile-menu"
-					aria-label="Toggle menu"
-				>
-					<MenuToggleIcon open={open} className="size-5" duration={300} />
-				</Button>
+				<div className="flex items-center gap-2 md:hidden">
+					<ThemeToggle />
+					<Button
+						size="icon"
+						variant="outline"
+						onClick={() => setOpen(!open)}
+						aria-expanded={open}
+						aria-controls="mobile-menu"
+						aria-label="Toggle menu"
+					>
+						<MenuToggleIcon open={open} className="size-5" duration={300} />
+					</Button>
+				</div>
 			</nav>
 			<MobileMenu open={open} className="flex flex-col justify-between gap-2 overflow-y-auto">
 				<NavigationMenu className="max-w-full">
@@ -157,7 +162,7 @@ export function Header() {
 					<Button variant="outline" className="w-full bg-transparent">
 						Sign In
 					</Button>
-					<Button className="w-full">Get Started</Button>
+					<Button asChild className="w-full"><Link href="/dashboard">Get Started</Link></Button>
 				</div>
 			</MobileMenu>
 		</header>

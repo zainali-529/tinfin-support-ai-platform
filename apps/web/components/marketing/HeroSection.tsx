@@ -168,7 +168,7 @@ export default function HeroSection() {
           </div>
 
           {/* Headline */}
-          <h1 className="max-w-3xl text-5xl sm:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
+          <h1 className="max-w-3xl lg:max-w-5xl text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[1.1] mb-6">
             {/* "Support" — primary colour */}
             <span className="text-primary">Support</span>
             {" "}
@@ -196,7 +196,7 @@ export default function HeroSection() {
           </h1>
 
           {/* Subtitle */}
-          <p className="max-w-lg text-sm md:text-base text-muted-foreground leading-relaxed mb-10">
+          <p className="max-w-lg lg:max-w-2xl text-base md:text-lg lg:text-xl text-muted-foreground leading-relaxed mb-10">
             It is a long established fact that a reader will be distracted by the
             readable content of a page when looking at its layout. The point of
             using Lorem Ipsum is that it has a more-or-less normal distribution
@@ -204,11 +204,11 @@ export default function HeroSection() {
           </p>
 
           {/* CTA buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-3">
-            <Button variant="outline" className="min-w-[128px] rounded-full">
+          <div className="flex flex-col sm:flex-row items-center gap-4 lg:gap-6">
+            <Button variant="outline" className="min-w-[128px] lg:min-w-[160px] lg:h-12 lg:text-lg rounded-full">
               Explore us
             </Button>
-            <Button className="min-w-[128px] rounded-full">
+            <Button className="min-w-[128px] lg:min-w-[160px] lg:h-12 lg:text-lg rounded-full">
               Free Trial
             </Button>
           </div>
