@@ -6,13 +6,22 @@ import { Input } from '@workspace/ui/components/input'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Button } from '@workspace/ui/components/button'
 import { Spinner } from '@workspace/ui/components/spinner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@workspace/ui/components/dialog'
 import { SearchIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
 import { useActiveOrg } from '@/components/org/OrgContext'
 import { createClient } from '@/lib/supabase'
+import { trpc } from '@/lib/trpc'
 import { ConversationListItem } from './ConversationListItem'
 import { ConversationRenderer } from './ConversationRenderer'
 import { EmptyState } from './EmptyState'
+import { PendingApprovals } from '@/components/actions/PendingApprovals'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
@@ -60,6 +69,9 @@ export function UnifiedInbox() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [approvalsOpen, setApprovalsOpen] = useState(false)
+  const [approvingLogId, setApprovingLogId] = useState<string | null>(null)
+  const [rejectingLogId, setRejectingLogId] = useState<string | null>(null)
 
   const previousOrgId = useRef(orgId)
 
@@ -91,6 +103,39 @@ export function UnifiedInbox() {
     search: debouncedSearch,
     limit: 10,
   })
+
+  const pendingApprovalsQuery = trpc.actions.getPendingApprovals.useQuery(undefined, {
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  })
+
+  const approveAction = trpc.actions.approveAction.useMutation({
+    onSuccess: () => {
+      void pendingApprovalsQuery.refetch()
+      void refetch()
+    },
+  })
+
+  const rejectAction = trpc.actions.rejectAction.useMutation({
+    onSuccess: () => {
+      void pendingApprovalsQuery.refetch()
+      void refetch()
+    },
+  })
+
+  const pendingApprovalItems = (pendingApprovalsQuery.data ?? []).map((item: any) => ({
+    id: String(item.id),
+    logId: String(item.logId),
+    conversationId:
+      typeof item.conversationId === 'string' ? item.conversationId : null,
+    actionName: String(item.actionName ?? 'Action'),
+    parameters:
+      item.parameters && typeof item.parameters === 'object'
+        ? (item.parameters as Record<string, unknown>)
+        : null,
+    requestedAt: String(item.requestedAt),
+    expiresAt: item.expiresAt ? String(item.expiresAt) : null,
+  }))
 
   useEffect(() => {
     const queryConversationId = searchParams.get('conversation')
@@ -172,14 +217,45 @@ export function UnifiedInbox() {
     )
   }
 
+  const handleApprove = async (logId: string) => {
+    setApprovingLogId(logId)
+    try {
+      await approveAction.mutateAsync({ logId })
+    } finally {
+      setApprovingLogId(null)
+    }
+  }
+
+  const handleReject = async (logId: string) => {
+    setRejectingLogId(logId)
+    try {
+      await rejectAction.mutateAsync({ logId })
+    } finally {
+      setRejectingLogId(null)
+    }
+  }
+
   return (
-    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
+    <>
+      <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
       <div className="flex w-[320px] shrink-0 flex-col border-r">
-        <div className="border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">Unified Inbox</h2>
-          <p className="text-xs text-muted-foreground">
-            {loading && conversations.length === 0 ? 'Loading...' : `${totalCount} conversations`}
-          </p>
+        <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">Unified Inbox</h2>
+            <p className="text-xs text-muted-foreground">
+              {loading && conversations.length === 0 ? 'Loading...' : `${totalCount} conversations`}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[10px]"
+            onClick={() => setApprovalsOpen(true)}
+          >
+            Approvals
+            {pendingApprovalItems.length > 0 ? ` (${pendingApprovalItems.length})` : ''}
+          </Button>
         </div>
 
         <div className="border-b px-3 py-2.5">
@@ -279,6 +355,26 @@ export function UnifiedInbox() {
           <EmptyState />
         )}
       </div>
-    </div>
+      </div>
+
+      <Dialog open={approvalsOpen} onOpenChange={setApprovalsOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Pending Action Approvals</DialogTitle>
+            <DialogDescription>
+              Review and approve AI action requests queued from conversations.
+            </DialogDescription>
+          </DialogHeader>
+          <PendingApprovals
+            items={pendingApprovalItems}
+            approvingLogId={approvingLogId}
+            rejectingLogId={rejectingLogId}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            emptyMessage="No queued approvals in inbox."
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

@@ -13,12 +13,19 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@workspace/ui/components/tooltip'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@workspace/ui/components/dropdown-menu'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   SendIcon, BotIcon, CheckCircleIcon, PhoneIcon, MailIcon,
-  ZapIcon, MoreHorizontalIcon, UserIcon, TagIcon,
+  ZapIcon, MoreHorizontalIcon, TagIcon,
   ArrowUpRightIcon, SmileIcon, PaperclipIcon, UserCheckIcon, RefreshCwIcon,
   FileIcon, ImageIcon, XIcon, Loader2Icon, DownloadIcon,
 } from 'lucide-react'
@@ -30,6 +37,7 @@ import {
 } from '@/hooks/useCannedResponses'
 import { CannedResponsePicker } from '@/components/canned/CannedResponsePicker'
 import { createClient } from '@/lib/supabase'
+import { trpc } from '@/lib/trpc'
 import type { Conversation, Attachment, CannedResponse } from '@/types/database'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -82,6 +90,53 @@ const STATUS_STYLES: Record<string, string> = {
   open: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300',
   resolved: 'bg-muted text-muted-foreground border-border',
   closed: 'bg-muted text-muted-foreground border-border',
+}
+
+interface ActionLogMetadata {
+  logId: string | null
+  actionName: string | null
+  status: string | null
+}
+
+function readActionLogMetadata(value: unknown): ActionLogMetadata | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const meta = value as Record<string, unknown>
+  const actionLog = meta.actionLog
+  if (!actionLog || typeof actionLog !== 'object' || Array.isArray(actionLog)) {
+    return null
+  }
+
+  const log = actionLog as Record<string, unknown>
+  return {
+    logId: typeof log.logId === 'string' ? log.logId : null,
+    actionName: typeof log.actionName === 'string' ? log.actionName : null,
+    status: typeof log.status === 'string' ? log.status : null,
+  }
+}
+
+function actionStatusLabel(status: string | null): string {
+  if (!status) return 'Unknown'
+  if (status === 'pending_approval') return 'Awaiting Approval'
+  if (status === 'pending_confirmation') return 'Awaiting Confirmation'
+  if (status === 'success') return 'Success'
+  if (status === 'failed') return 'Failed'
+  if (status === 'timeout') return 'Timeout'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'cancelled') return 'Cancelled'
+  return status.replace(/_/g, ' ')
+}
+
+function actionStatusStyle(status: string | null): string {
+  if (status === 'success') return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+  if (status === 'pending_approval') return 'bg-amber-100 text-amber-700 border-amber-200'
+  if (status === 'pending_confirmation') return 'bg-blue-100 text-blue-700 border-blue-200'
+  if (status === 'failed' || status === 'timeout') {
+    return 'bg-rose-100 text-rose-700 border-rose-200'
+  }
+  if (status === 'rejected' || status === 'cancelled') {
+    return 'bg-muted text-muted-foreground border-border'
+  }
+  return 'bg-muted text-muted-foreground border-border'
 }
 
 // ── Attachment Display ────────────────────────────────────────────────────────
@@ -235,15 +290,43 @@ interface Props {
   onStatusChange?: (id: string, status: string) => void
 }
 
+interface TeamMember {
+  id: string
+  email: string
+  name: string | null
+  role: 'admin' | 'agent'
+  isCurrentUser: boolean
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function ConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
-  const { messages, loading, sending, sendMessage } = useMessages(conversation.id, orgId)
+  const { messages, loading, sending, sendMessage, refetch } = useMessages(conversation.id, orgId)
   const { send: wsSend } = useAgentWS(orgId, agentId)
+  const approveAction = trpc.actions.approveAction.useMutation({
+    onSuccess: () => {
+      void refetch()
+    },
+  })
+  const rejectAction = trpc.actions.rejectAction.useMutation({
+    onSuccess: () => {
+      void refetch()
+    },
+  })
+  const teamMembersQuery = trpc.team.getMembers.useQuery(undefined, {
+    staleTime: 60_000,
+  })
+  const updateConversationStatus = trpc.chat.updateStatus.useMutation({
+    onSuccess: () => {
+      void refetch()
+    },
+  })
   const [reply, setReply] = useState('')
   const [cannedOpen, setCannedOpen] = useState(false)
   const [cannedQuery, setCannedQuery] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [resolvingActionKey, setResolvingActionKey] = useState<string | null>(null)
+  const [assigningAgentValue, setAssigningAgentValue] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -280,6 +363,17 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
 
     return merged
   }, [cannedQuery, cannedResponses, cannedSuggestions])
+  const assignableMembers = useMemo(() => {
+    const raw = (teamMembersQuery.data ?? []) as TeamMember[]
+    return raw
+      .filter((member) => Boolean(member.id))
+      .sort((a, b) => {
+        if (a.isCurrentUser && !b.isCurrentUser) return -1
+        if (!a.isCurrentUser && b.isCurrentUser) return 1
+        return (a.name ?? a.email).localeCompare(b.name ?? b.email)
+      })
+  }, [teamMembersQuery.data])
+  const selectedAssigneeValue = conversation.assigned_to ?? 'unassigned'
 
   // ── Revoke object URLs on unmount ──────────────────────────────────────────
   useEffect(() => {
@@ -431,9 +525,59 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     onStatusChange?.(conversation.id, 'resolved')
   }
 
+  const handleAssignAgent = useCallback(async (value: string) => {
+    const nextAssignedTo = value === 'unassigned' ? null : value
+    if (nextAssignedTo === conversation.assigned_to) return
+
+    setAssigningAgentValue(value)
+    try {
+      await updateConversationStatus.mutateAsync({
+        conversationId: conversation.id,
+        status,
+        assignedTo: nextAssignedTo ?? undefined,
+      })
+      onStatusChange?.(conversation.id, status)
+    } catch {
+      // Keep UI responsive even if assignment fails.
+    } finally {
+      setAssigningAgentValue(null)
+    }
+  }, [
+    conversation.assigned_to,
+    conversation.id,
+    onStatusChange,
+    status,
+    updateConversationStatus,
+  ])
+
+  const handleActionDecision = useCallback(async (params: { logId: string; approve: boolean }) => {
+    const key = `${params.logId}:${params.approve ? 'approve' : 'reject'}`
+    setResolvingActionKey(key)
+
+    try {
+      const sentOverWs = wsSend({
+        type: params.approve ? 'action:approve' : 'action:reject',
+        logId: params.logId,
+      })
+
+      if (!sentOverWs) {
+        if (params.approve) {
+          await approveAction.mutateAsync({ logId: params.logId })
+        } else {
+          await rejectAction.mutateAsync({ logId: params.logId })
+        }
+      }
+
+      void refetch()
+    } finally {
+      setResolvingActionKey(null)
+    }
+  }, [approveAction, rejectAction, refetch, wsSend])
+
   const isUploading = pendingFiles.some(pf => pf.uploading)
   const hasReadyFiles = pendingFiles.some(pf => pf.uploaded && !pf.error)
   const canSendNow = canReply && (reply.trim().length > 0 || hasReadyFiles) && !isUploading && !sending
+  const isAssigningAgent = assigningAgentValue !== null || updateConversationStatus.isPending
 
   const statusStyle = STATUS_STYLES[status] ?? STATUS_STYLES.resolved
 
@@ -529,14 +673,46 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                 <MoreHorizontalIcon className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem>
-                <UserIcon className="mr-2 size-3.5" /> Assign agent
-              </DropdownMenuItem>
-              <DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel>
+                Assign Agent
+              </DropdownMenuLabel>
+              {assignableMembers.length === 0 ? (
+                <DropdownMenuItem disabled>
+                  {teamMembersQuery.isLoading
+                    ? 'Loading team members...'
+                    : 'No team members found'}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuRadioGroup
+                  value={selectedAssigneeValue}
+                  onValueChange={(value) => {
+                    void handleAssignAgent(value)
+                  }}
+                >
+                  <DropdownMenuRadioItem
+                    value="unassigned"
+                    disabled={isAssigningAgent}
+                  >
+                    Unassigned
+                  </DropdownMenuRadioItem>
+                  {assignableMembers.map((member) => (
+                    <DropdownMenuRadioItem
+                      key={member.id}
+                      value={member.id}
+                      disabled={isAssigningAgent}
+                    >
+                      {member.name ?? member.email}
+                      {member.isCurrentUser ? ' (You)' : ''}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled>
                 <TagIcon className="mr-2 size-3.5" /> Add label
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <ArrowUpRightIcon className="mr-2 size-3.5" /> View contact
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -595,6 +771,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                 new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 300_000
 
               const isSystem = msg.ai_metadata && (msg.ai_metadata as Record<string, unknown>).system === true
+              const actionLog = readActionLogMetadata(msg.ai_metadata)
               if (isSystem) {
                 return (
                   <div key={msg.id} className="flex items-center justify-center py-2">
@@ -647,6 +824,57 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                       {(msg.attachments ?? []).map((att, i) => (
                         <AttachmentDisplay key={i} attachment={att} isAgent={isAgentMsg} />
                       ))}
+
+                      {actionLog && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge variant="outline" className="h-5 gap-1 text-[10px]">
+                            <ZapIcon className="size-3" />
+                            Action: {actionLog.actionName ?? 'action'}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={cn('h-5 text-[10px]', actionStatusStyle(actionLog.status))}
+                          >
+                            {actionStatusLabel(actionLog.status)}
+                          </Badge>
+                        </div>
+                      )}
+
+                      {actionLog?.status === 'pending_approval' && actionLog.logId && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            className="h-6 px-2 text-[10px]"
+                            disabled={Boolean(resolvingActionKey)}
+                            onClick={() =>
+                              void handleActionDecision({
+                                logId: actionLog.logId!,
+                                approve: true,
+                              })
+                            }
+                          >
+                            {resolvingActionKey === `${actionLog.logId}:approve`
+                              ? 'Approving...'
+                              : 'Approve'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[10px]"
+                            disabled={Boolean(resolvingActionKey)}
+                            onClick={() =>
+                              void handleActionDecision({
+                                logId: actionLog.logId!,
+                                approve: false,
+                              })
+                            }
+                          >
+                            {resolvingActionKey === `${actionLog.logId}:reject`
+                              ? 'Rejecting...'
+                              : 'Reject'}
+                          </Button>
+                        </div>
+                      )}
 
                       <span className="px-0.5 text-[10px] tabular-nums text-muted-foreground/50">
                         {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}

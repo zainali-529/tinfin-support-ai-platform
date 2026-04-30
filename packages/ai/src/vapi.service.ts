@@ -409,6 +409,7 @@ export interface BuildAssistantOptions {
   webhookSecret: string
   // KB integration
   toolsEnabled?: boolean
+  extraTools?: VapiTool[]
   // Transcription
   transcriptionProvider?: VapiTranscriptionProvider
   transcriptionLanguage?: string
@@ -424,6 +425,7 @@ export interface BuildAssistantOptions {
 export function buildOrgAssistantPayload(opts: BuildAssistantOptions): VapiAssistantPayload {
   const {
     toolsEnabled = true,
+    extraTools = [],
     transcriptionProvider = 'deepgram',
     transcriptionLanguage = 'en',
     // FIX: minimum 10, default 30
@@ -469,9 +471,10 @@ ${kbInstructions}
 
   // ── Tools → go inside model.tools[] ──────────────────────────────────────
 
-  const modelTools: VapiTool[] = toolsEnabled
+  const baseTools: VapiTool[] = toolsEnabled
     ? [buildKnowledgeBaseTool(opts.webhookBaseUrl, opts.webhookSecret)]
     : []
+  const modelTools: VapiTool[] = [...baseTools, ...extraTools]
 
   // ── Transcriber ───────────────────────────────────────────────────────────
 

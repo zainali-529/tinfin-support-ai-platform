@@ -12,7 +12,7 @@
  *  - Take over / resolve / release actions (same as chat)
  */
 
-import { useCallback } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { EmailThreadView } from './EmailThreadView'
 import { EmailReplyComposer } from './EmailReplyComposer'
@@ -23,6 +23,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@workspace/ui/components/dropdown-menu'
 import {
@@ -32,13 +36,13 @@ import {
 } from '@workspace/ui/components/tooltip'
 import { cn } from '@workspace/ui/lib/utils'
 import { createClient } from '@/lib/supabase'
+import { trpc } from '@/lib/trpc'
 import {
   MailIcon,
   CheckCircleIcon,
   UserCheckIcon,
   RefreshCwIcon,
   MoreHorizontalIcon,
-  UserIcon,
   TagIcon,
   ArrowUpRightIcon,
   PhoneIcon,
@@ -64,14 +68,38 @@ interface Props {
   onStatusChange?: (id: string, status: string) => void
 }
 
+interface TeamMember {
+  id: string
+  email: string
+  name: string | null
+  role: 'admin' | 'agent'
+  isCurrentUser: boolean
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function EmailConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
   const contact = conversation.contacts
   const status = conversation.status
   const isResolved = status === 'resolved' || status === 'closed'
+  const teamMembersQuery = trpc.team.getMembers.useQuery(undefined, {
+    staleTime: 60_000,
+  })
+  const updateConversationStatus = trpc.chat.updateStatus.useMutation()
+  const [assigningAgentValue, setAssigningAgentValue] = useState<string | null>(null)
 
   const toEmail = contact?.email ?? null
+  const assignableMembers = useMemo(() => {
+    const raw = (teamMembersQuery.data ?? []) as TeamMember[]
+    return raw
+      .filter((member) => Boolean(member.id))
+      .sort((a, b) => {
+        if (a.isCurrentUser && !b.isCurrentUser) return -1
+        if (!a.isCurrentUser && b.isCurrentUser) return 1
+        return (a.name ?? a.email).localeCompare(b.name ?? b.email)
+      })
+  }, [teamMembersQuery.data])
+  const selectedAssigneeValue = conversation.assigned_to ?? 'unassigned'
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -102,7 +130,33 @@ export function EmailConversationView({ conversation, orgId, agentId, onStatusCh
     onStatusChange?.(conversation.id, 'resolved')
   }, [conversation.id, onStatusChange])
 
+  const handleAssignAgent = useCallback(async (value: string) => {
+    const nextAssignedTo = value === 'unassigned' ? null : value
+    if (nextAssignedTo === conversation.assigned_to) return
+
+    setAssigningAgentValue(value)
+    try {
+      await updateConversationStatus.mutateAsync({
+        conversationId: conversation.id,
+        status,
+        assignedTo: nextAssignedTo ?? undefined,
+      })
+      onStatusChange?.(conversation.id, status)
+    } catch {
+      // Keep UI responsive even if assignment fails.
+    } finally {
+      setAssigningAgentValue(null)
+    }
+  }, [
+    conversation.assigned_to,
+    conversation.id,
+    onStatusChange,
+    status,
+    updateConversationStatus,
+  ])
+
   const statusStyle = STATUS_STYLES[status] ?? STATUS_STYLES.resolved
+  const isAssigningAgent = assigningAgentValue !== null || updateConversationStatus.isPending
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -198,14 +252,46 @@ export function EmailConversationView({ conversation, orgId, agentId, onStatusCh
                 <MoreHorizontalIcon className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem>
-                <UserIcon className="mr-2 size-3.5" /> Assign agent
-              </DropdownMenuItem>
-              <DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel>
+                Assign Agent
+              </DropdownMenuLabel>
+              {assignableMembers.length === 0 ? (
+                <DropdownMenuItem disabled>
+                  {teamMembersQuery.isLoading
+                    ? 'Loading team members...'
+                    : 'No team members found'}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuRadioGroup
+                  value={selectedAssigneeValue}
+                  onValueChange={(value) => {
+                    void handleAssignAgent(value)
+                  }}
+                >
+                  <DropdownMenuRadioItem
+                    value="unassigned"
+                    disabled={isAssigningAgent}
+                  >
+                    Unassigned
+                  </DropdownMenuRadioItem>
+                  {assignableMembers.map((member) => (
+                    <DropdownMenuRadioItem
+                      key={member.id}
+                      value={member.id}
+                      disabled={isAssigningAgent}
+                    >
+                      {member.name ?? member.email}
+                      {member.isCurrentUser ? ' (You)' : ''}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled>
                 <TagIcon className="mr-2 size-3.5" /> Add label
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <ArrowUpRightIcon className="mr-2 size-3.5" /> View contact
               </DropdownMenuItem>
             </DropdownMenuContent>

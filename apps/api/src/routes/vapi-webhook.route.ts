@@ -9,7 +9,12 @@
 
 import { Router, type Request, type Response } from 'express'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { queryRAG } from '@workspace/ai'
+import {
+  queryRAG,
+  getOrgActions,
+  executeAction,
+  formatActionResponse,
+} from '@workspace/ai'
 import type { VapiWebhookEvent, VapiToolCall, VapiToolResult } from '@workspace/ai'
 
 export const vapiWebhookRoute: Router = Router()
@@ -122,6 +127,25 @@ function firstNumber(...values: Array<unknown>): number | null {
   return null
 }
 
+function withExecutionMetadata(requestPayload: unknown, durationMs?: number): unknown {
+  const base = asRecord(requestPayload)
+  if (typeof durationMs !== 'number' || Number.isNaN(durationMs)) return base
+  return {
+    ...base,
+    durationMs,
+  }
+}
+
+function getExecutionStatus(execution: { success: boolean; error?: string }):
+  | 'success'
+  | 'failed'
+  | 'timeout' {
+  if (execution.success) return 'success'
+  const errorText = (execution.error ?? '').toLowerCase()
+  if (errorText.includes('timeout') || errorText.includes('aborted')) return 'timeout'
+  return 'failed'
+}
+
 function normalizeStatus(value: unknown): string | null {
   const raw = asString(value)
   if (!raw) return null
@@ -212,66 +236,195 @@ async function resolveKbIds(
   return []
 }
 
-// ─── Knowledge Base tool handler ──────────────────────────────────────────────
+// ─── Tool call handlers ───────────────────────────────────────────────────────
+
+async function insertActionLog(params: {
+  orgId: string
+  actionId: string
+  conversationId?: string | null
+  contactId?: string | null
+  parametersUsed?: Record<string, unknown>
+  requestPayload?: unknown
+  responseRaw?: unknown
+  responseParsed?: string
+  status: string
+  errorMessage?: string | null
+  executedAt?: string | null
+}): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .from('ai_action_logs')
+    .insert({
+      org_id: params.orgId,
+      action_id: params.actionId,
+      conversation_id: params.conversationId ?? null,
+      contact_id: params.contactId ?? null,
+      parameters_used: params.parametersUsed ?? null,
+      request_payload: params.requestPayload ?? null,
+      response_raw: params.responseRaw ?? null,
+      response_parsed: params.responseParsed ?? null,
+      status: params.status,
+      error_message: params.errorMessage ?? null,
+      executed_at: params.executedAt ?? null,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    console.error('[vapi-webhook] Failed to write ai_action_logs:', error.message)
+    return null
+  }
+
+  return (data?.id as string | undefined) ?? null
+}
+
+async function enqueueActionApproval(params: {
+  logId: string
+  conversationId?: string | null
+  actionName: string
+  parameters: Record<string, unknown>
+}): Promise<void> {
+  if (!params.conversationId) return
+
+  const { error } = await getSupabase()
+    .from('ai_action_approvals')
+    .insert({
+      log_id: params.logId,
+      conversation_id: params.conversationId,
+      action_name: params.actionName,
+      parameters: params.parameters,
+    })
+
+  if (error) {
+    console.error('[vapi-webhook] Failed to queue action approval:', error.message)
+  }
+}
 
 /**
  * Called synchronously during a Vapi tool-calls event.
  * Must respond within ~20 seconds (Vapi's tool timeout).
  * Returns results that Vapi immediately feeds back to the AI.
  */
-async function handleKnowledgeBaseSearch(
+async function handleToolCalls(
   supabase: SupabaseClient,
   orgId: string,
   assistantId: string | null | undefined,
-  toolCalls: VapiToolCall[]
+  toolCalls: VapiToolCall[],
+  call: VapiCallPayload | undefined
 ): Promise<VapiToolResult[]> {
   const results: VapiToolResult[] = []
-
-  // Fetch KB IDs configured for this assistant
   const kbIds = await resolveKbIds(supabase, orgId, assistantId)
+  const actions = await getOrgActions(orgId)
 
-  for (const call of toolCalls) {
-    if (call.function.name !== 'searchKnowledgeBase') continue
+  for (const toolCall of toolCalls) {
+    if (toolCall.function.name === 'searchKnowledgeBase') {
+      const query = asString(toolCall.function.arguments?.query)
 
-    const query = asString(call.function.arguments?.query)
+      if (!query) {
+        results.push({ toolCallId: toolCall.id, result: 'No query provided.' })
+        continue
+      }
 
-    if (!query) {
-      results.push({ toolCallId: call.id, result: 'No query provided.' })
+      try {
+        const kbId = kbIds[0] ?? undefined
+        const ragResult = await queryRAG({
+          query,
+          orgId,
+          kbId,
+          threshold: 0.25,
+          maxChunks: 5,
+        })
+
+        let result: string
+        if (ragResult.type === 'handoff' || ragResult.type === 'ask_handoff') {
+          result = '__HANDOFF__'
+        } else if (ragResult.message) {
+          result = ragResult.message
+        } else {
+          result = 'I could not find relevant information in the knowledge base.'
+        }
+
+        results.push({ toolCallId: toolCall.id, result })
+      } catch (err) {
+        console.error('[vapi-webhook] KB search failed:', err)
+        results.push({
+          toolCallId: toolCall.id,
+          result: 'Knowledge base search temporarily unavailable.',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        })
+      }
+
       continue
     }
 
-    try {
-      // Use the first configured KB, or let RAG search all org KBs
-      const kbId = kbIds[0] ?? undefined
+    const action = actions.find((candidate) => candidate.name === toolCall.function.name)
 
-      const ragResult = await queryRAG({
-        query,
+    if (!action) {
+      results.push({
+        toolCallId: toolCall.id,
+        result: 'Action not found for this organization.',
+      })
+      continue
+    }
+
+    const args = asRecord(toolCall.function.arguments)
+    const metadata = extractCallMetadata(call ?? ({ id: '' } as VapiCallPayload))
+    const conversationId = firstString(metadata.conversationId, metadata.conversation_id)
+    const contactId = firstString(metadata.contactId, metadata.contact_id)
+
+    if (action.humanApprovalRequired) {
+      const logId = await insertActionLog({
         orgId,
-        kbId,
-        threshold: 0.25,
-        maxChunks: 5,
+        actionId: action.id,
+        conversationId,
+        contactId,
+        parametersUsed: args,
+        status: 'pending_approval',
       })
 
-      // For voice, format result as short factual text
-      let result: string
-
-      if (ragResult.type === 'handoff' || ragResult.type === 'ask_handoff') {
-        result = '__HANDOFF__' // Signal to AI that human handoff is needed
-      } else if (ragResult.message) {
-        result = ragResult.message
-      } else {
-        result = 'I could not find relevant information in the knowledge base.'
+      if (logId) {
+        await enqueueActionApproval({
+          logId,
+          conversationId,
+          actionName: action.displayName,
+          parameters: args,
+        })
       }
 
-      results.push({ toolCallId: call.id, result })
-    } catch (err) {
-      console.error('[vapi-webhook] KB search failed:', err)
       results.push({
-        toolCallId: call.id,
-        result: 'Knowledge base search temporarily unavailable.',
-        error: err instanceof Error ? err.message : 'Unknown error',
+        toolCallId: toolCall.id,
+        result:
+          'This action requires human approval. An agent will follow up shortly.',
       })
+      continue
     }
+
+    const execution = await executeAction(action, args)
+    const parsed = execution.success
+      ? await formatActionResponse(action, execution.data)
+      : `Failed: ${execution.error ?? 'Unknown action error'}`
+    const status = getExecutionStatus(execution)
+
+    await insertActionLog({
+      orgId,
+      actionId: action.id,
+      conversationId,
+      contactId,
+      parametersUsed: args,
+      requestPayload: withExecutionMetadata(
+        execution.requestPayload,
+        execution.durationMs
+      ),
+      responseRaw: execution.data,
+      responseParsed: parsed,
+      status,
+      errorMessage: execution.error ?? null,
+      executedAt: new Date().toISOString(),
+    })
+
+    results.push({
+      toolCallId: toolCall.id,
+      result: parsed,
+    })
   }
 
   return results
@@ -569,11 +722,12 @@ vapiWebhookRoute.post(
           })
         }
 
-        const results = await handleKnowledgeBaseSearch(
+        const results = await handleToolCalls(
           supabase,
           orgId,
           call?.assistantId ?? null,
-          toolCallList
+          toolCallList,
+          call
         )
 
         console.log(

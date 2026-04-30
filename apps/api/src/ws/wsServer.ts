@@ -7,7 +7,12 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { IncomingMessage } from 'http'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { queryRAG, isHandoffConfirmation } from '@workspace/ai'
+import {
+  queryWithActions,
+  isHandoffConfirmation,
+  handleConfirmedAction,
+  executeApprovedAction,
+} from '@workspace/ai'
 import { getOrgSubscription } from '../lib/subscriptions'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -27,6 +32,7 @@ interface TinfinSocket extends WebSocket {
   isAgent?: boolean
   agentId?: string
   awaitingHandoffConfirm?: boolean
+  pendingActionLogId?: string
 }
 
 type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
@@ -170,6 +176,24 @@ async function getConversationVisitorId(orgId: string, conversationId: string): 
     return typeof visitorId === 'string' && visitorId.length > 0 ? visitorId : null
   } catch (e) {
     console.error('[ws] getConversationVisitorId:', e)
+    return null
+  }
+}
+
+async function getConversationContactId(orgId: string, conversationId: string): Promise<string | null> {
+  const supabase = getSupabase()
+  try {
+    const { data } = await supabase
+      .from('conversations')
+      .select('contact_id')
+      .eq('id', conversationId)
+      .eq('org_id', orgId)
+      .maybeSingle()
+
+    const contactId = data?.contact_id as string | null | undefined
+    return contactId ?? null
+  } catch (e) {
+    console.error('[ws] getConversationContactId:', e)
     return null
   }
 }
@@ -375,6 +399,49 @@ async function persistMessage(params: {
   } catch (e) { console.error('[ws] persistMessage:', e) }
 }
 
+async function rejectPendingAction(
+  orgId: string,
+  logId: string,
+  rejectedBy: string
+): Promise<{ conversationId: string | null; message: string }> {
+  const supabase = getSupabase()
+  const now = new Date().toISOString()
+
+  const { data: logRow, error: logError } = await supabase
+    .from('ai_action_logs')
+    .select('id, conversation_id')
+    .eq('id', logId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (logError || !logRow) {
+    throw new Error(logError?.message ?? 'Action log not found')
+  }
+
+  const { error: updateError } = await supabase
+    .from('ai_action_logs')
+    .update({
+      status: 'rejected',
+      approved_by: rejectedBy,
+      approved_at: now,
+      executed_at: now,
+      error_message: 'Rejected by agent.',
+    })
+    .eq('id', logId)
+    .eq('org_id', orgId)
+
+  if (updateError) {
+    throw new Error(updateError.message)
+  }
+
+  await supabase.from('ai_action_approvals').delete().eq('log_id', logId)
+
+  return {
+    conversationId: (logRow.conversation_id as string | null | undefined) ?? null,
+    message: 'This action request was rejected by a support agent.',
+  }
+}
+
 // ── Contact helpers (unchanged from original) ──────────────────────────────────
 
 interface ContactIdentityRow {
@@ -524,6 +591,7 @@ async function getOrCreateConversation(params: { orgId: string; visitorId: strin
 
 async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgId: string) {
   socket.awaitingHandoffConfirm = false
+  socket.pendingActionLogId = undefined
   await updateConversation(orgId, conversationId, { status: 'pending' })
   const msg = "I'm connecting you with a human agent now. Please hold on! 🙏"
   send(socket, { type: 'ai:response', content: msg, conversationId, createdAt: new Date().toISOString(), handoff: true })
@@ -621,6 +689,46 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
   // If only file attachment, no text → just acknowledge, don't run AI
   if (!content && attachments.length > 0) return
 
+  // Pending action confirmation flow
+  if (socket.pendingActionLogId) {
+    const actionLogId = socket.pendingActionLogId
+    socket.pendingActionLogId = undefined
+
+    try {
+      const confirmed = isHandoffConfirmation(content)
+      const resultMessage = await handleConfirmedAction(actionLogId, confirmed)
+      send(socket, {
+        type: 'ai:response',
+        content: resultMessage,
+        conversationId,
+        createdAt: new Date().toISOString(),
+      })
+      await persistMessage({
+        conversationId,
+        orgId,
+        role: 'assistant',
+        content: resultMessage,
+        aiMetadata: {
+          actionLog: {
+            logId: actionLogId,
+            status: confirmed ? 'success' : 'cancelled',
+          },
+        },
+      })
+    } catch (err) {
+      console.error('[ws] pending action confirmation error:', err)
+      const fallback = "I couldn't complete that action right now. Would you like a human agent to help?"
+      send(socket, {
+        type: 'ai:response',
+        content: fallback,
+        conversationId,
+        createdAt: new Date().toISOString(),
+      })
+      socket.awaitingHandoffConfirm = true
+    }
+    return
+  }
+
   // Handoff confirmation flow
   if (socket.awaitingHandoffConfirm) {
     if (isHandoffConfirmation(content)) {
@@ -639,19 +747,126 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 
     ; (async () => {
       try {
-        const ragResult = await queryRAG({ query: content, orgId, threshold: 0.3, maxChunks: 5 })
+        const recentMessages = await fetchConversationMessages(orgId, conversationId)
+        const contactId = await getConversationContactId(orgId, conversationId)
+        const conversationHistory = recentMessages
+          .slice(-10)
+          .map((message) => ({
+            role: ((message as { role?: string }).role ?? 'user'),
+            content: String((message as { content?: string }).content ?? ''),
+          }))
+
+        const ragResult = await queryWithActions({
+          query: content,
+          orgId,
+          conversationId,
+          contactId: contactId ?? undefined,
+          conversationHistory,
+          threshold: 0.3,
+          maxChunks: 5,
+        })
         send(socket, { type: 'typing:stop', conversationId })
 
         if (ragResult.type === 'handoff') {
           await triggerHandoff(socket, conversationId, orgId)
-        } else if (ragResult.type === 'ask_handoff') {
-          socket.awaitingHandoffConfirm = true
-          send(socket, { type: 'ai:response', content: ragResult.message, conversationId, createdAt: new Date().toISOString() })
-          await persistMessage({ conversationId, orgId, role: 'assistant', content: ragResult.message, aiMetadata: { confidence: ragResult.confidence, awaitingConfirm: true } })
-        } else {
-          send(socket, { type: 'ai:response', content: ragResult.message, conversationId, createdAt: new Date().toISOString(), confidence: ragResult.confidence })
-          await persistMessage({ conversationId, orgId, role: 'assistant', content: ragResult.message, aiMetadata: { confidence: ragResult.confidence } })
+          return
         }
+
+        if (ragResult.type === 'ask_handoff') {
+          socket.awaitingHandoffConfirm = true
+          send(socket, {
+            type: 'ai:response',
+            content: ragResult.message,
+            conversationId,
+            createdAt: new Date().toISOString(),
+          })
+          await persistMessage({
+            conversationId,
+            orgId,
+            role: 'assistant',
+            content: ragResult.message,
+            aiMetadata: {
+              confidence: ragResult.confidence,
+              awaitingConfirm: true,
+            },
+          })
+          return
+        }
+
+        if (ragResult.type === 'action_confirmation') {
+          socket.pendingActionLogId = ragResult.actionLog?.logId
+          send(socket, {
+            type: 'ai:response',
+            content: ragResult.message,
+            conversationId,
+            createdAt: new Date().toISOString(),
+            confidence: ragResult.confidence,
+            requiresConfirmation: true,
+            actionLog: ragResult.actionLog,
+          })
+          await persistMessage({
+            conversationId,
+            orgId,
+            role: 'assistant',
+            content: ragResult.message,
+            aiMetadata: {
+              confidence: ragResult.confidence,
+              actionLog: ragResult.actionLog,
+              pendingActionLogId: ragResult.actionLog?.logId,
+              requiresConfirmation: true,
+            },
+          })
+          return
+        }
+
+        if (ragResult.type === 'action_pending_approval') {
+          broadcastToAgents(orgId, {
+            type: 'approval:requested',
+            logId: ragResult.actionLog?.logId,
+            actionName: ragResult.actionLog?.actionName,
+            conversationId,
+            createdAt: new Date().toISOString(),
+          })
+
+          send(socket, {
+            type: 'ai:response',
+            content: ragResult.message,
+            conversationId,
+            createdAt: new Date().toISOString(),
+            confidence: ragResult.confidence,
+            actionLog: ragResult.actionLog,
+          })
+          await persistMessage({
+            conversationId,
+            orgId,
+            role: 'assistant',
+            content: ragResult.message,
+            aiMetadata: {
+              confidence: ragResult.confidence,
+              actionLog: ragResult.actionLog,
+            },
+          })
+          return
+        }
+
+        send(socket, {
+          type: 'ai:response',
+          content: ragResult.message,
+          conversationId,
+          createdAt: new Date().toISOString(),
+          confidence: ragResult.confidence,
+          actionLog: ragResult.actionLog,
+        })
+        await persistMessage({
+          conversationId,
+          orgId,
+          role: 'assistant',
+          content: ragResult.message,
+          aiMetadata: {
+            confidence: ragResult.confidence,
+            actionLog: ragResult.actionLog,
+          },
+        })
       } catch (err) {
         console.error('[ws] RAG error:', err)
         send(socket, { type: 'typing:stop', conversationId })
@@ -794,6 +1009,7 @@ async function handleNewChat(socket: TinfinSocket) {
   const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
   socket.conversationId = result.conversationId
   socket.awaitingHandoffConfirm = false
+  socket.pendingActionLogId = undefined
   send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
   if (result.isNew) {
     await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
@@ -814,6 +1030,108 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
     case 'agent:takeover': await handleAgentTakeover(socket, msg); break
     case 'agent:release': await handleAgentRelease(socket, msg); break
     case 'agent:resolve': await handleAgentResolve(socket, msg); break
+    case 'action:approve': {
+      if (!socket.isAgent || !socket.orgId) break
+      const logId = typeof msg.logId === 'string' ? msg.logId : ''
+      if (!logId) break
+
+      try {
+        const outcome = await executeApprovedAction(logId, socket.agentId ?? 'system')
+
+        if (outcome.conversationId && outcome.orgId) {
+          await sendToVisitor(outcome.orgId, outcome.conversationId, {
+            type: 'ai:response',
+            content: outcome.message,
+            conversationId: outcome.conversationId,
+            createdAt: new Date().toISOString(),
+            actionLog: {
+              logId,
+              actionName: outcome.actionName,
+              status: outcome.success ? 'success' : 'failed',
+            },
+          })
+
+          await persistMessage({
+            conversationId: outcome.conversationId,
+            orgId: outcome.orgId,
+            role: 'assistant',
+            content: outcome.message,
+            aiMetadata: {
+              actionLog: {
+                logId,
+                actionName: outcome.actionName,
+                status: outcome.success ? 'success' : 'failed',
+              },
+            },
+          })
+        }
+
+        broadcastToAgents(socket.orgId, {
+          type: 'approval:resolved',
+          logId,
+          status: outcome.success ? 'success' : 'failed',
+          conversationId: outcome.conversationId,
+          message: outcome.message,
+          createdAt: new Date().toISOString(),
+        })
+      } catch (err) {
+        console.error('[ws] action:approve error:', err)
+      }
+
+      break
+    }
+    case 'action:reject': {
+      if (!socket.isAgent || !socket.orgId) break
+      const logId = typeof msg.logId === 'string' ? msg.logId : ''
+      if (!logId) break
+
+      try {
+        const outcome = await rejectPendingAction(
+          socket.orgId,
+          logId,
+          socket.agentId ?? 'system'
+        )
+
+        if (outcome.conversationId) {
+          await sendToVisitor(socket.orgId, outcome.conversationId, {
+            type: 'ai:response',
+            content: outcome.message,
+            conversationId: outcome.conversationId,
+            createdAt: new Date().toISOString(),
+            actionLog: {
+              logId,
+              status: 'rejected',
+            },
+          })
+
+          await persistMessage({
+            conversationId: outcome.conversationId,
+            orgId: socket.orgId,
+            role: 'assistant',
+            content: outcome.message,
+            aiMetadata: {
+              actionLog: {
+                logId,
+                status: 'rejected',
+              },
+            },
+          })
+        }
+
+        broadcastToAgents(socket.orgId, {
+          type: 'approval:resolved',
+          logId,
+          status: 'rejected',
+          conversationId: outcome.conversationId,
+          message: outcome.message,
+          createdAt: new Date().toISOString(),
+        })
+      } catch (err) {
+        console.error('[ws] action:reject error:', err)
+      }
+
+      break
+    }
     case 'typing:start':
     case 'typing:stop':
       broadcastToAgents(socket.orgId!, { type: msg.type, visitorId: socket.visitorId, conversationId: socket.conversationId })
@@ -852,6 +1170,7 @@ export function createWsServer(port: number) {
       socket.agentId = verifiedAgentId
       socket.isAlive = true
       socket.awaitingHandoffConfirm = false
+      socket.pendingActionLogId = undefined
 
       if (!rooms.has(orgId)) rooms.set(orgId, new Set())
       rooms.get(orgId)!.add(socket)

@@ -51,6 +51,11 @@ type RenderedMessage = {
   text: string
   createdAt: string
   waMessage?: WhatsAppMessage
+  actionLog?: {
+    logId: string | null
+    actionName: string | null
+    status: string | null
+  } | null
 }
 
 interface Props {
@@ -74,6 +79,50 @@ function safeMetadata(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function readActionLogMetadata(value: unknown): {
+  logId: string | null
+  actionName: string | null
+  status: string | null
+} | null {
+  const meta = safeMetadata(value)
+  const actionLog = meta.actionLog
+  if (!actionLog || typeof actionLog !== 'object' || Array.isArray(actionLog)) {
+    return null
+  }
+
+  const parsed = actionLog as Record<string, unknown>
+  return {
+    logId: typeof parsed.logId === 'string' ? parsed.logId : null,
+    actionName: typeof parsed.actionName === 'string' ? parsed.actionName : null,
+    status: typeof parsed.status === 'string' ? parsed.status : null,
+  }
+}
+
+function actionStatusLabel(status: string | null): string {
+  if (!status) return 'Unknown'
+  if (status === 'pending_approval') return 'Awaiting Approval'
+  if (status === 'pending_confirmation') return 'Awaiting Confirmation'
+  if (status === 'success') return 'Success'
+  if (status === 'failed') return 'Failed'
+  if (status === 'timeout') return 'Timeout'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'cancelled') return 'Cancelled'
+  return status.replace(/_/g, ' ')
+}
+
+function actionStatusStyle(status: string | null): string {
+  if (status === 'success') return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+  if (status === 'pending_approval') return 'bg-amber-100 text-amber-700 border-amber-200'
+  if (status === 'pending_confirmation') return 'bg-blue-100 text-blue-700 border-blue-200'
+  if (status === 'failed' || status === 'timeout') {
+    return 'bg-rose-100 text-rose-700 border-rose-200'
+  }
+  if (status === 'rejected' || status === 'cancelled') {
+    return 'bg-muted text-muted-foreground border-border'
+  }
+  return 'bg-muted text-muted-foreground border-border'
+}
+
 function hasRenderableMedia(message: WhatsAppMessage): boolean {
   return (
     message.messageType === 'image' ||
@@ -87,7 +136,17 @@ function isHttpUrl(value: string | null): value is string {
   return value.startsWith('http://') || value.startsWith('https://')
 }
 
-function MessageBubble({ message }: { message: RenderedMessage }) {
+function MessageBubble({
+  message,
+  resolvingActionKey,
+  onApprove,
+  onReject,
+}: {
+  message: RenderedMessage
+  resolvingActionKey: string | null
+  onApprove: (logId: string) => void
+  onReject: (logId: string) => void
+}) {
   if (message.kind === 'system') {
     return (
       <div className="flex justify-center py-1">
@@ -166,6 +225,49 @@ function MessageBubble({ message }: { message: RenderedMessage }) {
           </div>
         )}
 
+        {message.actionLog && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium">
+              <MessageCircleIcon className="size-2.5" />
+              Action: {message.actionLog.actionName ?? 'action'}
+            </span>
+            <span
+              className={cn(
+                'inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                actionStatusStyle(message.actionLog.status)
+              )}
+            >
+              {actionStatusLabel(message.actionLog.status)}
+            </span>
+          </div>
+        )}
+
+        {message.actionLog?.status === 'pending_approval' && message.actionLog.logId && (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <Button
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              disabled={Boolean(resolvingActionKey)}
+              onClick={() => onApprove(message.actionLog!.logId!)}
+            >
+              {resolvingActionKey === `${message.actionLog.logId}:approve`
+                ? 'Approving...'
+                : 'Approve'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[10px]"
+              disabled={Boolean(resolvingActionKey)}
+              onClick={() => onReject(message.actionLog!.logId!)}
+            >
+              {resolvingActionKey === `${message.actionLog.logId}:reject`
+                ? 'Rejecting...'
+                : 'Reject'}
+            </Button>
+          </div>
+        )}
+
         <span className="mt-1 block text-[10px] text-muted-foreground">
           {formatDistanceToNow(new Date(message.createdAt), {
             addSuffix: true,
@@ -189,8 +291,19 @@ export function WhatsAppConversationView({
     { staleTime: 30_000 }
   )
   const chatMessages = (chatQuery.data ?? []) as ChatMessage[]
+  const approveAction = trpc.actions.approveAction.useMutation({
+    onSuccess: () => {
+      void chatQuery.refetch()
+    },
+  })
+  const rejectAction = trpc.actions.rejectAction.useMutation({
+    onSuccess: () => {
+      void chatQuery.refetch()
+    },
+  })
   const { sendReply } = useWhatsAppReply()
   const [content, setContent] = useState('')
+  const [resolvingActionKey, setResolvingActionKey] = useState<string | null>(null)
 
   const status = conversation.status
   const isResolved = status === 'resolved' || status === 'closed'
@@ -206,6 +319,7 @@ export function WhatsAppConversationView({
     for (const wa of waTyped) {
       const linked = wa.messageId ? chatById.get(wa.messageId) : undefined
       if (linked) linkedChatIds.add(linked.id)
+      const linkedActionLog = linked ? readActionLogMetadata(linked.ai_metadata) : null
 
       if (wa.direction === 'inbound') {
         result.push({
@@ -216,6 +330,7 @@ export function WhatsAppConversationView({
             (wa.messageType === 'text' ? '' : 'Media message'),
           createdAt: wa.createdAt,
           waMessage: wa,
+          actionLog: linkedActionLog,
         })
         continue
       }
@@ -227,6 +342,7 @@ export function WhatsAppConversationView({
           text: linked.content ?? '',
           createdAt: wa.createdAt,
           waMessage: wa,
+          actionLog: linkedActionLog,
         })
         continue
       }
@@ -237,6 +353,7 @@ export function WhatsAppConversationView({
         text: linked?.content ?? '',
         createdAt: wa.createdAt,
         waMessage: wa,
+        actionLog: linkedActionLog,
       })
     }
 
@@ -262,6 +379,7 @@ export function WhatsAppConversationView({
           kind: 'agent',
           text: chat.content,
           createdAt: chat.created_at,
+          actionLog: readActionLogMetadata(chat.ai_metadata),
         })
         continue
       }
@@ -272,6 +390,7 @@ export function WhatsAppConversationView({
           kind: 'assistant',
           text: chat.content,
           createdAt: chat.created_at,
+          actionLog: readActionLogMetadata(chat.ai_metadata),
         })
       }
     }
@@ -328,6 +447,26 @@ export function WhatsAppConversationView({
     !takeoverRequired &&
     !isResolved &&
     !sendReply.isPending
+
+  const handleApprove = useCallback(async (logId: string) => {
+    setResolvingActionKey(`${logId}:approve`)
+    try {
+      await approveAction.mutateAsync({ logId })
+      void chatQuery.refetch()
+    } finally {
+      setResolvingActionKey(null)
+    }
+  }, [approveAction, chatQuery])
+
+  const handleReject = useCallback(async (logId: string) => {
+    setResolvingActionKey(`${logId}:reject`)
+    try {
+      await rejectAction.mutateAsync({ logId })
+      void chatQuery.refetch()
+    } finally {
+      setResolvingActionKey(null)
+    }
+  }, [chatQuery, rejectAction])
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -398,7 +537,13 @@ export function WhatsAppConversationView({
             </p>
           ) : (
             renderedMessages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                resolvingActionKey={resolvingActionKey}
+                onApprove={handleApprove}
+                onReject={handleReject}
+              />
             ))
           )}
         </div>

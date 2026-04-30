@@ -15,6 +15,7 @@ import { whatsappRouter } from '../routers/whatsapp.router'
 import { contactsRouter } from '../routers/contacts.router'
 import { cannedResponsesRouter } from '../routers/canned-responses.router'
 import { dashboardRouter } from '../routers/dashboard.router'
+import { actionsRouter } from '../routers/actions.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -33,6 +34,7 @@ export const appRouter = router({
   contacts: contactsRouter,
   cannedResponses: cannedResponsesRouter,
   dashboard: dashboardRouter,
+  actions: actionsRouter,
 })
 
 export type AppRouter = typeof appRouter;

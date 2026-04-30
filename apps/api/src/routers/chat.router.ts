@@ -305,6 +305,29 @@ export const chatRouter = router({
       requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       const orgId = ctx.userOrgId
 
+      if (input.assignedTo) {
+        const { data: membership, error: membershipError } = await ctx.supabase
+          .from('user_organizations')
+          .select('id')
+          .eq('org_id', orgId)
+          .eq('user_id', input.assignedTo)
+          .maybeSingle()
+
+        if (membershipError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to validate assignee: ${membershipError.message}`,
+          })
+        }
+
+        if (!membership?.id) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Assigned user is not a member of this organization.',
+          })
+        }
+      }
+
       const { data } = await ctx.supabase
         .from('conversations')
         .update({ status: input.status, assigned_to: input.assignedTo ?? null })

@@ -35,6 +35,7 @@ import {
   PhoneCallIcon,
   SettingsIcon,
   UsersIcon,
+  WorkflowIcon,
   ZapIcon,
 } from 'lucide-react'
 import { UserMenu } from '@/components/nav/UserMenu'
@@ -78,6 +79,12 @@ const navGroups: NavGroup[] = [
       { label: 'Widget', href: '/widget', icon: CodeIcon, permission: 'widget' },
       { label: 'Embedding', href: '/embedding', icon: Link2Icon, permission: 'embedding' },
       { label: 'Voice Assistant', href: '/voice-assistant', icon: MicIcon, permission: 'voiceAssistant' },
+    ],
+  },
+  {
+    label: 'Automation',
+    items: [
+      { label: 'AI Actions', href: '/ai-actions', icon: WorkflowIcon, adminOnly: true },
     ],
   },
   {

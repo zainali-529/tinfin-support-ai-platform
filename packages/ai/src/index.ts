@@ -12,3 +12,6 @@ export * from './rag.service'
 
 // ─── Vapi Voice ───────────────────────────────────────────────────────────────
 export * from './vapi.service'
+// AI Actions
+export * from './actions.service'
+export * from './action-security'

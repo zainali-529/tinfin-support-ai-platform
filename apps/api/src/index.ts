@@ -16,6 +16,7 @@ import { stripeWebhookRoute } from './routes/stripe-webhook.route'
 import { uploadRoute } from './routes/upload.route'
 import { emailInboundRoute } from './routes/email-inbound.route'
 import { whatsappWebhookRoute } from './routes/whatsapp-webhook.route'
+import { actionMockRoute } from './routes/action-mock.route'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
@@ -96,6 +97,7 @@ app.use(
 app.use(express.json())
 
 app.use('/api/voice-preview', voicePreviewRoute)
+app.use('/api/action-mock', actionMockRoute)
 app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))

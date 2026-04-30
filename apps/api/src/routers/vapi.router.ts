@@ -19,7 +19,9 @@ import {
   buildOrgAssistantPayload,
   formatCallDuration,
   DEFAULT_VOICE_ID,
+  getOrgActions,
   type VapiModel,
+  type VapiTool,
 } from '@workspace/ai'
 import type { Context } from '../trpc/context'
 import { requireFeature } from '../lib/plan-guards'
@@ -378,6 +380,42 @@ export const vapiRouter = router({
         ['goodbye', 'bye', 'thanks bye', "that's all", 'end call']
 
       // ── Build Vapi payload ────────────────────────────────────────────────────
+      let actionTools: VapiTool[] = []
+      if (finalToolsEnabled) {
+        try {
+          const orgActions = await getOrgActions(orgId)
+          actionTools = orgActions.map((action) => ({
+            type: 'function',
+            function: {
+              name: action.name,
+              description: action.description,
+              parameters: {
+                type: 'object',
+                properties: Object.fromEntries(
+                  action.parameters.map((param) => [
+                    param.name,
+                    {
+                      type: param.type === 'enum' ? 'string' : param.type,
+                      description: param.description,
+                    },
+                  ])
+                ),
+                required: action.parameters
+                  .filter((param) => param.required)
+                  .map((param) => param.name),
+              },
+            },
+            server: {
+              url: `${webhookBaseUrl}/api/vapi-webhook`,
+              secret: webhookSecret,
+              timeoutSeconds: 20,
+            },
+          }))
+        } catch (err) {
+          console.warn('[vapi.router] Could not load org action tools:', err)
+        }
+      }
+
       const payload = buildOrgAssistantPayload({
         name: finalName,
         companyName,
@@ -392,6 +430,7 @@ export const vapiRouter = router({
         webhookSecret,
         // Advanced
         toolsEnabled: finalToolsEnabled,
+        extraTools: actionTools,
         transcriptionProvider: finalTranscriptionProvider,
         transcriptionLanguage: finalTranscriptionLanguage,
         silenceTimeoutSeconds: finalSilenceTimeout,
@@ -599,3 +638,5 @@ export const vapiRouter = router({
       return { synced }
     }),
 })
+
+

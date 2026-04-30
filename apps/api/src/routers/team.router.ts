@@ -39,7 +39,7 @@ function isMissingColumnError(error: { message?: string } | null | undefined, co
 }
 
 function migrationHint(column: 'permissions'): string {
-  return `Database column "${column}" is missing. Run migration 0006_team_member_permissions.sql in Supabase SQL Editor.`
+  return `Database column "${column}" is missing. Run repo DB migrations (pnpm --filter @workspace/db db:migrate) and deploy the latest baseline.`
 }
 
 async function getAdminCount(supabase: any, orgId: string): Promise<number> {
@@ -782,4 +782,3 @@ export const teamRouter = router({
       return { success: true, orgId }
     }),
 })
-
