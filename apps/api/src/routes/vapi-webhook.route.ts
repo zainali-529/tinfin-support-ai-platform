@@ -355,6 +355,7 @@ async function handleToolCalls(
           query,
           orgId,
           kbId,
+          channel: 'voice',
           threshold: 0.25,
           maxChunks: 5,
         })

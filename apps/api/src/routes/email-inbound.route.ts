@@ -307,7 +307,12 @@ async function triggerAIAutoReply(
     }
 
     console.log(`[email-inbound/ai] Querying RAG for org=${orgId}`)
-    const ragResult = await queryRAG({ query: userText, orgId })
+    const ragResult = await queryRAG({
+      query: userText,
+      orgId,
+      conversationId,
+      channel: 'email',
+    })
 
     console.log(`[email-inbound/ai] RAG result type=${ragResult.type} hasMessage=${!!ragResult.message}`)
 

@@ -8,6 +8,7 @@ export * from './parser.service'
 export * from './chunk.service'
 export * from './embeddings.service'
 export * from './ingest.service'
+export * from './identity.service'
 export * from './rag.service'
 
 // ─── Vapi Voice ───────────────────────────────────────────────────────────────

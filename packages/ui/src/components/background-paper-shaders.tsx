@@ -98,7 +98,7 @@ export function EnergyRing({
   radius?: number
   position?: [number, number, number]
 }) {
-  const mesh = useRef<THREE.Mesh>(null)
+  const mesh = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>(null)
 
   useFrame((state) => {
     if (mesh.current) {

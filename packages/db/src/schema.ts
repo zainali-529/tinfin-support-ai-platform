@@ -7,6 +7,7 @@ import {
   boolean,
   jsonb,
   integer,
+  real,
   customType,
   index,
   uniqueIndex,
@@ -198,9 +199,126 @@ export const kbChunks = pgTable('kb_chunks', {
   embedding: vector('embedding', 1536),
   sourceUrl: text('source_url'),
   sourceTitle: text('source_title'),
+  sourceType: text('source_type').default('general').notNull(),
+  isPinned: boolean('is_pinned').default(false).notNull(),
+  pinnedReason: text('pinned_reason'),
   metadata: jsonb('metadata').default({}).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+export const organizationAiProfiles = pgTable(
+  'organization_ai_profiles',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    assistantName: text('assistant_name').default('Support Assistant').notNull(),
+    companyName: text('company_name').notNull(),
+    companySummary: text('company_summary'),
+    websiteUrl: text('website_url'),
+    industry: text('industry'),
+    targetCustomers: text('target_customers'),
+    valueProposition: text('value_proposition'),
+    supportScope: text('support_scope'),
+    outOfScope: text('out_of_scope'),
+    brandVoice: text('brand_voice').default('warm, clear, professional, concise').notNull(),
+    defaultLanguage: text('default_language').default('auto').notNull(),
+    formattingStyle: text('formatting_style').default('direct answer first, bullets when helpful').notNull(),
+    handoffPolicy: text('handoff_policy'),
+    forbiddenPhrases: jsonb('forbidden_phrases').default([]).notNull(),
+    goodAnswerExamples: jsonb('good_answer_examples').default([]).notNull(),
+    badAnswerExamples: jsonb('bad_answer_examples').default([]).notNull(),
+    settings: jsonb('settings').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgUnique: uniqueIndex('organization_ai_profiles_org_id_key').on(table.orgId),
+    orgIndex: index('idx_organization_ai_profiles_org_id').on(table.orgId),
+  })
+)
+
+export const aiGuidanceRules = pgTable(
+  'ai_guidance_rules',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    category: text('category').default('general').notNull(),
+    conditionText: text('condition_text'),
+    guidanceText: text('guidance_text').notNull(),
+    channel: text('channel').default('all').notNull(),
+    priority: integer('priority').default(100).notNull(),
+    sourceIds: jsonb('source_ids').default([]).notNull(),
+    audienceRules: jsonb('audience_rules').default({}).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgActiveIndex: index('idx_ai_guidance_rules_org_active_priority').on(
+      table.orgId,
+      table.isActive,
+      table.priority
+    ),
+  })
+)
+
+export const aiEvalCases = pgTable(
+  'ai_eval_cases',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    inputMessage: text('input_message').notNull(),
+    expectedIntent: text('expected_intent').default('company_identity').notNull(),
+    expectedContains: jsonb('expected_contains').default([]).notNull(),
+    forbiddenContains: jsonb('forbidden_contains').default([]).notNull(),
+    requiredSourceType: text('required_source_type'),
+    language: text('language').default('auto').notNull(),
+    channel: text('channel').default('chat').notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    lastPassed: boolean('last_passed'),
+    lastScore: integer('last_score'),
+    lastOutput: text('last_output'),
+    lastDiagnostics: jsonb('last_diagnostics').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgActiveIndex: index('idx_ai_eval_cases_org_active').on(table.orgId, table.isActive),
+  })
+)
+
+export const aiAnswerTraces = pgTable(
+  'ai_answer_traces',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+    messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
+    channel: text('channel').default('chat').notNull(),
+    query: text('query').notNull(),
+    detectedIntent: text('detected_intent').notNull(),
+    rewrittenQuery: text('rewritten_query'),
+    responseType: text('response_type').notNull(),
+    responsePreview: text('response_preview'),
+    sourcesUsed: jsonb('sources_used').default([]).notNull(),
+    guidanceUsed: jsonb('guidance_used').default([]).notNull(),
+    actionsUsed: jsonb('actions_used').default([]).notNull(),
+    confidence: real('confidence').default(0).notNull(),
+    latencyMs: integer('latency_ms').default(0).notNull(),
+    tokensUsed: integer('tokens_used').default(0).notNull(),
+    model: text('model'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgCreatedIndex: index('idx_ai_answer_traces_org_created').on(table.orgId, table.createdAt),
+    conversationIndex: index('idx_ai_answer_traces_conversation').on(table.conversationId),
+    intentIndex: index('idx_ai_answer_traces_org_intent').on(table.orgId, table.detectedIntent),
+  })
+)
 
 export const widgetConfigs = pgTable('widget_configs', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),

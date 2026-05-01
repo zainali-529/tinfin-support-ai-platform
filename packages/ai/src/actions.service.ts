@@ -7,6 +7,15 @@ import {
   decryptActionSecret,
   resolveActionOutboundAllowlist,
 } from './action-security'
+import {
+  buildGuidancePrompt,
+  buildOrganizationPrompt,
+  classifyAIIntent,
+  getOrganizationAIContext,
+  recordAIAnswerTrace,
+  rewriteQueryForIntent,
+  type AIContextBundle,
+} from './identity.service'
 
 export interface ActionParameter {
   name: string
@@ -943,10 +952,16 @@ async function executeAndLogAction(input: {
   }
 }
 
-function buildSystemPrompt(actions: ActionConfig[]): string {
+function buildSystemPrompt(actions: ActionConfig[], aiContext: AIContextBundle): string {
   const actionSummary = buildActionSummary(actions)
+  const organizationSection = buildOrganizationPrompt(aiContext)
+  const guidanceSection = buildGuidancePrompt(aiContext.guidance)
 
   return `You are a helpful customer support AI assistant.
+
+${organizationSection}
+
+${guidanceSection ? `${guidanceSection}\n` : ''}
 
 ## Available Actions
 ${actionSummary}
@@ -958,7 +973,9 @@ ${actionSummary}
 4. After action execution, report the result clearly.
 5. If you cannot help, use requestHumanAgent.
 6. Never fabricate data. Use tools for real information.
-7. Respond in the same language as the customer.`
+7. Respond in the same language as the customer.
+8. If the customer says "your company", "who are you", "what do you do", or "aapki company", treat it as a question about ${aiContext.profile.companyName}. Do not ask which company unless they clearly mean a different third-party company.
+9. Put the direct answer first. Use bullets only when they make the answer easier to scan.`
 }
 
 async function callOpenAIWithTools(input: {
@@ -979,14 +996,53 @@ async function callOpenAIWithTools(input: {
 export async function queryWithActions(
   params: QueryWithActionsParams
 ): Promise<QueryWithActionsResult> {
+  const startedAt = Date.now()
   const actions = await getOrgActions(params.orgId)
   const tools = buildOpenAITools(actions)
   const client = createOpenAIClient(params.openaiApiKey)
+  const aiContext = await getOrganizationAIContext(params.orgId)
+  const intentResult = classifyAIIntent(params.query)
+  const rewrittenQuery = rewriteQueryForIntent(params.query, intentResult, aiContext.profile)
+
+  async function finish(
+    result: QueryWithActionsResult,
+    metadata: Record<string, unknown> = {}
+  ): Promise<QueryWithActionsResult> {
+    await recordAIAnswerTrace({
+      orgId: params.orgId,
+      conversationId: params.conversationId ?? null,
+      channel: 'chat',
+      query: params.query,
+      detectedIntent: intentResult.intent,
+      rewrittenQuery,
+      responseType: result.type,
+      responsePreview: result.message,
+      sourcesUsed: result.sources,
+      guidanceUsed: aiContext.guidance.map((rule) => ({
+        id: rule.id,
+        name: rule.name,
+        category: rule.category,
+      })),
+      actionsUsed: result.actionLog ? [result.actionLog] : [],
+      confidence: result.confidence,
+      latencyMs: Date.now() - startedAt,
+      tokensUsed: result.tokensUsed ?? 0,
+      model: DEFAULT_MODEL,
+      metadata: {
+        route: 'actions',
+        languageHint: intentResult.languageHint,
+        intentConfidence: intentResult.confidence,
+        ...metadata,
+      },
+    })
+
+    return result
+  }
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: buildSystemPrompt(actions),
+      content: buildSystemPrompt(actions, aiContext),
     },
     ...toConversationHistoryMessages(params.conversationHistory),
     {
@@ -1000,37 +1056,37 @@ export async function queryWithActions(
   const totalTokens = completion.usage?.total_tokens ?? 0
 
   if (!firstChoice || !firstChoice.message) {
-    return {
+    return finish({
       type: 'casual',
       message: "I'm sorry, I couldn't process that request right now.",
       confidence: 0,
       sources: [],
       tokensUsed: totalTokens,
-    }
+    }, { reason: 'missing_first_choice' })
   }
 
   const assistantMessage = firstChoice.message
   const assistantText = asString(assistantMessage.content) ?? ''
 
   if (firstChoice.finish_reason !== 'tool_calls') {
-    return {
+    return finish({
       type: 'answer',
       message: assistantText || "I'm here to help. Could you share a bit more detail?",
       confidence: 0.9,
       sources: [],
       tokensUsed: totalTokens,
-    }
+    }, { finishReason: firstChoice.finish_reason })
   }
 
   const parsedCalls = parseToolCalls(assistantMessage)
   if (parsedCalls.length === 0) {
-    return {
+    return finish({
       type: 'casual',
       message: assistantText || "I'm not sure what to do next. Could you rephrase that?",
       confidence: 0,
       sources: [],
       tokensUsed: totalTokens,
-    }
+    }, { finishReason: firstChoice.finish_reason, parsedToolCalls: 0 })
   }
 
   const toolMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
@@ -1046,13 +1102,13 @@ export async function queryWithActions(
 
   for (const call of parsedCalls) {
     if (call.name === TOOL_NAME_REQUEST_HUMAN) {
-      return {
+      return finish({
         type: 'handoff',
         message: assistantText || 'I will connect you with a human agent right away.',
         confidence: 1,
         sources: [],
         tokensUsed: totalTokens,
-      }
+      }, { toolCall: TOOL_NAME_REQUEST_HUMAN })
     }
 
     if (call.name === TOOL_NAME_SEARCH_KB) {
@@ -1061,6 +1117,8 @@ export async function queryWithActions(
         query: kbQuery,
         orgId: params.orgId,
         kbId: params.kbId,
+        conversationId: params.conversationId,
+        channel: 'chat',
         threshold: params.threshold,
         maxChunks: params.maxChunks,
         openaiApiKey: params.openaiApiKey,
@@ -1119,25 +1177,25 @@ export async function queryWithActions(
     latestActionLog = outcome.actionLog
 
     if (outcome.resultType === 'action_confirmation') {
-      return {
+      return finish({
         type: 'action_confirmation',
         message: outcome.resultText,
         confidence: 0.9,
         sources,
         actionLog: outcome.actionLog,
         tokensUsed: totalTokens,
-      }
+      }, { toolCall: action.name, status: outcome.actionLog.status })
     }
 
     if (outcome.resultType === 'action_pending_approval') {
-      return {
+      return finish({
         type: 'action_pending_approval',
         message: outcome.resultText,
         confidence: 0.9,
         sources,
         actionLog: outcome.actionLog,
         tokensUsed: totalTokens,
-      }
+      }, { toolCall: action.name, status: outcome.actionLog.status })
     }
 
     executedCustomAction = true
@@ -1167,7 +1225,7 @@ export async function queryWithActions(
   const secondChoice = secondCompletion.choices[0]
   const secondText = asString(secondChoice?.message?.content)
 
-  return {
+  return finish({
     type: executedCustomAction ? 'action' : 'answer',
     message:
       secondText ||
@@ -1177,7 +1235,11 @@ export async function queryWithActions(
     sources,
     actionLog: latestActionLog,
     tokensUsed: (secondCompletion.usage?.total_tokens ?? 0) + totalTokens,
-  }
+  }, {
+    executedCustomAction,
+    toolCallCount: parsedCalls.length,
+    secondFinishReason: secondChoice?.finish_reason,
+  })
 }
 
 export async function executeApprovedAction(

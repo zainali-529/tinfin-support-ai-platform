@@ -241,7 +241,12 @@ async function triggerAIAutoReply(params: {
   if (!userText) return
 
   try {
-    const ragResult = await queryRAG({ query: userText, orgId: account.org_id })
+    const ragResult = await queryRAG({
+      query: userText,
+      orgId: account.org_id,
+      conversationId,
+      channel: "whatsapp",
+    })
 
     if (ragResult.type === "handoff" || ragResult.type === "ask_handoff") {
       return

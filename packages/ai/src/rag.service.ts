@@ -1,6 +1,17 @@
 import { getSupabaseAdmin } from './lib/supabase'
 import { createOpenAIClient } from './providers/openai.provider'
 import { generateEmbedding } from './embeddings.service'
+import {
+  buildGuidancePrompt,
+  buildOrganizationPrompt,
+  classifyAIIntent,
+  fetchPinnedCompanyChunks,
+  getOrganizationAIContext,
+  recordAIAnswerTrace,
+  rewriteQueryForIntent,
+  type AIContextBundle,
+  type AIIntentResult,
+} from './identity.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -8,6 +19,9 @@ export interface RAGQuery {
   query: string
   orgId: string
   kbId?: string
+  conversationId?: string
+  messageId?: string
+  channel?: string
   threshold?: number
   maxChunks?: number
   openaiApiKey?: string
@@ -17,6 +31,8 @@ export interface RAGSource {
   title: string | null
   url: string | null
   similarity: number
+  sourceType?: string | null
+  pinned?: boolean
 }
 
 export type RAGResultType = 'answer' | 'handoff' | 'ask_handoff' | 'casual'
@@ -27,6 +43,12 @@ export interface RAGResult {
   confidence: number
   sources: RAGSource[]
   tokensUsed?: number
+  debug?: {
+    intent: string
+    rewrittenQuery: string
+    guidanceCount: number
+    usedPinnedCompanyContext: boolean
+  }
 }
 
 interface MatchedChunk {
@@ -164,6 +186,20 @@ function buildContext(chunks: MatchedChunk[]): string {
     .join('\n\n---\n\n')
 }
 
+function dedupeChunks(chunks: MatchedChunk[]): MatchedChunk[] {
+  const seen = new Set<string>()
+  const output: MatchedChunk[] = []
+
+  for (const chunk of chunks) {
+    const key = chunk.id || `${chunk.source_title ?? ''}:${chunk.content.slice(0, 80)}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    output.push(chunk)
+  }
+
+  return output
+}
+
 // ─── Topics Hint (derived from KB results, used for greetings/capability Q's) ─
 
 function deriveTopicsHint(chunks: MatchedChunk[]): string {
@@ -181,19 +217,31 @@ function deriveTopicsHint(chunks: MatchedChunk[]): string {
 function buildMasterPrompt(
   context: string,
   topicsHint: string,
-  hasStrongContext: boolean
+  hasStrongContext: boolean,
+  aiContext: AIContextBundle,
+  intentResult: AIIntentResult
 ): string {
   const kbSection = context
     ? `## Knowledge Base Context\n${context}`
     : `## Knowledge Base Context\n(No relevant articles found for this specific query)`
+  const organizationSection = buildOrganizationPrompt(aiContext)
+  const guidanceSection = buildGuidancePrompt(aiContext.guidance)
 
   return `You are a professional, intelligent, and warm customer support assistant.
 
-Your entire knowledge comes from the company's knowledge base provided below. You do not have access to external information, the internet, or any knowledge outside of what is in this knowledge base.
+${organizationSection}
+
+Your factual answers must come from the organization identity, guidance, and knowledge context provided below. You do not have access to external information, the internet, or unsupported knowledge.
 
 ${kbSection}
 
 ${topicsHint ? `## Topics You Have Knowledge On\n${topicsHint}\n` : ''}
+
+${guidanceSection ? `${guidanceSection}\n` : ''}
+
+## Detected Customer Intent
+Intent: ${intentResult.intent}
+Language hint: ${intentResult.languageHint}
 
 ---
 
@@ -207,6 +255,9 @@ Explain specifically what topics and information you have available, derived fro
 
 **For domain-specific questions answerable from the knowledge base:**
 Answer accurately and professionally using ONLY the knowledge base context provided. Be thorough, clear, and naturally appreciative where appropriate. Never fabricate facts, prices, features, or policies not present in the context. Match the user's language.
+
+**For company identity questions ("tell me about your company", "who are you", "what do you do", "aapki company kya karti hai"):**
+Answer directly as ${aiContext.profile.companyName}'s assistant. Use the Organization Identity and any company profile context. Do not ask "which company?" unless the user clearly names a different third-party company and asks about that company.
 
 **For questions that are completely unrelated to your knowledge base** (other companies, entertainment, anime, coding help unrelated to KB, world news, unrelated topics):
 Respond with exactly this token and nothing else: OUT_OF_DOMAIN
@@ -225,7 +276,8 @@ ${hasStrongContext
 3. Never answer questions about topics outside your knowledge base — not even partially.
 4. Always respond in the same language the user is writing in.
 5. Be warm, professional, and human. Acknowledge feelings if the user seems frustrated or confused.
-6. Keep responses concise but complete: 2–4 sentences for simple queries, more detail for complex ones.`.trim()
+6. Keep responses concise but complete: 2-4 sentences for simple queries, more detail for complex ones.
+7. Put the direct answer first. Use bullets or numbered steps only when they improve clarity.`.trim()
 }
 
 // ─── LLM Call Helper ─────────────────────────────────────────────────────────
@@ -259,54 +311,113 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     query,
     orgId,
     kbId,
+    conversationId,
+    messageId,
+    channel = 'chat',
     threshold = DEFAULT_SEARCH_THRESHOLD,
     maxChunks = DEFAULT_MAX_CHUNKS,
     openaiApiKey,
   } = params
 
+  const startedAt = Date.now()
   const trimmedQuery = query.trim()
   const client = createOpenAIClient(openaiApiKey)
+  const aiContext = await getOrganizationAIContext(orgId)
+  const intentResult = classifyAIIntent(trimmedQuery)
+  const rewrittenQuery = rewriteQueryForIntent(trimmedQuery, intentResult, aiContext.profile)
+  const debugBase = {
+    intent: intentResult.intent,
+    rewrittenQuery,
+    guidanceCount: aiContext.guidance.length,
+  }
 
-  // ── Empty message: generate a natural greeting ────────────────────────────
+  async function finish(
+    result: RAGResult,
+    options: {
+      usedPinnedCompanyContext?: boolean
+      sourcesForTrace?: unknown[]
+      tokensUsed?: number
+      metadata?: Record<string, unknown>
+    } = {}
+  ): Promise<RAGResult> {
+    const debug = {
+      ...debugBase,
+      usedPinnedCompanyContext: options.usedPinnedCompanyContext === true,
+    }
+    const finalResult: RAGResult = { ...result, debug }
+
+    await recordAIAnswerTrace({
+      orgId,
+      conversationId,
+      messageId,
+      channel,
+      query: trimmedQuery || '(empty message)',
+      detectedIntent: intentResult.intent,
+      rewrittenQuery,
+      responseType: result.type,
+      responsePreview: result.message,
+      sourcesUsed: options.sourcesForTrace ?? result.sources,
+      guidanceUsed: aiContext.guidance.map((rule) => ({
+        id: rule.id,
+        name: rule.name,
+        category: rule.category,
+      })),
+      confidence: result.confidence,
+      latencyMs: Date.now() - startedAt,
+      tokensUsed: options.tokensUsed ?? result.tokensUsed ?? 0,
+      model: GPT_MODEL,
+      metadata: {
+        languageHint: intentResult.languageHint,
+        intentConfidence: intentResult.confidence,
+        ...options.metadata,
+      },
+    })
+
+    return finalResult
+  }
+
   if (!trimmedQuery) {
     const { text, tokens } = await generateContextualResponse(
       client,
-      'You are a friendly customer support assistant. The user just opened the chat. Greet them warmly and ask how you can help them today. Keep it to 1–2 sentences, natural and inviting.',
+      `${buildOrganizationPrompt(aiContext)}
+
+The user just opened the chat. Greet them warmly as ${aiContext.profile.companyName}'s assistant and ask how you can help. Keep it to 1-2 sentences, natural and inviting.`,
       '(user opened the chat)',
       100,
       0.7
     )
-    return {
+
+    return finish({
       type: 'casual',
-      message: text || "Hello! 👋 How can I help you today?",
+      message: text || `Hello! I'm ${aiContext.profile.assistantName} for ${aiContext.profile.companyName}. How can I help you today?`,
       confidence: 1,
       sources: [],
       tokensUsed: tokens,
-    }
+    }, { tokensUsed: tokens })
   }
 
-  // ── Explicit human agent request ──────────────────────────────────────────
   if (isExplicitHumanRequest(trimmedQuery)) {
     const { text, tokens } = await generateContextualResponse(
       client,
-      'The user wants to speak to a human agent. Respond warmly and professionally, confirming you are connecting them now. Be reassuring and brief — 1–2 sentences.',
+      'The user wants to speak to a human agent. Respond warmly and professionally, confirming you are connecting them now. Be reassuring and brief: 1-2 sentences.',
       trimmedQuery,
       100,
       0.5
     )
-    return {
+
+    return finish({
       type: 'handoff',
-      message: text || "Of course! Let me connect you with a human agent right away. Please hold on for a moment. 🙏",
+      message: text || 'Of course. Let me connect you with a human agent right away. Please hold on for a moment.',
       confidence: 1,
       sources: [],
       tokensUsed: tokens,
-    }
+    }, { tokensUsed: tokens })
   }
 
-  // ── Embed query and search knowledge base ─────────────────────────────────
-  const queryEmbedding = await generateEmbedding(trimmedQuery, openaiApiKey)
+  const searchQuery = rewrittenQuery || trimmedQuery
+  const queryEmbedding = await generateEmbedding(searchQuery, openaiApiKey)
 
-  const matchedChunks = await searchSimilarChunks(
+  const semanticChunks = await searchSimilarChunks(
     queryEmbedding,
     orgId,
     threshold,
@@ -314,20 +425,45 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     kbId
   )
 
-  const confidence = calculateConfidence(matchedChunks)
-  const hasStrongContext = confidence >= KB_RELEVANCE_THRESHOLD
+  const pinnedCompanyChunks = intentResult.shouldUseCompanyIdentity
+    ? await fetchPinnedCompanyChunks({ orgId, kbId, limit: 4 })
+    : []
+  const usedPinnedCompanyContext = pinnedCompanyChunks.length > 0
+  const matchedChunks = dedupeChunks([
+    ...(pinnedCompanyChunks as MatchedChunk[]),
+    ...semanticChunks,
+  ]).slice(0, Math.max(maxChunks, pinnedCompanyChunks.length + maxChunks))
 
-  const sources: RAGSource[] = matchedChunks.map(c => ({
-    title: c.source_title,
-    url: c.source_url,
-    similarity: parseFloat(c.similarity.toFixed(4)),
+  const semanticConfidence = calculateConfidence(semanticChunks)
+  const confidence = Math.max(
+    semanticConfidence,
+    usedPinnedCompanyContext ? 0.92 : 0,
+    intentResult.shouldUseCompanyIdentity && aiContext.profile.companySummary ? 0.82 : 0
+  )
+  const hasStrongContext =
+    confidence >= KB_RELEVANCE_THRESHOLD ||
+    (intentResult.shouldUseCompanyIdentity && Boolean(aiContext.profile.companySummary))
+
+  const sources: RAGSource[] = matchedChunks.map((chunk) => ({
+    title: chunk.source_title,
+    url: chunk.source_url,
+    similarity: Number.parseFloat(chunk.similarity.toFixed(4)),
+    sourceType:
+      typeof chunk.metadata?.sourceType === 'string'
+        ? chunk.metadata.sourceType
+        : null,
+    pinned: chunk.metadata?.pinned === true,
   }))
 
   const context = buildContext(matchedChunks)
   const topicsHint = deriveTopicsHint(matchedChunks)
-
-  // ── Single intelligent LLM call ───────────────────────────────────────────
-  const systemPrompt = buildMasterPrompt(context, topicsHint, hasStrongContext)
+  const systemPrompt = buildMasterPrompt(
+    context,
+    topicsHint,
+    hasStrongContext,
+    aiContext,
+    intentResult
+  )
 
   const mainCompletion = await client.chat.completions.create({
     model: GPT_MODEL,
@@ -342,48 +478,65 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   const rawAnswer = mainCompletion.choices[0]?.message?.content?.trim() ?? ''
   const mainTokens = mainCompletion.usage?.total_tokens ?? 0
 
-  // ── OUT_OF_SCOPE: KB-adjacent but not enough info → offer handoff ─────────
   if (!rawAnswer || rawAnswer === 'OUT_OF_SCOPE' || rawAnswer.includes('OUT_OF_SCOPE')) {
     const { text, tokens } = await generateContextualResponse(
       client,
-      `You are a professional support assistant. The user asked something within your general domain, but you don't have the specific information to answer it well. Apologize briefly and professionally, then ask if they'd like to be connected with a human agent who can help further. Include "(Reply **yes** to connect)" naturally at the end. Keep it to 2–3 sentences.`,
+      `${buildOrganizationPrompt(aiContext)}
+
+The user asked something within your general support domain, but you do not have enough specific information to answer it well. Apologize briefly, then ask if they want a human agent. Include "(Reply **yes** to connect)" naturally at the end. Keep it to 2-3 sentences.`,
       trimmedQuery,
       150,
       0.5
     )
-    return {
+
+    return finish({
       type: 'ask_handoff',
       message: text || "I'm sorry, I don't have specific information about that at the moment. Would you like me to connect you with a human agent who can help further? (Reply **yes** to connect)",
       confidence,
       sources,
       tokensUsed: mainTokens + tokens,
-    }
+    }, {
+      usedPinnedCompanyContext,
+      sourcesForTrace: sources,
+      tokensUsed: mainTokens + tokens,
+      metadata: { searchQuery, rawAnswer: rawAnswer || null },
+    })
   }
 
-  // ── OUT_OF_DOMAIN: completely off-topic → politely decline ────────────────
   if (rawAnswer === 'OUT_OF_DOMAIN' || rawAnswer.includes('OUT_OF_DOMAIN')) {
     const { text, tokens } = await generateContextualResponse(
       client,
-      `You are a professional support assistant with expertise limited to your company's specific knowledge base. The user asked something completely outside your domain of expertise. Politely and warmly let them know you can only help with your specific area. Be kind, not dismissive. Keep it to 2 sentences.`,
+      `${buildOrganizationPrompt(aiContext)}
+
+The user asked something outside your support scope. Politely say you can help with ${aiContext.profile.companyName}-related questions and invite them to ask about that. Keep it to 2 sentences.`,
       trimmedQuery,
       120,
       0.5
     )
-    return {
+
+    return finish({
       type: 'casual',
-      message: text || "That's a bit outside my area of expertise! I'm best equipped to help with questions related to our specific services — feel free to ask me anything in that space.",
+      message: text || `That's outside my support scope. I can help with ${aiContext.profile.companyName}-related questions, setup, policies, and support topics.`,
       confidence: 0,
       sources: [],
       tokensUsed: mainTokens + tokens,
-    }
+    }, {
+      usedPinnedCompanyContext,
+      tokensUsed: mainTokens + tokens,
+      metadata: { searchQuery, rawAnswer },
+    })
   }
 
-  // ── Successful answer ─────────────────────────────────────────────────────
-  return {
+  return finish({
     type: hasStrongContext ? 'answer' : 'casual',
     message: rawAnswer,
     confidence,
     sources,
     tokensUsed: mainTokens,
-  }
+  }, {
+    usedPinnedCompanyContext,
+    sourcesForTrace: sources,
+    tokensUsed: mainTokens,
+    metadata: { searchQuery, semanticConfidence },
+  })
 }

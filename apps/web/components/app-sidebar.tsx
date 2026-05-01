@@ -24,6 +24,7 @@ import {
 import {
   BarChart2Icon,
   BookOpenIcon,
+  BrainCircuitIcon,
   Building2Icon,
   CodeIcon,
   CreditCardIcon,
@@ -75,6 +76,7 @@ const navGroups: NavGroup[] = [
     label: 'AI Studio',
     items: [
       { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon, permission: 'knowledge' },
+      { label: 'AI Profile', href: '/ai-profile', icon: BrainCircuitIcon, permission: 'knowledge' },
       { label: 'Canned Replies', href: '/canned-responses', icon: MessageSquareQuoteIcon, permission: 'cannedResponses' },
       { label: 'Widget', href: '/widget', icon: CodeIcon, permission: 'widget' },
       { label: 'Embedding', href: '/embedding', icon: Link2Icon, permission: 'embedding' },
