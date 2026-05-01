@@ -40,6 +40,15 @@ export interface Message {
 // ─── Conversation ─────────────────────────────────────────────────────────────
 
 export type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
+export type ConversationQueueState =
+  | 'bot'
+  | 'queued'
+  | 'assigned'
+  | 'in_progress'
+  | 'waiting_customer'
+  | 'resolved'
+export type ConversationBacklogState = 'fresh' | 'watch' | 'stale' | 'critical'
+export type ConversationSlaState = 'on_track' | 'at_risk' | 'breached' | 'met'
 export type ConversationChannel =
   | 'chat'
   | 'email'
@@ -65,7 +74,21 @@ export interface Conversation {
   channel: ConversationChannel
   assigned_to: string | null
   started_at: string
+  queue_state?: ConversationQueueState | null
+  queue_entered_at?: string | null
   resolved_at?: string | null
+  first_response_due_at?: string | null
+  next_response_due_at?: string | null
+  resolution_due_at?: string | null
+  first_response_at?: string | null
+  last_customer_message_at?: string | null
+  last_agent_reply_at?: string | null
+  routing_assigned_at?: string | null
+  backlog_minutes?: number | null
+  backlog_state?: ConversationBacklogState | null
+  sla_target_at?: string | null
+  sla_state?: ConversationSlaState | null
+  sla_remaining_seconds?: number | null
   meta?: Record<string, unknown> | null
   /** Joined contact record */
   contacts: Contact | null
@@ -78,6 +101,8 @@ export interface Conversation {
   latest_message_at?: string | null
   latest_email_subject?: string | null
   latest_email_at?: string | null
+  assigned_agent_name?: string | null
+  assigned_agent_email?: string | null
 }
 
 // ─── Email Message ────────────────────────────────────────────────────────────

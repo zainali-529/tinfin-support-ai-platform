@@ -14,6 +14,7 @@ import {
   executeApprovedAction,
 } from '@workspace/ai'
 import { getOrgSubscription } from '../lib/subscriptions'
+import { routePendingConversation } from '../services/inbox-ops.service'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -593,9 +594,36 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
   socket.awaitingHandoffConfirm = false
   socket.pendingActionLogId = undefined
   await updateConversation(orgId, conversationId, { status: 'pending' })
+  let routedAssigneeId: string | null = null
+
+  try {
+    const routing = await routePendingConversation({
+      supabase: getSupabase(),
+      orgId,
+      conversationId,
+      reason: 'chat_handoff',
+    })
+    routedAssigneeId = routing.assignedTo
+  } catch (routingError) {
+    console.error('[ws] triggerHandoff routing failed:', routingError)
+  }
   const msg = "I'm connecting you with a human agent now. Please hold on! 🙏"
-  send(socket, { type: 'ai:response', content: msg, conversationId, createdAt: new Date().toISOString(), handoff: true })
-  broadcastToAgents(orgId, { type: 'handoff:requested', visitorId: socket.visitorId, conversationId, createdAt: new Date().toISOString() })
+  const createdAt = new Date().toISOString()
+  send(socket, { type: 'ai:response', content: msg, conversationId, createdAt, handoff: true })
+  broadcastToAgents(orgId, {
+    type: 'handoff:requested',
+    visitorId: socket.visitorId,
+    conversationId,
+    assignedTo: routedAssigneeId,
+    createdAt,
+  })
+  broadcastToAgents(orgId, {
+    type: 'ai:response',
+    content: msg,
+    conversationId,
+    createdAt,
+    handoff: true,
+  })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: msg, aiMetadata: { shouldHandoff: true } })
 }
 
@@ -681,7 +709,15 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     content, attachments, conversationId, createdAt: new Date().toISOString(),
   })
 
-  await persistMessage({ conversationId, orgId, role: 'user', content, attachments })
+  void persistMessage({
+    conversationId,
+    orgId,
+    role: 'user',
+    content,
+    attachments,
+  }).catch((error) => {
+    console.error('[ws] visitor message persist failed:', error)
+  })
 
   // If agent is handling → skip AI
   if (status === 'open') return
@@ -697,11 +733,18 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     try {
       const confirmed = isHandoffConfirmation(content)
       const resultMessage = await handleConfirmedAction(actionLogId, confirmed)
+      const createdAt = new Date().toISOString()
       send(socket, {
         type: 'ai:response',
         content: resultMessage,
         conversationId,
-        createdAt: new Date().toISOString(),
+        createdAt,
+      })
+      broadcastToAgents(orgId, {
+        type: 'ai:response',
+        content: resultMessage,
+        conversationId,
+        createdAt,
       })
       await persistMessage({
         conversationId,
@@ -718,11 +761,18 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     } catch (err) {
       console.error('[ws] pending action confirmation error:', err)
       const fallback = "I couldn't complete that action right now. Would you like a human agent to help?"
+      const createdAt = new Date().toISOString()
       send(socket, {
         type: 'ai:response',
         content: fallback,
         conversationId,
-        createdAt: new Date().toISOString(),
+        createdAt,
+      })
+      broadcastToAgents(orgId, {
+        type: 'ai:response',
+        content: fallback,
+        conversationId,
+        createdAt,
       })
       socket.awaitingHandoffConfirm = true
     }
@@ -736,14 +786,17 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     } else {
       socket.awaitingHandoffConfirm = false
       const reply = "No problem! Feel free to ask me anything else. 😊"
-      send(socket, { type: 'ai:response', content: reply, conversationId, createdAt: new Date().toISOString() })
+      const createdAt = new Date().toISOString()
+      send(socket, { type: 'ai:response', content: reply, conversationId, createdAt })
+      broadcastToAgents(orgId, { type: 'ai:response', content: reply, conversationId, createdAt })
       await persistMessage({ conversationId, orgId, role: 'assistant', content: reply })
     }
     return
   }
 
   // AI typing
-  setTimeout(() => send(socket, { type: 'typing:start', conversationId }), 300)
+  send(socket, { type: 'typing:start', source: 'ai', conversationId })
+  broadcastToAgents(orgId, { type: 'typing:start', source: 'ai', conversationId })
 
     ; (async () => {
       try {
@@ -756,16 +809,19 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             content: String((message as { content?: string }).content ?? ''),
           }))
 
+        conversationHistory.push({ role: 'user', content })
+
         const ragResult = await queryWithActions({
           query: content,
           orgId,
           conversationId,
           contactId: contactId ?? undefined,
-          conversationHistory,
+          conversationHistory: conversationHistory.slice(-10),
           threshold: 0.3,
           maxChunks: 5,
         })
-        send(socket, { type: 'typing:stop', conversationId })
+        send(socket, { type: 'typing:stop', source: 'ai', conversationId })
+        broadcastToAgents(orgId, { type: 'typing:stop', source: 'ai', conversationId })
 
         if (ragResult.type === 'handoff') {
           await triggerHandoff(socket, conversationId, orgId)
@@ -774,11 +830,18 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 
         if (ragResult.type === 'ask_handoff') {
           socket.awaitingHandoffConfirm = true
+          const createdAt = new Date().toISOString()
           send(socket, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
-            createdAt: new Date().toISOString(),
+            createdAt,
+          })
+          broadcastToAgents(orgId, {
+            type: 'ai:response',
+            content: ragResult.message,
+            conversationId,
+            createdAt,
           })
           await persistMessage({
             conversationId,
@@ -795,11 +858,21 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 
         if (ragResult.type === 'action_confirmation') {
           socket.pendingActionLogId = ragResult.actionLog?.logId
+          const createdAt = new Date().toISOString()
           send(socket, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
-            createdAt: new Date().toISOString(),
+            createdAt,
+            confidence: ragResult.confidence,
+            requiresConfirmation: true,
+            actionLog: ragResult.actionLog,
+          })
+          broadcastToAgents(orgId, {
+            type: 'ai:response',
+            content: ragResult.message,
+            conversationId,
+            createdAt,
             confidence: ragResult.confidence,
             requiresConfirmation: true,
             actionLog: ragResult.actionLog,
@@ -820,19 +893,28 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
         }
 
         if (ragResult.type === 'action_pending_approval') {
+          const createdAt = new Date().toISOString()
           broadcastToAgents(orgId, {
             type: 'approval:requested',
             logId: ragResult.actionLog?.logId,
             actionName: ragResult.actionLog?.actionName,
             conversationId,
-            createdAt: new Date().toISOString(),
+            createdAt,
           })
 
           send(socket, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
-            createdAt: new Date().toISOString(),
+            createdAt,
+            confidence: ragResult.confidence,
+            actionLog: ragResult.actionLog,
+          })
+          broadcastToAgents(orgId, {
+            type: 'ai:response',
+            content: ragResult.message,
+            conversationId,
+            createdAt,
             confidence: ragResult.confidence,
             actionLog: ragResult.actionLog,
           })
@@ -849,11 +931,20 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
           return
         }
 
+        const createdAt = new Date().toISOString()
         send(socket, {
           type: 'ai:response',
           content: ragResult.message,
           conversationId,
-          createdAt: new Date().toISOString(),
+          createdAt,
+          confidence: ragResult.confidence,
+          actionLog: ragResult.actionLog,
+        })
+        broadcastToAgents(orgId, {
+          type: 'ai:response',
+          content: ragResult.message,
+          conversationId,
+          createdAt,
           confidence: ragResult.confidence,
           actionLog: ragResult.actionLog,
         })
@@ -869,9 +960,12 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
         })
       } catch (err) {
         console.error('[ws] RAG error:', err)
-        send(socket, { type: 'typing:stop', conversationId })
+        send(socket, { type: 'typing:stop', source: 'ai', conversationId })
+        broadcastToAgents(orgId, { type: 'typing:stop', source: 'ai', conversationId })
         const fallback = "I'm having a little trouble right now. Would you like me to connect you with a human agent? (Reply **yes** to connect)"
-        send(socket, { type: 'ai:response', content: fallback, conversationId, createdAt: new Date().toISOString() })
+        const createdAt = new Date().toISOString()
+        send(socket, { type: 'ai:response', content: fallback, conversationId, createdAt })
+        broadcastToAgents(orgId, { type: 'ai:response', content: fallback, conversationId, createdAt })
         socket.awaitingHandoffConfirm = true
       }
     })()
@@ -882,6 +976,10 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
   const attachments = (msg.attachments as Attachment[] | undefined) ?? []
+  const clientNonce =
+    typeof msg.clientNonce === 'string' && msg.clientNonce.trim().length > 0
+      ? msg.clientNonce.trim()
+      : null
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   const orgId = socket.orgId!
 
@@ -895,13 +993,38 @@ async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unkn
     return
   }
 
+  const createdAt = new Date().toISOString()
+
   // Deliver to visitor (include attachments)
   await sendToVisitor(orgId, conversationId, {
-    type: 'agent:message', content, attachments, conversationId, createdAt: new Date().toISOString(),
+    type: 'agent:message',
+    content,
+    attachments,
+    conversationId,
+    createdAt,
+  })
+  broadcastToAgents(orgId, {
+    type: 'agent:message',
+    content,
+    attachments,
+    conversationId,
+    createdAt,
+    agentId: socket.agentId ?? null,
+    clientNonce,
   })
 
   send(socket, { type: 'message:sent', conversationId })
-  await persistMessage({ conversationId, orgId, role: 'agent', content, attachments })
+  await persistMessage({
+    conversationId,
+    orgId,
+    role: 'agent',
+    content,
+    attachments,
+    aiMetadata: {
+      ...(socket.agentId ? { agentId: socket.agentId } : {}),
+      ...(clientNonce ? { clientNonce } : {}),
+    },
+  })
 }
 
 // ── Agent: takeover, release, resolve (unchanged) ─────────────────────────────
@@ -1134,7 +1257,12 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
     }
     case 'typing:start':
     case 'typing:stop':
-      broadcastToAgents(socket.orgId!, { type: msg.type, visitorId: socket.visitorId, conversationId: socket.conversationId })
+      broadcastToAgents(socket.orgId!, {
+        type: msg.type,
+        source: 'visitor',
+        visitorId: socket.visitorId,
+        conversationId: socket.conversationId,
+      })
       break
     case 'ping':
       send(socket, { type: 'pong' })

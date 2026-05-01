@@ -2,9 +2,22 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
+import { routePendingConversation } from '../services/inbox-ops.service'
 
 const statusFilterSchema = z.enum(['all', 'bot', 'open', 'pending', 'resolved'])
 const channelFilterSchema = z.enum(['all', 'chat', 'email', 'whatsapp'])
+const queueFilterSchema = z.enum([
+  'all',
+  'bot',
+  'queued',
+  'assigned',
+  'in_progress',
+  'waiting_customer',
+  'resolved',
+])
+
+type BacklogState = 'fresh' | 'watch' | 'stale' | 'critical' | null
+type SlaState = 'on_track' | 'at_risk' | 'breached' | 'met' | null
 
 function cleanSearchValue(value: string): string {
   return value.replace(/[,%()]/g, ' ').trim()
@@ -41,14 +54,115 @@ function normalizeContact(value: unknown): {
   }
 }
 
+function toMs(value: string | null | undefined): number | null {
+  if (!value) return null
+  const ms = new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : null
+}
+
+function normalizeQueueState(status: string, queueState: string | null | undefined): string {
+  if (queueState?.trim()) return queueState
+  if (status === 'resolved' || status === 'closed') return 'resolved'
+  if (status === 'bot') return 'bot'
+  if (status === 'open') return 'in_progress'
+  if (status === 'pending') return 'queued'
+  return 'queued'
+}
+
+function backlogStateFromMinutes(value: number | null): BacklogState {
+  if (value === null || Number.isNaN(value)) return null
+  if (value <= 15) return 'fresh'
+  if (value <= 45) return 'watch'
+  if (value <= 120) return 'stale'
+  return 'critical'
+}
+
+function deriveSlaSnapshot(row: {
+  status: string
+  first_response_due_at: string | null
+  next_response_due_at: string | null
+  resolution_due_at: string | null
+  first_response_at: string | null
+  last_customer_message_at: string | null
+  last_agent_reply_at: string | null
+  resolved_at: string | null
+  nowMs: number
+}): {
+  slaState: SlaState
+  slaTargetAt: string | null
+  slaRemainingSeconds: number | null
+} {
+  const nowMs = row.nowMs
+  const status = row.status
+
+  if (status === 'resolved' || status === 'closed') {
+    const resolutionDueMs = toMs(row.resolution_due_at)
+    const resolvedAtMs = toMs(row.resolved_at)
+    if (!resolutionDueMs || !resolvedAtMs) {
+      return { slaState: null, slaTargetAt: row.resolution_due_at ?? null, slaRemainingSeconds: null }
+    }
+
+    return {
+      slaState: resolvedAtMs <= resolutionDueMs ? 'met' : 'breached',
+      slaTargetAt: row.resolution_due_at ?? null,
+      slaRemainingSeconds: Math.floor((resolutionDueMs - resolvedAtMs) / 1000),
+    }
+  }
+
+  if (!row.first_response_at) {
+    const firstDueMs = toMs(row.first_response_due_at)
+    if (!firstDueMs) {
+      return { slaState: null, slaTargetAt: row.first_response_due_at ?? null, slaRemainingSeconds: null }
+    }
+    const remaining = Math.floor((firstDueMs - nowMs) / 1000)
+    return {
+      slaState: remaining <= 0 ? 'breached' : remaining <= 300 ? 'at_risk' : 'on_track',
+      slaTargetAt: row.first_response_due_at ?? null,
+      slaRemainingSeconds: remaining,
+    }
+  }
+
+  const lastCustomerMs = toMs(row.last_customer_message_at)
+  const lastAgentMs = toMs(row.last_agent_reply_at)
+  const waitingOnAgent =
+    lastCustomerMs !== null && (lastAgentMs === null || lastCustomerMs > lastAgentMs)
+  const targetAt = waitingOnAgent ? row.next_response_due_at : row.resolution_due_at
+  const targetMs = toMs(targetAt)
+
+  if (!targetMs) {
+    return { slaState: null, slaTargetAt: targetAt ?? null, slaRemainingSeconds: null }
+  }
+
+  const remaining = Math.floor((targetMs - nowMs) / 1000)
+  return {
+    slaState: remaining <= 0 ? 'breached' : remaining <= 300 ? 'at_risk' : 'on_track',
+    slaTargetAt: targetAt ?? null,
+    slaRemainingSeconds: remaining,
+  }
+}
+
 type ConversationListItem = {
   id: string
   org_id: string
   contact_id: string | null
   status: string
+  queue_state: string
   channel: string
   assigned_to: string | null
   started_at: string
+  queue_entered_at: string
+  first_response_due_at: string | null
+  next_response_due_at: string | null
+  resolution_due_at: string | null
+  first_response_at: string | null
+  last_customer_message_at: string | null
+  last_agent_reply_at: string | null
+  routing_assigned_at: string | null
+  backlog_minutes: number | null
+  backlog_state: BacklogState
+  sla_target_at: string | null
+  sla_state: SlaState
+  sla_remaining_seconds: number | null
   contacts: {
     id: string
     name: string | null
@@ -59,6 +173,9 @@ type ConversationListItem = {
   latest_message_at: string | null
   latest_email_subject: string | null
   latest_email_at: string | null
+  resolved_at: string | null
+  assigned_agent_name: string | null
+  assigned_agent_email: string | null
 }
 
 export const chatRouter = router({
@@ -70,6 +187,7 @@ export const chatRouter = router({
           search: z.string().max(120).optional(),
           status: statusFilterSchema.default('all'),
           channel: channelFilterSchema.default('all'),
+          queue: queueFilterSchema.default('all'),
           page: z.number().int().min(1).default(1),
           limit: z.number().int().min(1).max(50).default(10),
         })
@@ -83,15 +201,36 @@ export const chatRouter = router({
       const limit = input?.limit ?? 10
       const status = input?.status ?? 'all'
       const channel = input?.channel ?? 'all'
+      const queue = input?.queue ?? 'all'
       const rawSearch = input?.search?.trim() ?? ''
       const search = rawSearch.length > 0 ? cleanSearchValue(rawSearch) : ''
       const offset = (page - 1) * limit
 
       let query = ctx.supabase
         .from('conversations')
-        .select('id, org_id, contact_id, status, channel, assigned_to, started_at, contacts(id, name, email, phone)', {
-          count: 'exact',
-        })
+        .select(
+          [
+            'id',
+            'org_id',
+            'contact_id',
+            'status',
+            'queue_state',
+            'queue_entered_at',
+            'channel',
+            'assigned_to',
+            'started_at',
+            'resolved_at',
+            'first_response_due_at',
+            'next_response_due_at',
+            'resolution_due_at',
+            'first_response_at',
+            'last_customer_message_at',
+            'last_agent_reply_at',
+            'routing_assigned_at',
+            'contacts(id, name, email, phone)',
+          ].join(','),
+          { count: 'exact' }
+        )
         .eq('org_id', orgId)
 
       if (channel !== 'all') {
@@ -102,6 +241,12 @@ export const chatRouter = router({
         query = query.in('status', ['resolved', 'closed'])
       } else if (status !== 'all') {
         query = query.eq('status', status)
+      }
+
+      if (queue === 'resolved') {
+        query = query.in('queue_state', ['resolved'])
+      } else if (queue !== 'all') {
+        query = query.eq('queue_state', queue)
       }
 
       if (search) {
@@ -176,43 +321,71 @@ export const chatRouter = router({
         })
       }
 
-      const rows = (baseRows ?? []) as Array<{
+      const rows = ((baseRows ?? []) as unknown) as Array<{
         id: string
         org_id: string
         contact_id: string | null
         status: string
+        queue_state: string | null
+        queue_entered_at: string | null
         channel: string
         assigned_to: string | null
         started_at: string
+        resolved_at: string | null
+        first_response_due_at: string | null
+        next_response_due_at: string | null
+        resolution_due_at: string | null
+        first_response_at: string | null
+        last_customer_message_at: string | null
+        last_agent_reply_at: string | null
+        routing_assigned_at: string | null
         contacts: unknown
       }>
 
       const conversationIds = rows.map((row) => row.id)
+      const assignedAgentIds = Array.from(
+        new Set(rows.map((row) => row.assigned_to).filter((value): value is string => Boolean(value)))
+      )
       const latestMessageByConversation = new Map<string, { content: string | null; created_at: string }>()
       const latestEmailByConversation = new Map<string, { subject: string | null; created_at: string }>()
+      const assignedAgentById = new Map<string, { name: string | null; email: string | null }>()
 
-      if (conversationIds.length > 0) {
+      if (conversationIds.length > 0 || assignedAgentIds.length > 0) {
         const messageLimit = Math.min(Math.max(conversationIds.length * 25, 80), 1200)
         const emailLimit = Math.min(Math.max(conversationIds.length * 10, 40), 600)
-
-        const [messagesResult, emailsResult] = await Promise.all([
-          ctx.supabase
-            .from('messages')
-            .select('conversation_id, content, created_at')
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds)
-            .order('created_at', { ascending: false })
-            .limit(messageLimit),
-          ctx.supabase
-            .from('email_messages')
-            .select('conversation_id, subject, created_at')
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds)
-            .order('created_at', { ascending: false })
-            .limit(emailLimit),
+        const [
+          messagesResult,
+          emailsResult,
+          assignedMembersResult,
+        ] = await Promise.all([
+          conversationIds.length > 0
+            ? ctx.supabase
+                .from('messages')
+                .select('conversation_id, content, created_at')
+                .eq('org_id', orgId)
+                .in('conversation_id', conversationIds)
+                .order('created_at', { ascending: false })
+                .limit(messageLimit)
+            : Promise.resolve({ data: [], error: null }),
+          conversationIds.length > 0
+            ? ctx.supabase
+                .from('email_messages')
+                .select('conversation_id, subject, created_at')
+                .eq('org_id', orgId)
+                .in('conversation_id', conversationIds)
+                .order('created_at', { ascending: false })
+                .limit(emailLimit)
+            : Promise.resolve({ data: [], error: null }),
+          assignedAgentIds.length > 0
+            ? ctx.supabase
+                .from('user_organizations')
+                .select('user_id, users(name, email)')
+                .eq('org_id', orgId)
+                .in('user_id', assignedAgentIds)
+            : Promise.resolve({ data: [], error: null }),
         ])
 
-        if (messagesResult.error || emailsResult.error) {
+        if (messagesResult.error || emailsResult.error || assignedMembersResult.error) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Failed to load conversation previews.',
@@ -244,28 +417,88 @@ export const chatRouter = router({
             })
           }
         }
+
+        for (const row of (assignedMembersResult.data ?? []) as Array<{
+          user_id: string
+          users:
+            | {
+                name: string | null
+                email: string | null
+              }
+            | Array<{
+                name: string | null
+                email: string | null
+              }>
+            | null
+        }>) {
+          const user = Array.isArray(row.users) ? row.users[0] : row.users
+          assignedAgentById.set(row.user_id, {
+            name: user?.name ?? null,
+            email: user?.email ?? null,
+          })
+        }
       }
 
       const totalCount = count ?? 0
       const hasMore = page * limit < totalCount
+      const nowMs = Date.now()
 
       const items: ConversationListItem[] = rows.map((row) => {
         const latestMessage = latestMessageByConversation.get(row.id)
         const latestEmail = latestEmailByConversation.get(row.id)
+        const normalizedQueueState = normalizeQueueState(row.status, row.queue_state)
+        const queueEnteredMs = toMs(row.queue_entered_at ?? row.started_at)
+        const backlogMinutes =
+          queueEnteredMs === null
+            ? null
+            : Math.max(0, Math.floor((nowMs - queueEnteredMs) / 60000))
+        const backlogState = backlogStateFromMinutes(backlogMinutes)
+        const sla = deriveSlaSnapshot({
+          status: row.status,
+          first_response_due_at: row.first_response_due_at,
+          next_response_due_at: row.next_response_due_at,
+          resolution_due_at: row.resolution_due_at,
+          first_response_at: row.first_response_at,
+          last_customer_message_at: row.last_customer_message_at,
+          last_agent_reply_at: row.last_agent_reply_at,
+          resolved_at: row.resolved_at,
+          nowMs,
+        })
+
+        const assignedAgent = row.assigned_to
+          ? assignedAgentById.get(row.assigned_to) ?? null
+          : null
 
         return {
           id: row.id,
           org_id: row.org_id,
           contact_id: row.contact_id,
           status: row.status,
+          queue_state: normalizedQueueState,
           channel: row.channel,
           assigned_to: row.assigned_to,
           started_at: row.started_at,
+          queue_entered_at: row.queue_entered_at ?? row.started_at,
+          resolved_at: row.resolved_at,
+          first_response_due_at: row.first_response_due_at,
+          next_response_due_at: row.next_response_due_at,
+          resolution_due_at: row.resolution_due_at,
+          first_response_at: row.first_response_at,
+          last_customer_message_at: row.last_customer_message_at,
+          last_agent_reply_at: row.last_agent_reply_at,
+          routing_assigned_at: row.routing_assigned_at,
+          backlog_minutes: backlogMinutes,
+          backlog_state: backlogState,
+          sla_target_at: sla.slaTargetAt,
+          sla_state: sla.slaState,
+          sla_remaining_seconds: sla.slaRemainingSeconds,
           contacts: normalizeContact(row.contacts),
           latest_message_content: latestMessage?.content ?? null,
           latest_message_at: latestMessage?.created_at ?? null,
           latest_email_subject: latestEmail?.subject ?? null,
           latest_email_at: latestEmail?.created_at ?? null,
+          assigned_agent_name: assignedAgent?.name ?? null,
+          assigned_agent_email: assignedAgent?.email ?? null,
         }
       })
 
@@ -328,18 +561,59 @@ export const chatRouter = router({
         }
       }
 
-      const { data } = await ctx.supabase
+      const { data: updatedRow, error: updateError } = await ctx.supabase
         .from('conversations')
         .update({ status: input.status, assigned_to: input.assignedTo ?? null })
         .eq('id', input.conversationId)
         .eq('org_id', orgId)
-        .select()
-        .single()
+        .select('id')
+        .maybeSingle()
 
-      if (!data) {
+      if (updateError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to update conversation: ${updateError.message}`,
+        })
+      }
+
+      if (!updatedRow?.id) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
       }
 
-      return data
+      if (input.status === 'pending' && !input.assignedTo) {
+        try {
+          await routePendingConversation({
+            supabase: ctx.supabase,
+            orgId,
+            conversationId: input.conversationId,
+            reason: 'manual_pending',
+          })
+        } catch (routingError) {
+          console.error(
+            '[chat.updateStatus] routing failed:',
+            routingError instanceof Error ? routingError.message : routingError
+          )
+        }
+      }
+
+      const { data: finalData, error: finalError } = await ctx.supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', input.conversationId)
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (finalError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to fetch updated conversation: ${finalError.message}`,
+        })
+      }
+
+      if (!finalData) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
+      }
+
+      return finalData
     }),
 })

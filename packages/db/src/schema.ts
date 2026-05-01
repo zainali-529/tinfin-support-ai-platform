@@ -8,6 +8,7 @@ import {
   jsonb,
   integer,
   customType,
+  index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
@@ -107,11 +108,64 @@ export const conversations = pgTable('conversations', {
   orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   contactId: uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
   status: text('status').default('bot').notNull(),
+  queueState: text('queue_state').default('bot').notNull(),
+  queueEnteredAt: timestamp('queue_entered_at', { withTimezone: true }).defaultNow().notNull(),
   assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+  firstResponseDueAt: timestamp('first_response_due_at', { withTimezone: true }),
+  nextResponseDueAt: timestamp('next_response_due_at', { withTimezone: true }),
+  resolutionDueAt: timestamp('resolution_due_at', { withTimezone: true }),
+  firstResponseAt: timestamp('first_response_at', { withTimezone: true }),
+  lastCustomerMessageAt: timestamp('last_customer_message_at', { withTimezone: true }),
+  lastAgentReplyAt: timestamp('last_agent_reply_at', { withTimezone: true }),
+  routingAssignedAt: timestamp('routing_assigned_at', { withTimezone: true }),
   aiContext: jsonb('ai_context').default({}).notNull(),
   channel: text('channel').default('chat').notNull(),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+})
+
+export const inboxSlaPolicies = pgTable(
+  'inbox_sla_policies',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    channel: text('channel').default('all').notNull(),
+    firstResponseTargetSeconds: integer('first_response_target_seconds').default(600).notNull(),
+    nextResponseTargetSeconds: integer('next_response_target_seconds').default(900).notNull(),
+    resolutionTargetSeconds: integer('resolution_target_seconds').default(14400).notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgChannelUnique: uniqueIndex('inbox_sla_policies_org_channel_unique').on(table.orgId, table.channel),
+    orgIndex: index('idx_inbox_sla_policies_org_id').on(table.orgId),
+  })
+)
+
+export const inboxRoutingState = pgTable(
+  'inbox_routing_state',
+  {
+    orgId: uuid('org_id').primaryKey().references(() => organizations.id, { onDelete: 'cascade' }),
+    lastAssignedUserId: uuid('last_assigned_user_id').references(() => users.id, { onDelete: 'set null' }),
+    lastAssignedAt: timestamp('last_assigned_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    lastAssignedUserIndex: index('idx_inbox_routing_state_last_assigned_user_id').on(table.lastAssignedUserId),
+  })
+)
+
+export const inboxRoutingEvents = pgTable('inbox_routing_events', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  conversationId: uuid('conversation_id')
+    .references(() => conversations.id, { onDelete: 'cascade' })
+    .notNull(),
+  assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+  reason: text('reason').default('auto').notNull(),
+  metadata: jsonb('metadata').default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const messages = pgTable('messages', {

@@ -24,6 +24,7 @@ import {
 import { queryRAG } from '@workspace/ai'
 import { planAllows } from '../lib/plans'
 import { getOrgPlanId } from '../lib/subscriptions'
+import { routePendingConversation } from '../services/inbox-ops.service'
 
 export const emailInboundRoute: Router = Router()
 
@@ -162,8 +163,23 @@ async function resolveConversation(
   if (error || !newConv) {
     throw new Error(`Failed to create email conversation: ${error?.message ?? 'unknown'}`)
   }
+  const createdConversationId = (newConv as NewRow).id
 
-  return { conversationId: (newConv as NewRow).id, isNew: true }
+  try {
+    await routePendingConversation({
+      supabase,
+      orgId,
+      conversationId: createdConversationId,
+      reason: 'email_inbound',
+    })
+  } catch (routingError) {
+    console.error(
+      '[email-inbound] Routing assignment failed:',
+      routingError instanceof Error ? routingError.message : routingError
+    )
+  }
+
+  return { conversationId: createdConversationId, isNew: true }
 }
 
 // ─── Contact Upsert ───────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import {
 } from '@workspace/ui/components/dialog'
 import { SearchIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
+import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { useActiveOrg } from '@/components/org/OrgContext'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
@@ -25,6 +26,7 @@ import { PendingApprovals } from '@/components/actions/PendingApprovals'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
+type QueueFilter = 'all' | 'bot' | 'queued' | 'assigned' | 'in_progress' | 'waiting_customer' | 'resolved'
 
 const CHANNEL_OPTIONS: Array<{ value: ChannelFilter; label: string }> = [
   { value: 'all', label: 'All channels' },
@@ -38,6 +40,16 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'bot', label: 'Bot' },
   { value: 'open', label: 'Open' },
   { value: 'pending', label: 'Pending' },
+  { value: 'resolved', label: 'Resolved' },
+]
+
+const QUEUE_OPTIONS: Array<{ value: QueueFilter; label: string }> = [
+  { value: 'all', label: 'All queue states' },
+  { value: 'queued', label: 'Queued' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'waiting_customer', label: 'Waiting Customer' },
+  { value: 'bot', label: 'Bot Queue' },
   { value: 'resolved', label: 'Resolved' },
 ]
 
@@ -68,6 +80,7 @@ export function UnifiedInbox() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all')
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [approvalsOpen, setApprovalsOpen] = useState(false)
   const [approvingLogId, setApprovingLogId] = useState<string | null>(null)
@@ -100,9 +113,49 @@ export function UnifiedInbox() {
   } = useConversations(orgId, {
     channelFilter,
     statusFilter,
+    queueFilter,
     search: debouncedSearch,
     limit: 10,
   })
+  const wsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleRealtimeRefresh = useCallback(() => {
+    if (wsRefreshTimerRef.current) return
+    wsRefreshTimerRef.current = setTimeout(() => {
+      wsRefreshTimerRef.current = null
+      void refetch()
+    }, 80)
+  }, [refetch])
+
+  useEffect(() => {
+    return () => {
+      if (wsRefreshTimerRef.current) {
+        clearTimeout(wsRefreshTimerRef.current)
+        wsRefreshTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const handleAgentSocketMessage = useCallback((payload: Record<string, unknown>) => {
+    const type = typeof payload.type === 'string' ? payload.type : ''
+    if (!type) return
+
+    if (
+      type === 'visitor:message' ||
+      type === 'agent:message' ||
+      type === 'ai:response' ||
+      type === 'handoff:requested' ||
+      type === 'conversation:status_changed' ||
+      type === 'conversation:resolved' ||
+      type === 'approval:requested' ||
+      type === 'approval:resolved' ||
+      type === 'contact:updated'
+    ) {
+      scheduleRealtimeRefresh()
+    }
+  }, [scheduleRealtimeRefresh])
+
+  useAgentWebSocket(orgId, agentId ?? '', handleAgentSocketMessage)
 
   const pendingApprovalsQuery = trpc.actions.getPendingApprovals.useQuery(undefined, {
     staleTime: 10_000,
@@ -179,6 +232,11 @@ export function UnifiedInbox() {
 
   const handleStatusChangeFilter = useCallback((nextStatus: StatusFilter) => {
     setStatusFilter(nextStatus)
+    setSelectedId(null)
+  }, [])
+
+  const handleQueueChange = useCallback((nextQueue: QueueFilter) => {
+    setQueueFilter(nextQueue)
     setSelectedId(null)
   }, [])
 
@@ -291,6 +349,18 @@ export function UnifiedInbox() {
             className="h-8 w-full rounded-md border bg-background px-2 text-xs"
           >
             {CHANNEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={queueFilter}
+            onChange={(event) => handleQueueChange(event.target.value as QueueFilter)}
+            className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+          >
+            {QUEUE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

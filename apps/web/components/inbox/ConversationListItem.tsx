@@ -1,6 +1,7 @@
 'use client'
 
 import { formatDistanceToNow } from 'date-fns'
+import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@workspace/ui/lib/utils'
 import type { Conversation } from '@/types/database'
 
@@ -78,6 +79,80 @@ function statusClass(status: Conversation['status']): string {
   return 'bg-muted text-muted-foreground'
 }
 
+function queueStateClass(queueState: string): string {
+  if (queueState === 'queued') return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+  if (queueState === 'assigned') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  if (queueState === 'in_progress') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (queueState === 'waiting_customer') return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+  if (queueState === 'resolved') return 'bg-muted text-muted-foreground'
+  return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+}
+
+function backlogClass(backlogState: string | null): string {
+  if (backlogState === 'critical') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (backlogState === 'stale') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  if (backlogState === 'watch') return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+  if (backlogState === 'fresh') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  return 'bg-muted text-muted-foreground'
+}
+
+function slaClass(slaState: string | null): string {
+  if (slaState === 'breached') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (slaState === 'at_risk') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  if (slaState === 'met') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (slaState === 'on_track') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  return 'bg-muted text-muted-foreground'
+}
+
+function normalizeQueueState(conversation: Conversation): string {
+  const queueState = conversation.queue_state
+  if (queueState) return queueState
+  if (conversation.status === 'resolved' || conversation.status === 'closed') return 'resolved'
+  if (conversation.status === 'pending') return conversation.assigned_to ? 'assigned' : 'queued'
+  if (conversation.status === 'open') return 'in_progress'
+  return 'bot'
+}
+
+function fallbackBacklogState(backlogMinutes: number | null): string | null {
+  if (backlogMinutes === null) return null
+  if (backlogMinutes <= 15) return 'fresh'
+  if (backlogMinutes <= 45) return 'watch'
+  if (backlogMinutes <= 120) return 'stale'
+  return 'critical'
+}
+
+function formatDurationCompact(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m`
+  return `${safe}s`
+}
+
+function toMs(value: string | null | undefined): number | null {
+  if (!value) return null
+  const ms = new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : null
+}
+
+function toLabel(value: string): string {
+  return value.replace(/_/g, ' ')
+}
+
+function getAssignedAgentLabel(conversation: Conversation): string | null {
+  if (!conversation.assigned_to) return null
+
+  const name = conversation.assigned_agent_name?.trim()
+  if (name) return name
+
+  const email = conversation.assigned_agent_email?.trim()
+  if (email) return email
+
+  return 'Assigned'
+}
+
 interface ConversationListItemProps {
   conversation: Conversation
   isSelected: boolean
@@ -89,9 +164,69 @@ export function ConversationListItem({
   isSelected,
   onSelect,
 }: ConversationListItemProps) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
   const channelLabel = CHANNEL_LABELS[conversation.channel] ?? 'Chat'
   const contactLabel = getContactLabel(conversation)
   const previewText = getPreviewText(conversation)
+  const queueState = normalizeQueueState(conversation)
+  const assignedLabel = getAssignedAgentLabel(conversation)
+
+  const backlog = useMemo(() => {
+    const queueEnteredMs = toMs(conversation.queue_entered_at ?? conversation.started_at)
+    const backlogMinutes =
+      conversation.backlog_minutes ??
+      (queueEnteredMs === null ? null : Math.max(0, Math.floor((nowMs - queueEnteredMs) / 60000)))
+    const backlogState = conversation.backlog_state ?? fallbackBacklogState(backlogMinutes)
+
+    if (backlogMinutes === null) return null
+    return {
+      minutes: backlogMinutes,
+      state: backlogState,
+      label: `${backlogMinutes}m backlog`,
+    }
+  }, [conversation.backlog_minutes, conversation.backlog_state, conversation.queue_entered_at, conversation.started_at, nowMs])
+
+  const sla = useMemo(() => {
+    const slaTarget = conversation.sla_target_at
+      ?? conversation.first_response_due_at
+      ?? conversation.next_response_due_at
+      ?? conversation.resolution_due_at
+
+    const targetMs = toMs(slaTarget)
+    if (!targetMs) return null
+
+    if (conversation.sla_state === 'met') {
+      return {
+        state: 'met',
+        label: 'SLA met',
+      }
+    }
+
+    const remainingSeconds = Math.floor((targetMs - nowMs) / 1000)
+    if (remainingSeconds <= 0) {
+      return {
+        state: 'breached',
+        label: `SLA breached ${formatDurationCompact(Math.abs(remainingSeconds))}`,
+      }
+    }
+
+    return {
+      state: conversation.sla_state ?? (remainingSeconds <= 300 ? 'at_risk' : 'on_track'),
+      label: `SLA ${formatDurationCompact(remainingSeconds)} left`,
+    }
+  }, [
+    conversation.first_response_due_at,
+    conversation.next_response_due_at,
+    conversation.resolution_due_at,
+    conversation.sla_state,
+    conversation.sla_target_at,
+    nowMs,
+  ])
 
   return (
     <button
@@ -121,7 +256,7 @@ export function ConversationListItem({
 
       <p className="line-clamp-2 text-xs text-muted-foreground">{previewText}</p>
 
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <span
           className={cn(
             'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
@@ -130,6 +265,39 @@ export function ConversationListItem({
         >
           {conversation.status}
         </span>
+        <span
+          className={cn(
+            'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+            queueStateClass(queueState)
+          )}
+        >
+          {toLabel(queueState)}
+        </span>
+        {backlog && (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+              backlogClass(backlog.state)
+            )}
+          >
+            {backlog.label}
+          </span>
+        )}
+        {sla && (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+              slaClass(sla.state)
+            )}
+          >
+            {sla.label}
+          </span>
+        )}
+        {assignedLabel && (
+          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+            Owner: {assignedLabel}
+          </span>
+        )}
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{channelLabel}</span>
       </div>
     </button>

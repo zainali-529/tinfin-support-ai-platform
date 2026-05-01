@@ -8,7 +8,6 @@ import { Button } from '@workspace/ui/components/button'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { cn } from '@workspace/ui/lib/utils'
-import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
 import { useWhatsAppMessages, useWhatsAppReply } from '@/hooks/useWhatsApp'
 import type { Conversation } from '@/types/database'
@@ -72,6 +71,13 @@ function getContactLabel(conversation: Conversation) {
     conversation.contacts?.email ??
     'Anonymous'
   )
+}
+
+function getAssignedLabel(conversation: Conversation): string {
+  if (!conversation.assigned_to) return 'Unassigned'
+  if (conversation.assigned_agent_name?.trim()) return conversation.assigned_agent_name.trim()
+  if (conversation.assigned_agent_email?.trim()) return conversation.assigned_agent_email.trim()
+  return 'Assigned'
 }
 
 function safeMetadata(value: unknown): Record<string, unknown> {
@@ -301,6 +307,7 @@ export function WhatsAppConversationView({
       void chatQuery.refetch()
     },
   })
+  const updateConversationStatus = trpc.chat.updateStatus.useMutation()
   const { sendReply } = useWhatsAppReply()
   const [content, setContent] = useState('')
   const [resolvingActionKey, setResolvingActionKey] = useState<string | null>(null)
@@ -402,22 +409,21 @@ export function WhatsAppConversationView({
   }, [chatMessages, waMessages])
 
   const handleTakeOver = useCallback(async () => {
-    const supabase = createClient()
-    await supabase
-      .from('conversations')
-      .update({ status: 'open', assigned_to: agentId })
-      .eq('id', conversation.id)
+    await updateConversationStatus.mutateAsync({
+      conversationId: conversation.id,
+      status: 'open',
+      assignedTo: agentId,
+    })
     onStatusChange?.(conversation.id, 'open')
-  }, [agentId, conversation.id, onStatusChange])
+  }, [agentId, conversation.id, onStatusChange, updateConversationStatus])
 
   const handleResolve = useCallback(async () => {
-    const supabase = createClient()
-    await supabase
-      .from('conversations')
-      .update({ status: 'resolved' })
-      .eq('id', conversation.id)
+    await updateConversationStatus.mutateAsync({
+      conversationId: conversation.id,
+      status: 'resolved',
+    })
     onStatusChange?.(conversation.id, 'resolved')
-  }, [conversation.id, onStatusChange])
+  }, [conversation.id, onStatusChange, updateConversationStatus])
 
   const handleSend = useCallback(async () => {
     const text = content.trim()
@@ -494,6 +500,10 @@ export function WhatsAppConversationView({
                 {conversation.contacts.phone}
               </span>
             )}
+            <span className="inline-flex items-center gap-1 truncate max-w-[210px]">
+              <UserCheckIcon className="size-3 shrink-0" />
+              <span className="truncate">Assigned: {getAssignedLabel(conversation)}</span>
+            </span>
             <span className="uppercase tracking-wide">{status}</span>
           </div>
         </div>

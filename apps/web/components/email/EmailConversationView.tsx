@@ -35,7 +35,6 @@ import {
   TooltipTrigger,
 } from '@workspace/ui/components/tooltip'
 import { cn } from '@workspace/ui/lib/utils'
-import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
 import {
   MailIcon,
@@ -99,36 +98,59 @@ export function EmailConversationView({ conversation, orgId, agentId, onStatusCh
         return (a.name ?? a.email).localeCompare(b.name ?? b.email)
       })
   }, [teamMembersQuery.data])
+  const teamMembersById = useMemo(() => {
+    const map = new Map<string, TeamMember>()
+    for (const member of assignableMembers) {
+      map.set(member.id, member)
+    }
+    return map
+  }, [assignableMembers])
+  const assignedAgentLabel = useMemo(() => {
+    if (!conversation.assigned_to) return 'Unassigned'
+
+    const assignedMember = teamMembersById.get(conversation.assigned_to)
+    if (assignedMember) {
+      const base = assignedMember.name ?? assignedMember.email
+      return assignedMember.isCurrentUser ? `${base} (You)` : base
+    }
+
+    if (conversation.assigned_agent_name?.trim()) return conversation.assigned_agent_name.trim()
+    if (conversation.assigned_agent_email?.trim()) return conversation.assigned_agent_email.trim()
+    return 'Assigned'
+  }, [
+    conversation.assigned_agent_email,
+    conversation.assigned_agent_name,
+    conversation.assigned_to,
+    teamMembersById,
+  ])
   const selectedAssigneeValue = conversation.assigned_to ?? 'unassigned'
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   const handleTakeover = useCallback(async () => {
-    const supabase = createClient()
-    await supabase
-      .from('conversations')
-      .update({ status: 'open', assigned_to: agentId })
-      .eq('id', conversation.id)
+    await updateConversationStatus.mutateAsync({
+      conversationId: conversation.id,
+      status: 'open',
+      assignedTo: agentId,
+    })
     onStatusChange?.(conversation.id, 'open')
-  }, [agentId, conversation.id, onStatusChange])
+  }, [agentId, conversation.id, onStatusChange, updateConversationStatus])
 
   const handleRelease = useCallback(async () => {
-    const supabase = createClient()
-    await supabase
-      .from('conversations')
-      .update({ status: 'pending', assigned_to: null })
-      .eq('id', conversation.id)
+    await updateConversationStatus.mutateAsync({
+      conversationId: conversation.id,
+      status: 'pending',
+    })
     onStatusChange?.(conversation.id, 'pending')
-  }, [conversation.id, onStatusChange])
+  }, [conversation.id, onStatusChange, updateConversationStatus])
 
   const handleResolve = useCallback(async () => {
-    const supabase = createClient()
-    await supabase
-      .from('conversations')
-      .update({ status: 'resolved' })
-      .eq('id', conversation.id)
+    await updateConversationStatus.mutateAsync({
+      conversationId: conversation.id,
+      status: 'resolved',
+    })
     onStatusChange?.(conversation.id, 'resolved')
-  }, [conversation.id, onStatusChange])
+  }, [conversation.id, onStatusChange, updateConversationStatus])
 
   const handleAssignAgent = useCallback(async (value: string) => {
     const nextAssignedTo = value === 'unassigned' ? null : value
@@ -191,6 +213,10 @@ export function EmailConversationView({ conversation, orgId, agentId, onStatusCh
                 {contact.phone}
               </span>
             )}
+            <span className="inline-flex items-center gap-1 truncate max-w-[220px]">
+              <UserCheckIcon className="size-3 shrink-0" />
+              <span className="truncate">Assigned: {assignedAgentLabel}</span>
+            </span>
             <span className="text-muted-foreground/60">
               {format(new Date(conversation.started_at), 'MMM d, h:mm a')}
             </span>

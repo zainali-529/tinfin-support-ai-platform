@@ -7,10 +7,12 @@ import type { Conversation } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
+type QueueFilter = 'all' | 'bot' | 'queued' | 'assigned' | 'in_progress' | 'waiting_customer' | 'resolved'
 
 interface UseConversationsOptions {
   channelFilter?: ChannelFilter | null
   statusFilter?: StatusFilter
+  queueFilter?: QueueFilter
   search?: string
   limit?: number
 }
@@ -19,6 +21,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
   const limit = options?.limit ?? 10
   const channelFilter = options?.channelFilter ?? 'all'
   const statusFilter = options?.statusFilter ?? 'all'
+  const queueFilter = options?.queueFilter ?? 'all'
   const search = options?.search?.trim() ?? ''
 
   const [page, setPage] = useState(1)
@@ -31,6 +34,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
       limit,
       channel: channelFilter,
       status: statusFilter,
+      queue: queueFilter,
       search: search || undefined,
     },
     {
@@ -43,7 +47,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
     setPage(1)
     setConversations([])
     setTotalCount(0)
-  }, [orgId, channelFilter, statusFilter, search, limit])
+  }, [orgId, channelFilter, statusFilter, queueFilter, search, limit])
 
   useEffect(() => {
     const payload = query.data
@@ -96,7 +100,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
       refreshTimerRef.current = setTimeout(() => {
         refreshTimerRef.current = null
         void refreshFirstPage()
-      }, 600)
+      }, 120)
     }
 
     const channel = supabase

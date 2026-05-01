@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { queryRAG } from "@workspace/ai"
 import { planAllows } from "../lib/plans"
 import { getOrgPlanId } from "../lib/subscriptions"
+import { routePendingConversation } from "../services/inbox-ops.service"
 import {
   parseWhatsAppWebhook,
   sendWhatsAppMessage,
@@ -194,7 +195,23 @@ async function resolveConversation(
     )
   }
 
-  return { conversationId: (created as NewRow).id, isNew: true }
+  const createdConversationId = (created as NewRow).id
+
+  try {
+    await routePendingConversation({
+      supabase,
+      orgId,
+      conversationId: createdConversationId,
+      reason: "whatsapp_inbound",
+    })
+  } catch (routingError) {
+    console.error(
+      "[whatsapp-webhook] Routing assignment failed:",
+      routingError instanceof Error ? routingError.message : routingError
+    )
+  }
+
+  return { conversationId: createdConversationId, isNew: true }
 }
 
 async function isDuplicateMessage(

@@ -35,6 +35,7 @@ import {
   useCannedResponseSuggestions,
   useCannedResponseUsage,
 } from '@/hooks/useCannedResponses'
+import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { CannedResponsePicker } from '@/components/canned/CannedResponsePicker'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
@@ -114,6 +115,16 @@ function readActionLogMetadata(value: unknown): ActionLogMetadata | null {
   }
 }
 
+function safeMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function readAgentIdFromMetadata(value: unknown): string | null {
+  const agentId = safeMetadata(value).agentId
+  return typeof agentId === 'string' && agentId.trim().length > 0 ? agentId : null
+}
+
 function actionStatusLabel(status: string | null): string {
   if (!status) return 'Unknown'
   if (status === 'pending_approval') return 'Awaiting Approval'
@@ -137,6 +148,17 @@ function actionStatusStyle(status: string | null): string {
     return 'bg-muted text-muted-foreground border-border'
   }
   return 'bg-muted text-muted-foreground border-border'
+}
+
+function makeRealtimeMessageId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function toIsoString(value: unknown): string {
+  if (typeof value !== 'string') return new Date().toISOString()
+  const ms = new Date(value).getTime()
+  if (!Number.isFinite(ms)) return new Date().toISOString()
+  return new Date(ms).toISOString()
 }
 
 // ── Attachment Display ────────────────────────────────────────────────────────
@@ -240,47 +262,6 @@ function PendingFileItem({ pf, onRemove }: { pf: PendingFile; onRemove: () => vo
 
 // ── Agent WS ──────────────────────────────────────────────────────────────────
 
-function useAgentWS(orgId: string, agentId: string) {
-  const wsRef = useRef<WebSocket | null>(null)
-  const [connected, setConnected] = useState(false)
-
-  useEffect(() => {
-    if (!orgId || !agentId) return
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3003'
-    const supabase = createClient()
-    let ws: WebSocket | null = null
-    let cancelled = false
-
-    const connect = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
-      if (cancelled || !token) { setConnected(false); return }
-
-      const params = new URLSearchParams({ orgId, type: 'agent', agentId, token })
-      ws = new WebSocket(`${wsUrl}?${params.toString()}`)
-      wsRef.current = ws
-      ws.onopen = () => setConnected(true)
-      ws.onclose = () => setConnected(false)
-      ws.onerror = () => setConnected(false)
-    }
-
-    void connect()
-    return () => {
-      cancelled = true
-      setConnected(false)
-      ws?.close()
-    }
-  }, [orgId, agentId])
-
-  const send = useCallback((data: unknown) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return false
-    wsRef.current.send(JSON.stringify(data))
-    return true
-  }, [])
-
-  return { send, connected }
-}
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -301,8 +282,104 @@ interface TeamMember {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function ConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
-  const { messages, loading, sending, sendMessage, refetch } = useMessages(conversation.id, orgId)
-  const { send: wsSend } = useAgentWS(orgId, agentId)
+  const { messages, loading, sending, sendMessage, refetch, appendMessage } = useMessages(conversation.id, orgId)
+  const [aiTypingConversationId, setAiTypingConversationId] = useState<string | null>(null)
+  const handleAgentSocketMessage = useCallback((payload: Record<string, unknown>) => {
+    const type = typeof payload.type === 'string' ? payload.type : ''
+    const payloadConversationId =
+      typeof payload.conversationId === 'string' ? payload.conversationId : null
+    if (payloadConversationId && payloadConversationId !== conversation.id) return
+    if (
+      (type === 'visitor:message' || type === 'agent:message' || type === 'ai:response') &&
+      !payloadConversationId
+    ) {
+      return
+    }
+
+    const source = typeof payload.source === 'string' ? payload.source : ''
+
+    if (type === 'typing:start' && source === 'ai') {
+      if (payloadConversationId) {
+        setAiTypingConversationId(payloadConversationId)
+      }
+      return
+    }
+
+    if (type === 'typing:stop' && source === 'ai') {
+      if (!payloadConversationId || payloadConversationId === conversation.id) {
+        setAiTypingConversationId(null)
+      }
+      return
+    }
+
+    if (type === 'visitor:message') {
+      appendMessage({
+        id: makeRealtimeMessageId('ws_user'),
+        conversation_id: conversation.id,
+        org_id: orgId,
+        role: 'user',
+        content: typeof payload.content === 'string' ? payload.content : '',
+        attachments: Array.isArray(payload.attachments) ? (payload.attachments as Attachment[]) : [],
+        ai_metadata: null,
+        created_at: toIsoString(payload.createdAt),
+      })
+      return
+    }
+
+    if (type === 'agent:message') {
+      const senderId = typeof payload.agentId === 'string' ? payload.agentId : null
+      const clientNonce = typeof payload.clientNonce === 'string' ? payload.clientNonce : null
+      const aiMetadata =
+        senderId || clientNonce
+          ? {
+              ...(senderId ? { agentId: senderId } : {}),
+              ...(clientNonce ? { clientNonce } : {}),
+            }
+          : null
+      appendMessage({
+        id: makeRealtimeMessageId('ws_agent'),
+        conversation_id: conversation.id,
+        org_id: orgId,
+        role: 'agent',
+        content: typeof payload.content === 'string' ? payload.content : '',
+        attachments: Array.isArray(payload.attachments) ? (payload.attachments as Attachment[]) : [],
+        ai_metadata: aiMetadata,
+        created_at: toIsoString(payload.createdAt),
+      })
+      return
+    }
+
+    if (type === 'ai:response') {
+      setAiTypingConversationId(null)
+      const actionLog =
+        payload.actionLog && typeof payload.actionLog === 'object' && !Array.isArray(payload.actionLog)
+          ? (payload.actionLog as Record<string, unknown>)
+          : null
+      const aiMetadata =
+        actionLog || typeof payload.confidence === 'number'
+          ? {
+              ...(typeof payload.confidence === 'number' ? { confidence: payload.confidence } : {}),
+              ...(actionLog ? { actionLog } : {}),
+            }
+          : null
+      appendMessage({
+        id: makeRealtimeMessageId('ws_ai'),
+        conversation_id: conversation.id,
+        org_id: orgId,
+        role: 'assistant',
+        content: typeof payload.content === 'string' ? payload.content : '',
+        attachments: [],
+        ai_metadata: aiMetadata,
+        created_at: toIsoString(payload.createdAt),
+      })
+      return
+    }
+
+    if (type === 'conversation:resolved') {
+      setAiTypingConversationId(null)
+    }
+  }, [appendMessage, conversation.id, orgId])
+  const { send: wsSend } = useAgentWebSocket(orgId, agentId, handleAgentSocketMessage)
   const approveAction = trpc.actions.approveAction.useMutation({
     onSuccess: () => {
       void refetch()
@@ -336,6 +413,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   const isBotMode = status === 'bot'
   const isResolved = status === 'resolved' || status === 'closed'
   const canReply = isAgentMode && !isResolved
+  const aiTyping = aiTypingConversationId === conversation.id
   const { data: cannedResponses = [], isLoading: cannedLoading } = useCannedResponsesList({
     query: cannedQuery || undefined,
     limit: 50,
@@ -374,6 +452,68 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       })
   }, [teamMembersQuery.data])
   const selectedAssigneeValue = conversation.assigned_to ?? 'unassigned'
+  const teamMembersById = useMemo(() => {
+    const map = new Map<string, TeamMember>()
+    for (const member of assignableMembers) {
+      map.set(member.id, member)
+    }
+    return map
+  }, [assignableMembers])
+
+  const assignedAgentLabel = useMemo(() => {
+    if (!conversation.assigned_to) return 'Unassigned'
+
+    const assignedMember = teamMembersById.get(conversation.assigned_to)
+    if (assignedMember) {
+      const base = assignedMember.name ?? assignedMember.email
+      return assignedMember.isCurrentUser ? `${base} (You)` : base
+    }
+
+    if (conversation.assigned_agent_name?.trim()) {
+      return conversation.assigned_agent_name.trim()
+    }
+
+    if (conversation.assigned_agent_email?.trim()) {
+      return conversation.assigned_agent_email.trim()
+    }
+
+    return 'Assigned'
+  }, [
+    conversation.assigned_agent_email,
+    conversation.assigned_agent_name,
+    conversation.assigned_to,
+    teamMembersById,
+  ])
+
+  const getAgentMessageLabel = useCallback((metadata: unknown): string => {
+    const senderId = readAgentIdFromMetadata(metadata)
+    if (senderId) {
+      const sender = teamMembersById.get(senderId)
+      if (sender) {
+        if (sender.isCurrentUser) return 'You'
+        return sender.name ?? sender.email
+      }
+      if (senderId === agentId) return 'You'
+    }
+
+    if (conversation.assigned_to) {
+      const assigned = teamMembersById.get(conversation.assigned_to)
+      if (assigned) {
+        if (assigned.isCurrentUser) return 'You'
+        return assigned.name ?? assigned.email
+      }
+    }
+
+    if (conversation.assigned_agent_name?.trim()) return conversation.assigned_agent_name.trim()
+    if (conversation.assigned_agent_email?.trim()) return conversation.assigned_agent_email.trim()
+    return 'Agent'
+  }, [
+    agentId,
+    conversation.assigned_agent_email,
+    conversation.assigned_agent_name,
+    conversation.assigned_to,
+    teamMembersById,
+  ])
 
   // ── Revoke object URLs on unmount ──────────────────────────────────────────
   useEffect(() => {
@@ -472,6 +612,19 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
 
     if ((!text && uploadedAttachments.length === 0) || sending || !canReply) return
     if (pendingFiles.some(pf => pf.uploading)) return
+    const clientNonce = makeRealtimeMessageId('client_msg')
+    const optimisticMetadata = { agentId, clientNonce }
+
+    appendMessage({
+      id: makeRealtimeMessageId('optimistic_agent'),
+      conversation_id: conversation.id,
+      org_id: orgId,
+      role: 'agent',
+      content: text,
+      attachments: uploadedAttachments,
+      ai_metadata: optimisticMetadata,
+      created_at: new Date().toISOString(),
+    })
 
     setReply('')
     setPendingFiles([])
@@ -482,12 +635,24 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       conversationId: conversation.id,
       content: text,
       attachments: uploadedAttachments,
+      clientNonce,
     })
 
     if (!sentOverWs) {
-      await sendMessage(text, agentId)
+      await sendMessage(text, agentId, uploadedAttachments, optimisticMetadata)
     }
-  }, [reply, sending, canReply, wsSend, conversation.id, sendMessage, agentId, pendingFiles])
+  }, [
+    reply,
+    sending,
+    canReply,
+    appendMessage,
+    conversation.id,
+    orgId,
+    wsSend,
+    sendMessage,
+    agentId,
+    pendingFiles,
+  ])
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && cannedOpen) {
@@ -628,6 +793,10 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                 {contact.phone}
               </span>
             )}
+            <span className="inline-flex items-center gap-1 truncate max-w-[220px]">
+              <UserCheckIcon className="size-3 shrink-0" />
+              <span className="truncate">Assigned: {assignedAgentLabel}</span>
+            </span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -770,8 +939,11 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
               const showTimeDivider = !prevMsg ||
                 new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 300_000
 
-              const isSystem = msg.ai_metadata && (msg.ai_metadata as Record<string, unknown>).system === true
+              const messageMetadata = safeMetadata(msg.ai_metadata)
+              const isSystem = messageMetadata.system === true
               const actionLog = readActionLogMetadata(msg.ai_metadata)
+              const senderLabel =
+                msg.role === 'assistant' ? 'AI Assistant' : getAgentMessageLabel(msg.ai_metadata)
               if (isSystem) {
                 return (
                   <div key={msg.id} className="flex items-center justify-center py-2">
@@ -803,8 +975,8 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                     )}
                     <div className={cn('flex max-w-[75%] flex-col gap-0.5', isOutbound ? 'items-end' : 'items-start')}>
                       {!isUser && (
-                        <span className="px-0.5 text-[10px] font-medium text-muted-foreground/60 capitalize">
-                          {msg.role === 'assistant' ? 'AI Assistant' : 'Agent'}
+                        <span className="px-0.5 text-[10px] font-medium text-muted-foreground/60">
+                          {senderLabel}
                         </span>
                       )}
 
@@ -884,6 +1056,18 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                 </div>
               )
             })
+          )}
+          {aiTyping && (
+            <div className="flex gap-2 py-1">
+              <Avatar className="mt-auto size-6 shrink-0">
+                <AvatarFallback className="text-[10px]">
+                  <BotIcon className="size-3" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="rounded-2xl rounded-bl-sm bg-muted/80 px-4 py-2 text-xs text-muted-foreground ring-1 ring-border/50">
+                AI is typing...
+              </div>
+            </div>
           )}
           <div ref={messagesEndRef} className="h-1" />
         </div>
