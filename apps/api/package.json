@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "node --env-file=../../.env dist/index.js",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "eval:historical": "tsx src/scripts/eval-historical-replay.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

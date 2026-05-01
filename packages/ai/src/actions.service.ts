@@ -63,6 +63,7 @@ export interface QueryWithActionsParams {
   threshold?: number
   maxChunks?: number
   openaiApiKey?: string
+  simulateActions?: boolean
 }
 
 export type QueryWithActionsType =
@@ -1076,6 +1077,22 @@ export async function queryWithActions(
         role: 'tool',
         tool_call_id: call.id,
         content: 'Action not found for this organization.',
+      } as OpenAI.Chat.Completions.ChatCompletionMessageParam)
+      continue
+    }
+
+    if (params.simulateActions) {
+      const safeArgs = JSON.stringify(call.args ?? {})
+      executedCustomAction = true
+      latestActionLog = {
+        logId: `simulated_${call.id}`,
+        actionName: action.name,
+        status: 'simulated',
+      }
+      toolMessages.push({
+        role: 'tool',
+        tool_call_id: call.id,
+        content: `SIMULATED_ACTION ${action.displayName}: ${safeArgs}`,
       } as OpenAI.Chat.Completions.ChatCompletionMessageParam)
       continue
     }

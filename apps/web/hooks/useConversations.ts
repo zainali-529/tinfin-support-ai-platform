@@ -81,6 +81,16 @@ export function useConversations(orgId: string, options?: UseConversationsOption
     setPage((current) => current + 1)
   }, [hasMore, isFetchingMore, isLoadingInitial])
 
+  const patchConversation = useCallback((conversationId: string, patch: Partial<Conversation>) => {
+    setConversations((previous) =>
+      previous.map((conversation) =>
+        conversation.id === conversationId
+          ? { ...conversation, ...patch }
+          : conversation
+      )
+    )
+  }, [])
+
   const refreshFirstPage = useCallback(async () => {
     if (page === 1) {
       await query.refetch()
@@ -154,5 +164,6 @@ export function useConversations(orgId: string, options?: UseConversationsOption
     isFetchingMore,
     loadMore,
     refetch: refreshFirstPage,
+    patchConversation,
   }
 }

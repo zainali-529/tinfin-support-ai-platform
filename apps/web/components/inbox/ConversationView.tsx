@@ -45,6 +45,7 @@ import type { Conversation, Attachment, CannedResponse } from '@/types/database'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const REPLYING_PRESENCE_TTL_MS = 10_000
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
@@ -284,6 +285,9 @@ interface TeamMember {
 export function ConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
   const { messages, loading, sending, sendMessage, refetch, appendMessage } = useMessages(conversation.id, orgId)
   const [aiTypingConversationId, setAiTypingConversationId] = useState<string | null>(null)
+  const [replyingAgents, setReplyingAgents] = useState<Record<string, number>>({})
+  const [isLocalReplying, setIsLocalReplying] = useState(false)
+  const localReplyingRef = useRef(false)
   const handleAgentSocketMessage = useCallback((payload: Record<string, unknown>) => {
     const type = typeof payload.type === 'string' ? payload.type : ''
     const payloadConversationId =
@@ -309,6 +313,26 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       if (!payloadConversationId || payloadConversationId === conversation.id) {
         setAiTypingConversationId(null)
       }
+      return
+    }
+
+    if (type === 'agent:replying') {
+      const senderId = typeof payload.agentId === 'string' ? payload.agentId : null
+      const isReplying = payload.isReplying === true
+      if (!senderId || senderId === agentId) return
+
+      setReplyingAgents((previous) => {
+        if (!isReplying) {
+          if (!Object.prototype.hasOwnProperty.call(previous, senderId)) return previous
+          const next = { ...previous }
+          delete next[senderId]
+          return next
+        }
+        return {
+          ...previous,
+          [senderId]: Date.now(),
+        }
+      })
       return
     }
 
@@ -346,6 +370,14 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
         ai_metadata: aiMetadata,
         created_at: toIsoString(payload.createdAt),
       })
+      if (senderId && senderId !== agentId) {
+        setReplyingAgents((previous) => {
+          if (!Object.prototype.hasOwnProperty.call(previous, senderId)) return previous
+          const next = { ...previous }
+          delete next[senderId]
+          return next
+        })
+      }
       return
     }
 
@@ -378,8 +410,18 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     if (type === 'conversation:resolved') {
       setAiTypingConversationId(null)
     }
-  }, [appendMessage, conversation.id, orgId])
+  }, [agentId, appendMessage, conversation.id, orgId])
   const { send: wsSend } = useAgentWebSocket(orgId, agentId, handleAgentSocketMessage)
+  const emitReplyingState = useCallback((next: boolean) => {
+    if (localReplyingRef.current === next) return
+    localReplyingRef.current = next
+    setIsLocalReplying(next)
+    wsSend({
+      type: 'agent:replying',
+      conversationId: conversation.id,
+      isReplying: next,
+    })
+  }, [conversation.id, wsSend])
   const approveAction = trpc.actions.approveAction.useMutation({
     onSuccess: () => {
       void refetch()
@@ -459,6 +501,25 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     }
     return map
   }, [assignableMembers])
+  const remoteReplyingAgentNames = useMemo(() => {
+    return Object.keys(replyingAgents)
+      .filter((id) => id !== agentId)
+      .map((id) => {
+        const member = teamMembersById.get(id)
+        if (!member) return 'Another agent'
+        return member.isCurrentUser ? 'You' : (member.name ?? member.email)
+      })
+  }, [agentId, replyingAgents, teamMembersById])
+  const replyingSummary = useMemo(() => {
+    if (remoteReplyingAgentNames.length === 0) return ''
+    if (remoteReplyingAgentNames.length === 1) {
+      return `${remoteReplyingAgentNames[0]} is replying...`
+    }
+    if (remoteReplyingAgentNames.length === 2) {
+      return `${remoteReplyingAgentNames[0]} and ${remoteReplyingAgentNames[1]} are replying...`
+    }
+    return `${remoteReplyingAgentNames[0]} +${remoteReplyingAgentNames.length - 1} others are replying...`
+  }, [remoteReplyingAgentNames])
 
   const assignedAgentLabel = useMemo(() => {
     if (!conversation.assigned_to) return 'Unassigned'
@@ -528,6 +589,36 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
   }, [messages])
+
+  useEffect(() => {
+    setReplyingAgents({})
+    if (localReplyingRef.current) {
+      localReplyingRef.current = false
+      setIsLocalReplying(false)
+    }
+  }, [conversation.id])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setReplyingAgents((previous) => {
+        const now = Date.now()
+        let changed = false
+        const next: Record<string, number> = {}
+
+        for (const [id, updatedAt] of Object.entries(previous)) {
+          if (now - updatedAt <= REPLYING_PRESENCE_TTL_MS) {
+            next[id] = updatedAt
+          } else {
+            changed = true
+          }
+        }
+
+        return changed ? next : previous
+      })
+    }, 2_000)
+
+    return () => clearInterval(timer)
+  }, [])
 
   // ── File upload ────────────────────────────────────────────────────────────
 
@@ -627,6 +718,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     })
 
     setReply('')
+    emitReplyingState(false)
     setPendingFiles([])
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
@@ -651,6 +743,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     wsSend,
     sendMessage,
     agentId,
+    emitReplyingState,
     pendingFiles,
   ])
 
@@ -743,8 +836,40 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   const hasReadyFiles = pendingFiles.some(pf => pf.uploaded && !pf.error)
   const canSendNow = canReply && (reply.trim().length > 0 || hasReadyFiles) && !isUploading && !sending
   const isAssigningAgent = assigningAgentValue !== null || updateConversationStatus.isPending
+  const hasReplyCollision = canReply && reply.trim().length > 0 && remoteReplyingAgentNames.length > 0
 
   const statusStyle = STATUS_STYLES[status] ?? STATUS_STYLES.resolved
+
+  useEffect(() => {
+    const shouldBroadcastReplying = canReply && reply.trim().length > 0
+    emitReplyingState(shouldBroadcastReplying)
+  }, [canReply, emitReplyingState, reply])
+
+  useEffect(() => {
+    if (!isLocalReplying) return
+
+    const heartbeat = setInterval(() => {
+      wsSend({
+        type: 'agent:replying',
+        conversationId: conversation.id,
+        isReplying: true,
+      })
+    }, 4_000)
+
+    return () => clearInterval(heartbeat)
+  }, [conversation.id, isLocalReplying, wsSend])
+
+  useEffect(() => {
+    return () => {
+      if (!localReplyingRef.current) return
+      wsSend({
+        type: 'agent:replying',
+        conversationId: conversation.id,
+        isReplying: false,
+      })
+      localReplyingRef.current = false
+    }
+  }, [conversation.id, wsSend])
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -798,6 +923,12 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
               <span className="truncate">Assigned: {assignedAgentLabel}</span>
             </span>
           </div>
+          {replyingSummary && (
+            <div className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+              <Loader2Icon className="size-3 animate-spin" />
+              <span>{replyingSummary}</span>
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <TooltipProvider delayDuration={0}>
@@ -1093,6 +1224,12 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
               responses={orderedCannedResponses}
               onSelect={handleCannedSelect}
             />
+
+            {hasReplyCollision && (
+              <div className="mx-3 mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                Another teammate is already typing in this conversation. Please coordinate before sending.
+              </div>
+            )}
 
             {/* Pending files strip */}
             {pendingFiles.length > 0 && (

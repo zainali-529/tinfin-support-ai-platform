@@ -141,18 +141,6 @@ function toLabel(value: string): string {
   return value.replace(/_/g, ' ')
 }
 
-function getAssignedAgentLabel(conversation: Conversation): string | null {
-  if (!conversation.assigned_to) return null
-
-  const name = conversation.assigned_agent_name?.trim()
-  if (name) return name
-
-  const email = conversation.assigned_agent_email?.trim()
-  if (email) return email
-
-  return 'Assigned'
-}
-
 interface ConversationListItemProps {
   conversation: Conversation
   isSelected: boolean
@@ -174,7 +162,7 @@ export function ConversationListItem({
   const contactLabel = getContactLabel(conversation)
   const previewText = getPreviewText(conversation)
   const queueState = normalizeQueueState(conversation)
-  const assignedLabel = getAssignedAgentLabel(conversation)
+  const showQueueBadge = toLabel(queueState).toLowerCase() !== conversation.status.toLowerCase()
 
   const backlog = useMemo(() => {
     const queueEnteredMs = toMs(conversation.queue_entered_at ?? conversation.started_at)
@@ -265,14 +253,16 @@ export function ConversationListItem({
         >
           {conversation.status}
         </span>
-        <span
-          className={cn(
-            'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-            queueStateClass(queueState)
-          )}
-        >
-          {toLabel(queueState)}
-        </span>
+        {showQueueBadge && (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+              queueStateClass(queueState)
+            )}
+          >
+            {toLabel(queueState)}
+          </span>
+        )}
         {backlog && (
           <span
             className={cn(
@@ -293,12 +283,6 @@ export function ConversationListItem({
             {sla.label}
           </span>
         )}
-        {assignedLabel && (
-          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-            Owner: {assignedLabel}
-          </span>
-        )}
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{channelLabel}</span>
       </div>
     </button>
   )

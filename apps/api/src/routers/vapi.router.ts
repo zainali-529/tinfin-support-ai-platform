@@ -384,33 +384,50 @@ export const vapiRouter = router({
       if (finalToolsEnabled) {
         try {
           const orgActions = await getOrgActions(orgId)
-          actionTools = orgActions.map((action) => ({
-            type: 'function',
-            function: {
-              name: action.name,
-              description: action.description,
-              parameters: {
-                type: 'object',
-                properties: Object.fromEntries(
-                  action.parameters.map((param) => [
-                    param.name,
-                    {
-                      type: param.type === 'enum' ? 'string' : param.type,
-                      description: param.description,
-                    },
-                  ])
-                ),
-                required: action.parameters
-                  .filter((param) => param.required)
-                  .map((param) => param.name),
+          actionTools = orgActions.map((action) => {
+            const properties = Object.fromEntries(
+              action.parameters.map((param) => [
+                param.name,
+                {
+                  type: param.type === 'enum' ? 'string' : param.type,
+                  description: param.description,
+                },
+              ])
+            ) as Record<string, { type: string; description: string }>
+
+            if (action.requiresConfirmation) {
+              properties.confirmed = {
+                type: 'boolean',
+                description:
+                  'Set true only after caller explicitly confirms the action. Set false if caller declines.',
+              }
+              properties.confirmationLogId = {
+                type: 'string',
+                description:
+                  'Use the confirmationLogId returned by a previous confirmation-required tool result.',
+              }
+            }
+
+            return {
+              type: 'function' as const,
+              function: {
+                name: action.name,
+                description: action.description,
+                parameters: {
+                  type: 'object' as const,
+                  properties,
+                  required: action.parameters
+                    .filter((param) => param.required)
+                    .map((param) => param.name),
+                },
               },
-            },
-            server: {
-              url: `${webhookBaseUrl}/api/vapi-webhook`,
-              secret: webhookSecret,
-              timeoutSeconds: 20,
-            },
-          }))
+              server: {
+                url: `${webhookBaseUrl}/api/vapi-webhook`,
+                secret: webhookSecret,
+                timeoutSeconds: 20,
+              },
+            }
+          })
         } catch (err) {
           console.warn('[vapi.router] Could not load org action tools:', err)
         }

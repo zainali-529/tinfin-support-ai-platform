@@ -394,7 +394,7 @@ interface Props {
 }
 
 export function KnowledgeBasePage({ orgId }: Props) {
-  const { kbs, isLoading, createKB, deleteKB, ingestUrl, ingestFile } = useKnowledgeBases(orgId)
+  const { kbs, isLoading, createKB, deleteKB, ingestUrl, ingestFile, ingestText } = useKnowledgeBases(orgId)
   const [selectedKBId, setSelectedKBId] = useState<string | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [addSourceDialogOpen, setAddSourceDialogOpen] = useState(false)
@@ -554,6 +554,14 @@ export function KnowledgeBasePage({ orgId }: Props) {
           onIngestFile={async (params) => {
             const result = await ingestFile.mutateAsync(params)
             return { chunksStored: result?.chunksStored ?? 0 }
+          }}
+          onIngestText={async (params) => {
+            const result = await ingestText.mutateAsync(params)
+            return {
+              chunksStored: result?.chunksStored ?? 0,
+              success: result?.success ?? true,
+              error: result?.error,
+            }
           }}
           onSuccess={handleSourceSuccess}
         />

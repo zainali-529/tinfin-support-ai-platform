@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
-import { ingestUrl, ingestFile, queryRAG } from '@workspace/ai'
+import { ingestUrl, ingestFile, ingestText, queryRAG } from '@workspace/ai'
 import { requireLimit } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 
@@ -89,6 +89,36 @@ export const ingestRouter = router({
         fileBuffer: buffer,
         mimeType: input.mimeType,
         filename: input.filename,
+        kbId: input.kbId,
+        orgId,
+      })
+
+      return result
+    }),
+
+  ingestText: protectedProcedure
+    .input(
+      z.object({
+        orgId: z.string().uuid().optional(), // kept for backward compat
+        kbId: z.string().uuid(),
+        content: z.string().min(1).max(200_000),
+        title: z.string().max(200).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
+      const orgId = ctx.userOrgId
+      await assertKnowledgeBaseAccess(ctx.supabase, orgId, input.kbId)
+
+      const { count: chunkCount } = await ctx.supabase
+        .from('kb_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+      await requireLimit(ctx.supabase, orgId, 'kbChunks', chunkCount ?? 0)
+
+      const result = await ingestText({
+        content: input.content,
+        title: input.title,
         kbId: input.kbId,
         orgId,
       })

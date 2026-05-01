@@ -31,6 +31,7 @@ export interface UseKnowledgeBasesReturn {
   deleteKB: any
   ingestUrl: any
   ingestFile: any
+  ingestText: any
 }
 
 export function useKnowledgeBases(orgId: string): UseKnowledgeBasesReturn {
@@ -55,6 +56,7 @@ export function useKnowledgeBases(orgId: string): UseKnowledgeBasesReturn {
 
   const ingestUrl = trpc.ingest.ingestUrl.useMutation()
   const ingestFile = trpc.ingest.ingestFile.useMutation()
+  const ingestText = trpc.ingest.ingestText.useMutation()
 
   return {
     kbs: kbs as KnowledgeBase[],
@@ -64,6 +66,7 @@ export function useKnowledgeBases(orgId: string): UseKnowledgeBasesReturn {
     deleteKB,
     ingestUrl,
     ingestFile,
+    ingestText,
   }
 }
 

@@ -14,6 +14,7 @@ import {
   getOrgActions,
   executeAction,
   formatActionResponse,
+  handleConfirmedAction,
 } from '@workspace/ai'
 import type { VapiWebhookEvent, VapiToolCall, VapiToolResult } from '@workspace/ai'
 
@@ -125,6 +126,22 @@ function firstNumber(...values: Array<unknown>): number | null {
     if (parsed !== null) return parsed
   }
   return null
+}
+
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  return null
+}
+
+function stripVoiceConfirmationArgs(
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  const output: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(args)) {
+    if (key === 'confirmed' || key === 'confirmationLogId') continue
+    output[key] = value
+  }
+  return output
 }
 
 function withExecutionMetadata(requestPayload: unknown, durationMs?: number): unknown {
@@ -367,9 +384,91 @@ async function handleToolCalls(
     }
 
     const args = asRecord(toolCall.function.arguments)
+    const actionArgs = stripVoiceConfirmationArgs(args)
     const metadata = extractCallMetadata(call ?? ({ id: '' } as VapiCallPayload))
     const conversationId = firstString(metadata.conversationId, metadata.conversation_id)
     const contactId = firstString(metadata.contactId, metadata.contact_id)
+
+    if (action.requiresConfirmation) {
+      const confirmationLogId = asString(args.confirmationLogId)
+      const confirmed = asBoolean(args.confirmed)
+
+      if (!confirmationLogId) {
+        const logId = await insertActionLog({
+          orgId,
+          actionId: action.id,
+          conversationId,
+          contactId,
+          parametersUsed: actionArgs,
+          status: 'pending_confirmation',
+        })
+
+        if (!logId) {
+          results.push({
+            toolCallId: toolCall.id,
+            result:
+              'I could not prepare this confirmation right now. Please try again in a moment.',
+          })
+          continue
+        }
+
+        results.push({
+          toolCallId: toolCall.id,
+          result:
+            `Before I proceed with "${action.displayName}", please confirm. ` +
+            `If confirmed, call this tool again with "confirmed": true and ` +
+            `"confirmationLogId": "${logId}". If the caller declines, call again with ` +
+            `"confirmed": false and the same confirmationLogId.`,
+        })
+        continue
+      }
+
+      if (confirmed === null) {
+        results.push({
+          toolCallId: toolCall.id,
+          result:
+            `Confirmation is still required. Call this tool again with ` +
+            `"confirmed": true or false and "confirmationLogId": "${confirmationLogId}".`,
+        })
+        continue
+      }
+
+      const { data: confirmationRow, error: confirmationError } = await supabase
+        .from('ai_action_logs')
+        .select('id, org_id, status')
+        .eq('id', confirmationLogId)
+        .maybeSingle()
+
+      if (
+        confirmationError ||
+        !confirmationRow ||
+        (confirmationRow.org_id as string | null) !== orgId ||
+        (confirmationRow.status as string | null) !== 'pending_confirmation'
+      ) {
+        results.push({
+          toolCallId: toolCall.id,
+          result:
+            'I could not find a valid confirmation request for this action. Please start again.',
+        })
+        continue
+      }
+
+      try {
+        const response = await handleConfirmedAction(confirmationLogId, confirmed)
+        results.push({
+          toolCallId: toolCall.id,
+          result: response,
+        })
+      } catch (err) {
+        console.error('[vapi-webhook] Confirmation execution failed:', err)
+        results.push({
+          toolCallId: toolCall.id,
+          result: 'I could not complete the confirmed action right now.',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        })
+      }
+      continue
+    }
 
     if (action.humanApprovalRequired) {
       const logId = await insertActionLog({
@@ -377,7 +476,7 @@ async function handleToolCalls(
         actionId: action.id,
         conversationId,
         contactId,
-        parametersUsed: args,
+        parametersUsed: actionArgs,
         status: 'pending_approval',
       })
 
@@ -386,7 +485,7 @@ async function handleToolCalls(
           logId,
           conversationId,
           actionName: action.displayName,
-          parameters: args,
+          parameters: actionArgs,
         })
       }
 
@@ -398,7 +497,7 @@ async function handleToolCalls(
       continue
     }
 
-    const execution = await executeAction(action, args)
+    const execution = await executeAction(action, actionArgs)
     const parsed = execution.success
       ? await formatActionResponse(action, execution.data)
       : `Failed: ${execution.error ?? 'Unknown action error'}`
@@ -409,7 +508,7 @@ async function handleToolCalls(
       actionId: action.id,
       conversationId,
       contactId,
-      parametersUsed: args,
+      parametersUsed: actionArgs,
       requestPayload: withExecutionMetadata(
         execution.requestPayload,
         execution.durationMs

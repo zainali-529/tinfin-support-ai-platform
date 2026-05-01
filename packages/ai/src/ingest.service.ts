@@ -20,6 +20,14 @@ export interface IngestFileParams {
   openaiApiKey?: string
 }
 
+export interface IngestTextParams {
+  content: string
+  title?: string
+  kbId: string
+  orgId: string
+  openaiApiKey?: string
+}
+
 export interface IngestResult {
   success: boolean
   chunksStored: number
@@ -170,5 +178,66 @@ export async function ingestFile(params: IngestFileParams): Promise<IngestResult
     const message = err instanceof Error ? err.message : String(err)
     console.error('[ingest] File ingestion failed:', message)
     return { success: false, chunksStored: 0, sourceTitle: filename, error: message }
+  }
+}
+
+// --- Text note ingestion -----------------------------------------------------
+
+/**
+ * Ingest a plain text note directly (without fake file conversion).
+ */
+export async function ingestText(params: IngestTextParams): Promise<IngestResult> {
+  const { content, title, kbId, orgId, openaiApiKey } = params
+
+  try {
+    const trimmed = content.trim()
+    if (trimmed.length < 50) {
+      return {
+        success: false,
+        chunksStored: 0,
+        sourceTitle: title ?? 'Text Note',
+        error: 'Text note has insufficient content.',
+      }
+    }
+
+    const sourceTitle = title?.trim() || 'Text Note'
+    const rawChunks = chunkRawContent(trimmed, undefined, sourceTitle)
+
+    if (rawChunks.length === 0) {
+      return { success: true, chunksStored: 0, sourceTitle }
+    }
+
+    const texts = rawChunks.map((chunk) => chunk.content)
+    const embeddings = await generateEmbeddingsBatch(texts, openaiApiKey)
+
+    const records: KbChunkInsert[] = rawChunks.map((chunk, index) => ({
+      kb_id: kbId,
+      org_id: orgId,
+      content: chunk.content,
+      embedding: embeddings[index] ?? [],
+      source_url: null,
+      source_title: chunk.sourceTitle ?? sourceTitle,
+      metadata: {
+        ...(chunk.metadata ?? {}),
+        sourceType: 'text_note',
+      },
+    }))
+
+    await storeChunks(records)
+
+    return {
+      success: true,
+      chunksStored: records.length,
+      sourceTitle,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[ingest] Text note ingestion failed:', message)
+    return {
+      success: false,
+      chunksStored: 0,
+      sourceTitle: title ?? 'Text Note',
+      error: message,
+    }
   }
 }

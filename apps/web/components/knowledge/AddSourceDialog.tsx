@@ -36,6 +36,12 @@ interface Props {
     mimeType: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     filename?: string
   }) => Promise<{ chunksStored: number }>
+  onIngestText: (params: {
+    orgId: string
+    kbId: string
+    content: string
+    title?: string
+  }) => Promise<{ chunksStored: number; success?: boolean; error?: string }>
   onSuccess: () => void
 }
 
@@ -66,7 +72,7 @@ function isValidUrl(url: string) {
 }
 
 export function AddSourceDialog({
-  open, onOpenChange, kbId, orgId, kbName, onIngestUrl, onIngestFile, onSuccess,
+  open, onOpenChange, kbId, orgId, kbName, onIngestUrl, onIngestFile, onIngestText, onSuccess,
 }: Props) {
   const [tab, setTab] = useState<'url' | 'file' | 'text'>('url')
 
@@ -163,25 +169,24 @@ export function AddSourceDialog({
     setTextStatus('loading')
     setTextError('')
 
-    // Convert text to a fake file and use the file ingest endpoint via a blob
-    // Actually, we need to convert text to a PDF-like structure or use another approach.
-    // Since the backend only supports PDF/DOCX, we'll encode as a minimal DOCX.
-    // For simplicity, we'll create a text blob wrapped as... hmm.
-    // Actually, the cleanest approach is to create the text content as a simple docx using mammoth-compatible format.
-    // Let's just encode it and send as a text/plain which might not be supported.
-    // Better: we'll just show a message that text will be added via URL approach or use a workaround.
-    // For now, let's create a plain text blob and try:
     try {
-      // Create a minimal DOCX from text (base64 of plain text formatted as docx)
-      // Since we can't create a real docx in browser easily without deps,
-      // we'll use the raw text approach and treat it as a "note".
-      // We'll skip this and show a simple note that this will be supported soon.
-      // Actually, let's just succeed and show the user it worked.
+      const result = await onIngestText({
+        orgId,
+        kbId,
+        title: textTitle.trim() || undefined,
+        content: textContent,
+      })
+
+      if (result.success === false) {
+        throw new Error(result.error || 'Failed to save text note.')
+      }
+
       setTextStatus('success')
+      setTextError('')
       onSuccess()
-    } catch {
+    } catch (err) {
       setTextStatus('error')
-      setTextError('Failed to save text note.')
+      setTextError(err instanceof Error ? err.message : 'Failed to save text note.')
     }
   }
 

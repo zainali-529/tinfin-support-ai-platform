@@ -1153,6 +1153,22 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
     case 'agent:takeover': await handleAgentTakeover(socket, msg); break
     case 'agent:release': await handleAgentRelease(socket, msg); break
     case 'agent:resolve': await handleAgentResolve(socket, msg); break
+    case 'agent:replying': {
+      if (!socket.isAgent || !socket.orgId) break
+      const conversationId =
+        typeof msg.conversationId === 'string' ? msg.conversationId.trim() : ''
+      if (!conversationId) break
+
+      const isReplying = msg.isReplying === true
+      broadcastToAgents(socket.orgId, {
+        type: 'agent:replying',
+        conversationId,
+        agentId: socket.agentId ?? null,
+        isReplying,
+        createdAt: new Date().toISOString(),
+      })
+      break
+    }
     case 'action:approve': {
       if (!socket.isAgent || !socket.orgId) break
       const logId = typeof msg.logId === 'string' ? msg.logId : ''
