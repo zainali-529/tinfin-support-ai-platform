@@ -84,6 +84,7 @@ export interface Conversation {
   last_customer_message_at?: string | null
   last_agent_reply_at?: string | null
   routing_assigned_at?: string | null
+  ai_context?: Record<string, unknown> | null
   backlog_minutes?: number | null
   backlog_state?: ConversationBacklogState | null
   sla_target_at?: string | null

@@ -7,12 +7,12 @@ import {
 } from '@napi-rs/canvas'
 import mammoth from 'mammoth'
 
-const globalAny = globalThis as typeof globalThis & {
-  DOMMatrix?: typeof DOMMatrix
-  DOMPoint?: typeof DOMPoint
-  DOMRect?: typeof DOMRect
-  ImageData?: typeof ImageData
-  Path2D?: typeof Path2D
+const globalAny = globalThis as {
+  DOMMatrix?: unknown
+  DOMPoint?: unknown
+  DOMRect?: unknown
+  ImageData?: unknown
+  Path2D?: unknown
 }
 
 // pdfjs-dist (used by pdf-parse) expects DOM classes to exist in Node.

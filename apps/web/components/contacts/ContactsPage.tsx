@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useContacts, useCreateContact } from '@/hooks/useContacts'
 import { ContactList } from './ContactList'
 import { ContactDetail, ContactDetailEmpty } from './ContactDetail'
@@ -99,6 +100,9 @@ function AddContactDialog({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function ContactsPage() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -118,7 +122,23 @@ export function ContactsPage() {
 
   const handleDeleted = useCallback(() => {
     setSelectedId(null)
-  }, [])
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('contact')
+    const query = params.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname)
+  }, [pathname, router, searchParams])
+
+  useEffect(() => {
+    const contactId = searchParams.get('contact')
+    setSelectedId((current) => (current === contactId ? current : contactId))
+  }, [searchParams])
+
+  const handleSelectContact = useCallback((contactId: string) => {
+    setSelectedId(contactId)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('contact', contactId)
+    router.replace(`${pathname}?${params.toString()}`)
+  }, [pathname, router, searchParams])
 
   return (
     <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
@@ -145,7 +165,7 @@ export function ContactsPage() {
             loading={isLoading}
             totalCount={totalCount}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={handleSelectContact}
             search={search}
             onSearchChange={setSearch}
             onAddContact={() => setAddOpen(true)}

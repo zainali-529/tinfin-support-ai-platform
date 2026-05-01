@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Button } from '@workspace/ui/components/button'
@@ -9,6 +10,15 @@ import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { Separator } from '@workspace/ui/components/separator'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Textarea } from '@workspace/ui/components/textarea'
+import { Input } from '@workspace/ui/components/input'
+import { Label } from '@workspace/ui/components/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@workspace/ui/components/dialog'
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@workspace/ui/components/tooltip'
@@ -119,6 +129,16 @@ function readActionLogMetadata(value: unknown): ActionLogMetadata | null {
 function safeMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function readConversationLabels(conversation: Conversation): string[] {
+  const context = safeMetadata(conversation.ai_context ?? conversation.meta)
+  const labels = context.inboxLabels
+  if (!Array.isArray(labels)) return []
+  return labels
+    .filter((label): label is string => typeof label === 'string')
+    .map((label) => label.trim())
+    .filter(Boolean)
 }
 
 function readAgentIdFromMetadata(value: unknown): string | null {
@@ -269,7 +289,7 @@ interface Props {
   conversation: Conversation
   orgId: string
   agentId: string
-  onStatusChange?: (id: string, status: string) => void
+  onStatusChange?: (id: string, status: string, patch?: Partial<Conversation>) => void
 }
 
 interface TeamMember {
@@ -283,6 +303,7 @@ interface TeamMember {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function ConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
+  const router = useRouter()
   const { messages, loading, sending, sendMessage, refetch, appendMessage } = useMessages(conversation.id, orgId)
   const [aiTypingConversationId, setAiTypingConversationId] = useState<string | null>(null)
   const [replyingAgents, setReplyingAgents] = useState<Record<string, number>>({})
@@ -440,12 +461,16 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       void refetch()
     },
   })
+  const updateConversationLabels = trpc.chat.updateLabels.useMutation()
   const [reply, setReply] = useState('')
   const [cannedOpen, setCannedOpen] = useState(false)
   const [cannedQuery, setCannedQuery] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [resolvingActionKey, setResolvingActionKey] = useState<string | null>(null)
   const [assigningAgentValue, setAssigningAgentValue] = useState<string | null>(null)
+  const [labelDialogOpen, setLabelDialogOpen] = useState(false)
+  const [labelInput, setLabelInput] = useState('')
+  const [labels, setLabels] = useState<string[]>(() => readConversationLabels(conversation))
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -592,11 +617,12 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
 
   useEffect(() => {
     setReplyingAgents({})
+    setLabels(readConversationLabels(conversation))
     if (localReplyingRef.current) {
       localReplyingRef.current = false
       setIsLocalReplying(false)
     }
-  }, [conversation.id])
+  }, [conversation.ai_context, conversation.id, conversation.meta])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -762,41 +788,138 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     void cannedUsage.mutateAsync({ id: item.id }).catch(() => undefined)
   }, [cannedUsage])
 
-  const handleTakeover = async () => {
-    const supabase = createClient()
-    await supabase.from('conversations').update({ status: 'open', assigned_to: agentId }).eq('id', conversation.id)
-    wsSend({ type: 'agent:takeover', conversationId: conversation.id })
-    onStatusChange?.(conversation.id, 'open')
-  }
+  const handleTakeover = useCallback(async () => {
+    const previousStatus = status
+    const previousAssignedTo = conversation.assigned_to ?? null
+    onStatusChange?.(conversation.id, 'open', { assigned_to: agentId })
+    const sentOverWs = wsSend({ type: 'agent:takeover', conversationId: conversation.id })
+    if (!sentOverWs) {
+      try {
+        await updateConversationStatus.mutateAsync({
+          conversationId: conversation.id,
+          status: 'open',
+          assignedTo: agentId,
+        })
+      } catch {
+        onStatusChange?.(conversation.id, previousStatus, { assigned_to: previousAssignedTo })
+      }
+    }
+  }, [
+    agentId,
+    conversation.assigned_to,
+    conversation.id,
+    onStatusChange,
+    status,
+    updateConversationStatus,
+    wsSend,
+  ])
 
-  const handleRelease = async () => {
-    const supabase = createClient()
-    await supabase.from('conversations').update({ status: 'bot', assigned_to: null }).eq('id', conversation.id)
-    wsSend({ type: 'agent:release', conversationId: conversation.id })
-    onStatusChange?.(conversation.id, 'bot')
-  }
+  const handleRelease = useCallback(async () => {
+    const previousStatus = status
+    const previousAssignedTo = conversation.assigned_to ?? null
+    onStatusChange?.(conversation.id, 'bot', { assigned_to: null })
+    const sentOverWs = wsSend({ type: 'agent:release', conversationId: conversation.id })
+    if (!sentOverWs) {
+      try {
+        await updateConversationStatus.mutateAsync({
+          conversationId: conversation.id,
+          status: 'bot',
+        })
+      } catch {
+        onStatusChange?.(conversation.id, previousStatus, { assigned_to: previousAssignedTo })
+      }
+    }
+  }, [
+    conversation.assigned_to,
+    conversation.id,
+    onStatusChange,
+    status,
+    updateConversationStatus,
+    wsSend,
+  ])
 
-  const handleResolve = async () => {
-    const supabase = createClient()
-    await supabase.from('conversations').update({ status: 'resolved' }).eq('id', conversation.id)
-    wsSend({ type: 'agent:resolve', conversationId: conversation.id })
-    onStatusChange?.(conversation.id, 'resolved')
-  }
+  const handleResolve = useCallback(async () => {
+    const previousStatus = status
+    const previousAssignedTo = conversation.assigned_to ?? null
+    onStatusChange?.(conversation.id, 'resolved', { assigned_to: conversation.assigned_to })
+    const sentOverWs = wsSend({ type: 'agent:resolve', conversationId: conversation.id })
+    if (!sentOverWs) {
+      try {
+        await updateConversationStatus.mutateAsync({
+          conversationId: conversation.id,
+          status: 'resolved',
+          assignedTo: conversation.assigned_to ?? undefined,
+        })
+      } catch {
+        onStatusChange?.(conversation.id, previousStatus, { assigned_to: previousAssignedTo })
+      }
+    }
+  }, [
+    conversation.assigned_to,
+    conversation.id,
+    onStatusChange,
+    status,
+    updateConversationStatus,
+    wsSend,
+  ])
+
+  const handleViewContact = useCallback(() => {
+    if (!contact?.id) return
+    router.push(`/contacts?contact=${contact.id}`)
+  }, [contact?.id, router])
+
+  const persistLabels = useCallback(async (nextLabels: string[]) => {
+    setLabels(nextLabels)
+    const optimisticContext = {
+      ...safeMetadata(conversation.ai_context ?? conversation.meta),
+      inboxLabels: nextLabels,
+    }
+    onStatusChange?.(conversation.id, status, { ai_context: optimisticContext })
+    const result = await updateConversationLabels.mutateAsync({
+      conversationId: conversation.id,
+      labels: nextLabels,
+    })
+    setLabels(result.labels)
+    onStatusChange?.(conversation.id, status, { ai_context: result.aiContext })
+  }, [
+    conversation.ai_context,
+    conversation.id,
+    conversation.meta,
+    onStatusChange,
+    status,
+    updateConversationLabels,
+  ])
+
+  const handleAddLabel = useCallback(async () => {
+    const nextLabel = labelInput.trim().replace(/\s+/g, ' ')
+    if (!nextLabel) return
+    const exists = labels.some((label) => label.toLowerCase() === nextLabel.toLowerCase())
+    const nextLabels = exists ? labels : [...labels, nextLabel]
+
+    await persistLabels(nextLabels)
+    setLabelInput('')
+    setLabelDialogOpen(false)
+  }, [labelInput, labels, persistLabels])
+
+  const handleRemoveLabel = useCallback(async (labelToRemove: string) => {
+    await persistLabels(labels.filter((label) => label !== labelToRemove))
+  }, [labels, persistLabels])
 
   const handleAssignAgent = useCallback(async (value: string) => {
     const nextAssignedTo = value === 'unassigned' ? null : value
     if (nextAssignedTo === conversation.assigned_to) return
 
+    const previousAssignedTo = conversation.assigned_to ?? null
     setAssigningAgentValue(value)
+    onStatusChange?.(conversation.id, status, { assigned_to: nextAssignedTo })
     try {
       await updateConversationStatus.mutateAsync({
         conversationId: conversation.id,
         status,
         assignedTo: nextAssignedTo ?? undefined,
       })
-      onStatusChange?.(conversation.id, status)
     } catch {
-      // Keep UI responsive even if assignment fails.
+      onStatusChange?.(conversation.id, status, { assigned_to: previousAssignedTo })
     } finally {
       setAssigningAgentValue(null)
     }
@@ -872,6 +995,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   }, [conversation.id, wsSend])
 
   return (
+    <>
     <div className="flex h-full flex-col bg-background">
       {/* Hidden file input */}
       <input
@@ -923,6 +1047,16 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
               <span className="truncate">Assigned: {assignedAgentLabel}</span>
             </span>
           </div>
+          {labels.length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {labels.map((label) => (
+                <Badge key={label} variant="outline" className="h-5 px-1.5 text-[10px]">
+                  <TagIcon className="mr-1 size-2.5" />
+                  {label}
+                </Badge>
+              ))}
+            </div>
+          )}
           {replyingSummary && (
             <div className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
               <Loader2Icon className="size-3 animate-spin" />
@@ -1009,10 +1143,10 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                 </DropdownMenuRadioGroup>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem onClick={() => setLabelDialogOpen(true)}>
                 <TagIcon className="mr-2 size-3.5" /> Add label
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem disabled={!contact?.id} onClick={handleViewContact}>
                 <ArrowUpRightIcon className="mr-2 size-3.5" /> View contact
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1318,6 +1452,65 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
         )}
       </div>
     </div>
+    <Dialog open={labelDialogOpen} onOpenChange={setLabelDialogOpen}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base">Add label</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Label</Label>
+            <Input
+              value={labelInput}
+              onChange={(event) => setLabelInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void handleAddLabel()
+                }
+              }}
+              placeholder="VIP, Billing, Follow up"
+              className="h-8 text-sm"
+              disabled={updateConversationLabels.isPending}
+            />
+          </div>
+          {labels.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {labels.map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => void handleRemoveLabel(label)}
+                  disabled={updateConversationLabels.isPending}
+                  className="inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                >
+                  {label}
+                  <XIcon className="size-3" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setLabelDialogOpen(false)}
+            disabled={updateConversationLabels.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void handleAddLabel()}
+            disabled={!labelInput.trim() || updateConversationLabels.isPending}
+          >
+            {updateConversationLabels.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 

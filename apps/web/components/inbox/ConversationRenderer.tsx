@@ -9,7 +9,7 @@ interface ConversationRendererProps {
   conversation: Conversation
   orgId: string
   agentId: string
-  onStatusChange?: (id: string, status: string) => void
+  onStatusChange?: (id: string, status: string, patch?: Partial<Conversation>) => void
 }
 
 export function ConversationRenderer({

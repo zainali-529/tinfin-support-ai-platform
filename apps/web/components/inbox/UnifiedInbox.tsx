@@ -7,6 +7,13 @@ import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Button } from '@workspace/ui/components/button'
 import { Spinner } from '@workspace/ui/components/spinner'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@workspace/ui/components/select'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -15,7 +22,6 @@ import {
 } from '@workspace/ui/components/dialog'
 import { SearchIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
-import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { useActiveOrg } from '@/components/org/OrgContext'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
@@ -27,6 +33,15 @@ import { PendingApprovals } from '@/components/actions/PendingApprovals'
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
 type QueueFilter = 'all' | 'bot' | 'queued' | 'assigned' | 'in_progress' | 'waiting_customer' | 'resolved'
+type QueueStateValue = Exclude<QueueFilter, 'all'>
+
+function queueStateForConversation(status: StatusFilter | 'closed', assignedTo?: string | null): QueueStateValue {
+  if (status === 'resolved' || status === 'closed') return 'resolved'
+  if (status === 'bot') return 'bot'
+  if (status === 'open') return 'in_progress'
+  if (status === 'pending') return assignedTo ? 'assigned' : 'queued'
+  return 'queued'
+}
 
 const CHANNEL_OPTIONS: Array<{ value: ChannelFilter; label: string }> = [
   { value: 'all', label: 'All channels' },
@@ -110,6 +125,7 @@ export function UnifiedInbox() {
     isFetchingMore,
     loadMore,
     refetch,
+    patchConversation,
   } = useConversations(orgId, {
     channelFilter,
     statusFilter,
@@ -117,46 +133,6 @@ export function UnifiedInbox() {
     search: debouncedSearch,
     limit: 10,
   })
-  const wsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const scheduleRealtimeRefresh = useCallback(() => {
-    if (wsRefreshTimerRef.current) return
-    wsRefreshTimerRef.current = setTimeout(() => {
-      wsRefreshTimerRef.current = null
-      void refetch()
-    }, 80)
-  }, [refetch])
-
-  useEffect(() => {
-    return () => {
-      if (wsRefreshTimerRef.current) {
-        clearTimeout(wsRefreshTimerRef.current)
-        wsRefreshTimerRef.current = null
-      }
-    }
-  }, [])
-
-  const handleAgentSocketMessage = useCallback((payload: Record<string, unknown>) => {
-    const type = typeof payload.type === 'string' ? payload.type : ''
-    if (!type) return
-
-    if (
-      type === 'visitor:message' ||
-      type === 'agent:message' ||
-      type === 'ai:response' ||
-      type === 'handoff:requested' ||
-      type === 'conversation:status_changed' ||
-      type === 'conversation:resolved' ||
-      type === 'approval:requested' ||
-      type === 'approval:resolved' ||
-      type === 'contact:updated'
-    ) {
-      scheduleRealtimeRefresh()
-    }
-  }, [scheduleRealtimeRefresh])
-
-  useAgentWebSocket(orgId, agentId ?? '', handleAgentSocketMessage)
-
   const pendingApprovalsQuery = trpc.actions.getPendingApprovals.useQuery(undefined, {
     staleTime: 10_000,
     refetchInterval: 15_000,
@@ -250,9 +226,22 @@ export function UnifiedInbox() {
 
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedId) ?? null
 
-  const handleStatusMutation = useCallback(() => {
-    void refetch()
-  }, [refetch])
+  const handleStatusMutation = useCallback((
+    id: string,
+    status: string,
+    patch?: Partial<NonNullable<typeof selectedConversation>>
+  ) => {
+    const assignedTo = patch && 'assigned_to' in patch
+      ? patch.assigned_to
+      : selectedConversation?.assigned_to
+
+    patchConversation(id, {
+      ...patch,
+      status: status as NonNullable<typeof selectedConversation>['status'],
+      queue_state: queueStateForConversation(status as StatusFilter | 'closed', assignedTo ?? null),
+      assigned_to: assignedTo ?? null,
+    })
+  }, [patchConversation, selectedConversation?.assigned_to])
 
   const handleListScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
@@ -343,29 +332,31 @@ export function UnifiedInbox() {
             ))}
           </div>
 
-          <select
-            value={channelFilter}
-            onChange={(event) => handleChannelChange(event.target.value as ChannelFilter)}
-            className="h-8 w-full rounded-md border bg-background px-2 text-xs"
-          >
-            {CHANNEL_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <Select value={channelFilter} onValueChange={(value) => handleChannelChange(value as ChannelFilter)}>
+            <SelectTrigger size="sm" className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {CHANNEL_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-xs">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <select
-            value={queueFilter}
-            onChange={(event) => handleQueueChange(event.target.value as QueueFilter)}
-            className="h-8 w-full rounded-md border bg-background px-2 text-xs"
-          >
-            {QUEUE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <Select value={queueFilter} onValueChange={(value) => handleQueueChange(value as QueueFilter)}>
+            <SelectTrigger size="sm" className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {QUEUE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-xs">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto" onScroll={handleListScroll}>

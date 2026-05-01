@@ -54,6 +54,28 @@ function normalizeContact(value: unknown): {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function normalizeLabels(labels: string[]): string[] {
+  const seen = new Set<string>()
+  const output: string[] = []
+
+  for (const label of labels) {
+    const next = label.trim().replace(/\s+/g, ' ').slice(0, 32)
+    if (!next) continue
+    const key = next.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    output.push(next)
+    if (output.length >= 12) break
+  }
+
+  return output
+}
+
 function toMs(value: string | null | undefined): number | null {
   if (!value) return null
   const ms = new Date(value).getTime()
@@ -176,6 +198,7 @@ type ConversationListItem = {
   resolved_at: string | null
   assigned_agent_name: string | null
   assigned_agent_email: string | null
+  ai_context: Record<string, unknown>
 }
 
 export const chatRouter = router({
@@ -218,6 +241,7 @@ export const chatRouter = router({
             'queue_entered_at',
             'channel',
             'assigned_to',
+            'ai_context',
             'started_at',
             'resolved_at',
             'first_response_due_at',
@@ -330,6 +354,7 @@ export const chatRouter = router({
         queue_entered_at: string | null
         channel: string
         assigned_to: string | null
+        ai_context: Record<string, unknown> | null
         started_at: string
         resolved_at: string | null
         first_response_due_at: string | null
@@ -477,6 +502,7 @@ export const chatRouter = router({
           queue_state: normalizedQueueState,
           channel: row.channel,
           assigned_to: row.assigned_to,
+          ai_context: asRecord(row.ai_context),
           started_at: row.started_at,
           queue_entered_at: row.queue_entered_at ?? row.started_at,
           resolved_at: row.resolved_at,
@@ -615,5 +641,56 @@ export const chatRouter = router({
       }
 
       return finalData
+    }),
+
+  updateLabels: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().uuid(),
+        labels: z.array(z.string().min(1).max(64)).max(12),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      const orgId = ctx.userOrgId
+      const labels = normalizeLabels(input.labels)
+
+      const { data: existing, error: existingError } = await ctx.supabase
+        .from('conversations')
+        .select('ai_context')
+        .eq('id', input.conversationId)
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (existingError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load conversation labels: ${existingError.message}`,
+        })
+      }
+
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
+      }
+
+      const aiContext = {
+        ...asRecord(existing.ai_context),
+        inboxLabels: labels,
+      }
+
+      const { error: updateError } = await ctx.supabase
+        .from('conversations')
+        .update({ ai_context: aiContext })
+        .eq('id', input.conversationId)
+        .eq('org_id', orgId)
+
+      if (updateError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to update labels: ${updateError.message}`,
+        })
+      }
+
+      return { labels, aiContext }
     }),
 })
