@@ -426,6 +426,7 @@ async function rejectPendingAction(
       approved_by: rejectedBy,
       approved_at: now,
       executed_at: now,
+      completed_at: now,
       error_message: 'Rejected by agent.',
     })
     .eq('id', logId)

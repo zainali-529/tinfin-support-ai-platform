@@ -110,6 +110,10 @@ interface ActionLogInsert {
   approvedBy?: string
   approvedAt?: string
   executedAt?: string
+  durationMs?: number | null
+  statusCode?: number | null
+  retryCount?: number | null
+  completedAt?: string | null
 }
 
 interface ParsedToolCall {
@@ -366,9 +370,13 @@ async function insertActionLog(input: ActionLogInsert): Promise<string> {
     response_parsed: input.responseParsed ?? null,
     status: input.status,
     error_message: input.errorMessage ?? null,
+    duration_ms: input.durationMs ?? null,
+    status_code: input.statusCode ?? null,
+    retry_count: input.retryCount ?? 0,
     approved_by: input.approvedBy ?? null,
     approved_at: input.approvedAt ?? null,
     executed_at: input.executedAt ?? null,
+    completed_at: input.completedAt ?? input.executedAt ?? null,
   }
 
   const { data, error } = await supabase
@@ -674,10 +682,9 @@ export async function executeAction(
   parameters: Record<string, unknown>
 ): Promise<ActionExecutionResult> {
   const method = action.method.toUpperCase()
+  const startedAt = Date.now()
 
   try {
-    const startedAt = Date.now()
-
     const url = await resolveTemplate(
       action.urlTemplate,
       parameters,
@@ -782,6 +789,7 @@ export async function executeAction(
         headers: {},
         body: null,
       },
+      durationMs: Date.now() - startedAt,
     }
   }
 }
@@ -918,6 +926,10 @@ async function executeAndLogAction(input: {
     status,
     errorMessage: execution.error,
     executedAt: new Date().toISOString(),
+    durationMs: execution.durationMs ?? null,
+    statusCode: execution.statusCode ?? null,
+    retryCount: 0,
+    completedAt: new Date().toISOString(),
   })
 
   return {
@@ -1218,6 +1230,10 @@ export async function executeApprovedAction(
     response_parsed: responseText,
     error_message: execution.error ?? null,
     executed_at: new Date().toISOString(),
+    duration_ms: execution.durationMs ?? null,
+    status_code: execution.statusCode ?? null,
+    retry_count: 0,
+    completed_at: new Date().toISOString(),
   })
 
   await supabase.from('ai_action_approvals').delete().eq('log_id', logId)
@@ -1239,6 +1255,7 @@ export async function handleConfirmedAction(
     await updateActionLog(logId, {
       status: 'cancelled',
       executed_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     })
     return 'No problem, I cancelled that action. Let me know if you need anything else.'
   }
@@ -1277,6 +1294,10 @@ export async function handleConfirmedAction(
     response_parsed: responseText,
     error_message: execution.error ?? null,
     executed_at: new Date().toISOString(),
+    duration_ms: execution.durationMs ?? null,
+    status_code: execution.statusCode ?? null,
+    retry_count: 0,
+    completed_at: new Date().toISOString(),
   })
 
   return responseText

@@ -802,6 +802,7 @@ export const actionsRouter = router({
           approved_by: ctx.user.id,
           approved_at: now,
           executed_at: now,
+          completed_at: now,
           error_message: 'Rejected by agent.',
         })
         .eq('id', input.logId)
@@ -838,7 +839,7 @@ export const actionsRouter = router({
 
     const { data: logs, error: logsError } = await ctx.supabase
       .from('ai_action_logs')
-      .select('action_id, status, request_payload')
+      .select('action_id, status, request_payload, duration_ms')
       .eq('org_id', ctx.userOrgId)
       .gte('created_at', since)
 
@@ -876,7 +877,8 @@ export const actionsRouter = router({
       if (log.status === 'success') current.success += 1
 
       const requestPayload = asRecord(log.request_payload)
-      const durationMs = requestPayload.durationMs
+      const durationMs =
+        typeof log.duration_ms === 'number' ? log.duration_ms : requestPayload.durationMs
       if (typeof durationMs === 'number' && !Number.isNaN(durationMs)) {
         current.durationTotal += durationMs
         current.durationCount += 1

@@ -452,9 +452,13 @@ export const aiActionLogs = pgTable('ai_action_logs', {
   responseParsed: text('response_parsed'),
   status: text('status').notNull(),
   errorMessage: text('error_message'),
+  durationMs: integer('duration_ms'),
+  statusCode: integer('status_code'),
+  retryCount: integer('retry_count').default(0).notNull(),
   approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'set null' }),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
   executedAt: timestamp('executed_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 

@@ -267,6 +267,10 @@ async function insertActionLog(params: {
   status: string
   errorMessage?: string | null
   executedAt?: string | null
+  durationMs?: number | null
+  statusCode?: number | null
+  retryCount?: number | null
+  completedAt?: string | null
 }): Promise<string | null> {
   const { data, error } = await getSupabase()
     .from('ai_action_logs')
@@ -281,7 +285,11 @@ async function insertActionLog(params: {
       response_parsed: params.responseParsed ?? null,
       status: params.status,
       error_message: params.errorMessage ?? null,
+      duration_ms: params.durationMs ?? null,
+      status_code: params.statusCode ?? null,
+      retry_count: params.retryCount ?? 0,
       executed_at: params.executedAt ?? null,
+      completed_at: params.completedAt ?? params.executedAt ?? null,
     })
     .select('id')
     .maybeSingle()
@@ -518,6 +526,10 @@ async function handleToolCalls(
       status,
       errorMessage: execution.error ?? null,
       executedAt: new Date().toISOString(),
+      durationMs: execution.durationMs ?? null,
+      statusCode: execution.statusCode ?? null,
+      retryCount: 0,
+      completedAt: new Date().toISOString(),
     })
 
     results.push({

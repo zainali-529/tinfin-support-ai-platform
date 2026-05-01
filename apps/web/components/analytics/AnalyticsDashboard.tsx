@@ -1,666 +1,700 @@
 'use client'
 
-/**
- * apps/web/components/analytics/AnalyticsDashboard.tsx
- *
- * Full analytics dashboard with:
- *  - Period selector
- *  - KPI overview cards with trend indicators
- *  - Conversation volume area chart
- *  - Status breakdown donut
- *  - Message volume stacked bar chart
- *  - AI vs Human handling donut
- *  - Contact growth line chart
- *  - Resolution rate trend line
- *  - Voice call bar chart
- */
-
 import { useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { useAnalytics, type AnalyticsPeriod } from '@/hooks/useAnalytics'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
-import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Badge } from '@workspace/ui/components/badge'
 import { Button } from '@workspace/ui/components/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@workspace/ui/components/card'
+import { Progress } from '@workspace/ui/components/progress'
+import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Separator } from '@workspace/ui/components/separator'
+import { Skeleton } from '@workspace/ui/components/skeleton'
 import { cn } from '@workspace/ui/lib/utils'
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts'
-import {
-  MessageSquareIcon, UsersIcon, ZapIcon, PhoneCallIcon,
-  TrendingUpIcon, TrendingDownIcon, MinusIcon, RefreshCwIcon,
-  CheckCircleIcon, ClockIcon, BarChart2Icon, BotIcon,
+  AlertTriangleIcon,
+  BotIcon,
+  CheckCircle2Icon,
+  GaugeIcon,
+  ListChecksIcon,
+  Loader2Icon,
+  MessageSquareIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  SirenIcon,
+  TimerResetIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  UserRoundCheckIcon,
+  WorkflowIcon,
+  XCircleIcon,
 } from 'lucide-react'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const PERIOD_OPTIONS: Array<{ label: string; value: AnalyticsPeriod }> = [
+  { label: '7D', value: '7d' },
+  { label: '30D', value: '30d' },
+  { label: '90D', value: '90d' },
+]
 
-function formatDate(dateStr: string, period: AnalyticsPeriod) {
-  try {
-    const d = parseISO(dateStr)
-    return period === '90d' ? format(d, 'MMM d') : format(d, 'MMM d')
-  } catch {
-    return dateStr
-  }
+const STATUS_COLORS: Record<string, string> = {
+  bot: '#22c55e',
+  pending: '#f59e0b',
+  open: '#38bdf8',
+  resolved: '#64748b',
+  unknown: '#94a3b8',
 }
 
-function formatShortDate(dateStr: string) {
-  try {
-    return format(parseISO(dateStr), 'MMM d')
-  } catch {
-    return dateStr
-  }
+const SLA_COLORS: Record<string, string> = {
+  on_track: '#22c55e',
+  at_risk: '#f59e0b',
+  breached: '#ef4444',
+  met: '#14b8a6',
+  unknown: '#94a3b8',
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-
-interface KpiCardProps {
-  label: string
-  value: string | number
-  change?: number | null
-  sub?: string
-  icon: React.ComponentType<{ className?: string }>
-  loading?: boolean
-  color?: string
-  suffix?: string
-}
-
-function KpiCard({ label, value, change, sub, icon: Icon, loading, color = 'text-primary', suffix }: KpiCardProps) {
-  const isPositive = change != null && change > 0
-  const isNegative = change != null && change < 0
-  const isFlat = change != null && change === 0
-
-  return (
-    <div className="group relative flex flex-col gap-3 overflow-hidden rounded-xl border bg-card px-5 py-4 transition-shadow hover:shadow-md ring-1 ring-foreground/5">
-      {/* Subtle accent line */}
-      <div className={cn('absolute inset-x-0 top-0 h-0.5 opacity-0 group-hover:opacity-100 transition-opacity', color.replace('text-', 'bg-'))} />
-
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
-        <div className={cn('flex size-8 items-center justify-center rounded-lg bg-muted/60 transition-colors group-hover:bg-primary/10', color.replace('text-', 'group-hover:text-'))}>
-          <Icon className={cn('size-4', color)} />
-        </div>
-      </div>
-
-      {loading ? (
-        <Skeleton className="h-9 w-28" />
-      ) : (
-        <div className="flex items-end gap-2">
-          <span className="text-3xl font-bold tabular-nums tracking-tight leading-none">
-            {value}
-          </span>
-          {suffix && <span className="text-sm text-muted-foreground mb-0.5">{suffix}</span>}
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        {change != null && !loading && (
-          <span className={cn(
-            'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-            isPositive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-            isNegative ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-            'bg-muted text-muted-foreground'
-          )}>
-            {isPositive ? <TrendingUpIcon className="size-2.5" /> :
-             isNegative ? <TrendingDownIcon className="size-2.5" /> :
-             <MinusIcon className="size-2.5" />}
-            {isPositive ? '+' : ''}{change}%
-          </span>
-        )}
-        {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
-      </div>
-    </div>
-  )
-}
-
-// ─── Shared tooltip style ─────────────────────────────────────────────────────
-
-const TOOLTIP_STYLE = {
+const TOOLTIP_PROPS = {
   contentStyle: {
     background: 'hsl(var(--popover))',
     border: '1px solid hsl(var(--border))',
-    borderRadius: '8px',
-    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-    fontSize: '12px',
+    borderRadius: 14,
     color: 'hsl(var(--popover-foreground))',
+    fontSize: 12,
   },
-  labelStyle: { fontWeight: 600, marginBottom: 4 },
+  labelStyle: { fontWeight: 700, marginBottom: 6 },
 }
 
-// ─── Section Header ───────────────────────────────────────────────────────────
-
-function SectionHeader({ title, description }: { title: string; description?: string }) {
-  return (
-    <div className="mb-4">
-      <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
-      {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
-    </div>
-  )
+function formatShortDate(date: string) {
+  try {
+    return format(parseISO(date), 'MMM d')
+  } catch {
+    return date
+  }
 }
 
-// ─── Period Selector ──────────────────────────────────────────────────────────
+function formatNumber(value: number | null | undefined) {
+  return new Intl.NumberFormat('en', { notation: value && value >= 10000 ? 'compact' : 'standard' }).format(value ?? 0)
+}
+
+function formatDuration(seconds: number | null | undefined) {
+  if (!seconds) return 'n/a'
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  return `${(seconds / 3600).toFixed(1)}h`
+}
+
+function formatLatency(ms: number | null | undefined) {
+  if (!ms) return 'n/a'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function statusLabel(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function trendClass(change: number | null | undefined, inverted = false) {
+  if (change == null || change === 0) return 'text-muted-foreground'
+  const positive = inverted ? change < 0 : change > 0
+  return positive ? 'text-emerald-500' : 'text-rose-500'
+}
 
 function PeriodSelector({
   value,
   onChange,
 }: {
   value: AnalyticsPeriod
-  onChange: (p: AnalyticsPeriod) => void
+  onChange: (value: AnalyticsPeriod) => void
 }) {
-  const options: { label: string; value: AnalyticsPeriod }[] = [
-    { label: '7 Days', value: '7d' },
-    { label: '30 Days', value: '30d' },
-    { label: '90 Days', value: '90d' },
-  ]
   return (
-    <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-0.5">
-      {options.map((opt) => (
+    <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+      {PERIOD_OPTIONS.map((option) => (
         <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-            value === opt.value
-              ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
+            'rounded-full px-3 py-1.5 text-xs font-semibold transition-all',
+            value === option.value
+              ? 'bg-background text-foreground ring-1 ring-border'
               : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          {opt.label}
+          {option.label}
         </button>
       ))}
     </div>
   )
 }
 
-// ─── Empty Chart State ────────────────────────────────────────────────────────
-
 function EmptyChart({ message = 'No data for this period' }: { message?: string }) {
   return (
-    <div className="flex h-full items-center justify-center">
-      <p className="text-xs text-muted-foreground">{message}</p>
+    <div className="flex h-full min-h-48 items-center justify-center rounded-2xl border border-dashed bg-muted/20 text-sm text-muted-foreground">
+      {message}
     </div>
   )
 }
 
-// ─── Status Color Map ─────────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  bot: '#6366f1',
-  pending: '#f59e0b',
-  open: '#10b981',
-  resolved: '#64748b',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  bot: 'AI Handling',
-  pending: 'Pending',
-  open: 'Agent',
-  resolved: 'Resolved',
-}
-
-// ─── Custom Donut Label ───────────────────────────────────────────────────────
-
-function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }: {
-  cx?: number; cy?: number; midAngle?: number; innerRadius?: number; outerRadius?: number; percent?: number
+function MetricTile({
+  title,
+  value,
+  detail,
+  icon: Icon,
+  accent,
+  change,
+  invertedTrend = false,
+  loading,
+}: {
+  title: string
+  value: string
+  detail: string
+  icon: React.ComponentType<{ className?: string }>
+  accent: string
+  change?: number | null
+  invertedTrend?: boolean
+  loading?: boolean
 }) {
-  if (cx == null || cy == null || midAngle == null || innerRadius == null || outerRadius == null || percent == null) {
-    return null
-  }
-  if (percent < 0.05) return null
-  const RADIAN = Math.PI / 180
-  const radius = innerRadius + (outerRadius - innerRadius) * 0.5
-  const x = cx + radius * Math.cos(-midAngle * RADIAN)
-  const y = cy + radius * Math.sin(-midAngle * RADIAN)
   return (
-    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={600}>
-      {`${(percent * 100).toFixed(0)}%`}
-    </text>
+    <div className="group relative overflow-hidden rounded-2xl border bg-card p-4 ring-1 ring-border/40 transition-colors hover:bg-muted/20">
+      <div className={cn('absolute inset-x-0 top-0 h-1', accent)} />
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
+          {loading ? (
+            <Skeleton className="mt-3 h-8 w-24" />
+          ) : (
+            <p className="mt-2 text-3xl font-black tracking-tight text-foreground">{value}</p>
+          )}
+        </div>
+        <div className="flex size-10 items-center justify-center rounded-2xl bg-muted/70 transition-colors group-hover:bg-background">
+          <Icon className="size-5 text-foreground" />
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2 text-xs">
+        {change != null && (
+          <span className={cn('inline-flex items-center gap-1 font-bold', trendClass(change, invertedTrend))}>
+            {change > 0 ? <TrendingUpIcon className="size-3" /> : change < 0 ? <TrendingDownIcon className="size-3" /> : null}
+            {change > 0 ? '+' : ''}{change}%
+          </span>
+        )}
+        <span className="text-muted-foreground">{detail}</span>
+      </div>
+    </div>
   )
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+function PremiumPanel({
+  title,
+  description,
+  action,
+  children,
+  className,
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <Card className={cn('overflow-hidden border bg-card ring-1 ring-border/40', className)}>
+      <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
+        <div>
+          <CardTitle className="text-base font-bold tracking-tight">{title}</CardTitle>
+          {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+        </div>
+        {action}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  )
+}
+
+function ReadinessBadge({ status }: { status: string }) {
+  if (status === 'ready') {
+    return <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Ready</Badge>
+  }
+  if (status === 'watch') {
+    return <Badge className="border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100">Watch</Badge>
+  }
+  return <Badge className="border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-100">Blocked</Badge>
+}
+
+function CheckIcon({ status }: { status: string }) {
+  if (status === 'pass') return <CheckCircle2Icon className="size-4 text-emerald-500" />
+  if (status === 'warn') return <AlertTriangleIcon className="size-4 text-amber-500" />
+  if (status === 'fail') return <XCircleIcon className="size-4 text-rose-500" />
+  return <ListChecksIcon className="size-4 text-sky-500" />
+}
 
 export function AnalyticsDashboard() {
-  const {
-    period, setPeriod,
-    overview,
-    convTrend,
-    statusBreakdown,
-    messageVolume,
-    contactGrowth,
-    resolutionTrend,
-    callAnalytics,
-    handlingBreakdown,
-    isLoading,
-    refetchAll,
-  } = useAnalytics()
+  const { period, setPeriod, report, isLoading, isFetching, isError, error, refetchAll } = useAnalytics()
 
-  // Slim down X-axis labels for 90d to avoid crowding
-  const tickInterval = period === '90d' ? 14 : period === '30d' ? 6 : 1
-
-  const hasCallData = callAnalytics.some(d => d.count > 0)
-  const hasConvData = convTrend.some(d => d.total > 0)
-  const hasMsgData  = messageVolume.some(d => d.total > 0)
-  const hasContactData = contactGrowth.some(d => d.new > 0)
-
-  const totalStatusCount = statusBreakdown.reduce((s, d) => s + d.count, 0)
-
-  // Pre-format dates for charts
-  const convTrendFormatted = useMemo(
-    () => convTrend.map(d => ({ ...d, label: formatShortDate(d.date) })),
-    [convTrend]
+  const timeline = useMemo(
+    () => (report?.timeline ?? []).map((row) => ({ ...row, label: formatShortDate(row.date) })),
+    [report?.timeline]
   )
-  const msgVolumeFormatted = useMemo(
-    () => messageVolume.map(d => ({ ...d, label: formatShortDate(d.date) })),
-    [messageVolume]
-  )
-  const contactGrowthFormatted = useMemo(
-    () => contactGrowth.map(d => ({ ...d, label: formatShortDate(d.date) })),
-    [contactGrowth]
-  )
-  const resolutionFormatted = useMemo(
-    () => resolutionTrend.map(d => ({ ...d, label: formatShortDate(d.date) })),
-    [resolutionTrend]
-  )
-  const callFormatted = useMemo(
-    () => callAnalytics.map(d => ({ ...d, label: formatShortDate(d.date) })),
-    [callAnalytics]
-  )
+  const statusBreakdown = report?.statusBreakdown ?? []
+  const assignees = report?.assignees ?? []
+  const actions = report?.actions
+  const sla = report?.sla
+  const summary = report?.executiveSummary
+  const launch = report?.launch
+  const tickInterval = period === '90d' ? 13 : period === '30d' ? 5 : 0
+  const hasTimeline = timeline.some((row) => row.conversations > 0 || row.actions > 0 || row.messages > 0)
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="relative flex flex-col gap-6 pb-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+      <section className="rounded-2xl border bg-card p-5 ring-1 ring-border/40">
+        <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="rounded-md">
+                Reporting
+              </Badge>
+              <Badge variant="outline" className="rounded-md">
+                Launch Hardening
+              </Badge>
+            </div>
+            <h1 className="mt-4 max-w-3xl text-2xl font-semibold tracking-tight md:text-3xl">
+              Support reporting dashboard
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              SLA health, assignee workload, AI action reliability, and launch readiness in one operational view.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <PeriodSelector value={period} onChange={setPeriod} />
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9"
+                onClick={refetchAll}
+              >
+                {isFetching ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <RefreshCwIcon className="mr-2 size-4" />}
+                Refresh
+              </Button>
+              {report?.generatedAt && (
+                <span className="text-xs text-muted-foreground">
+                  Updated {format(parseISO(report.generatedAt), 'MMM d, h:mm a')}
+                </span>
+              )}
+            </div>
+          </div>
 
-      {/* ── Page Header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <BarChart2Icon className="size-6 text-primary" />
-            Analytics
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Conversation trends, AI performance, and support insights.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <PeriodSelector value={period} onChange={setPeriod} />
-          <Button
-            variant="outline"
-            size="icon-sm"
-            onClick={refetchAll}
-            title="Refresh"
-          >
-            <RefreshCwIcon className="size-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* ── KPI Overview Cards ── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
-        <KpiCard
-          label="Conversations"
-          value={overview?.conversations.value ?? 0}
-          change={overview?.conversations.change ?? null}
-          sub={`vs prev ${period}`}
-          icon={MessageSquareIcon}
-          loading={isLoading}
-          color="text-primary"
-        />
-        <KpiCard
-          label="Resolution Rate"
-          value={`${overview?.resolutionRate.value ?? 0}%`}
-          change={overview?.resolutionRate.change ?? null}
-          sub="resolved or closed"
-          icon={CheckCircleIcon}
-          loading={isLoading}
-          color="text-emerald-500"
-        />
-        <KpiCard
-          label="AI Automation"
-          value={`${overview?.aiAutomationRate.value ?? 0}%`}
-          change={overview?.aiAutomationRate.change ?? null}
-          sub="AI-handled messages"
-          icon={BotIcon}
-          loading={isLoading}
-          color="text-violet-500"
-        />
-        <KpiCard
-          label="Messages"
-          value={overview?.messages.value ?? 0}
-          change={overview?.messages.change ?? null}
-          sub="total exchanged"
-          icon={ZapIcon}
-          loading={isLoading}
-          color="text-amber-500"
-        />
-        <KpiCard
-          label="New Contacts"
-          value={overview?.newContacts.value ?? 0}
-          change={overview?.newContacts.change ?? null}
-          sub={`${overview?.totalContacts ?? 0} total`}
-          icon={UsersIcon}
-          loading={isLoading}
-          color="text-blue-500"
-        />
-        <KpiCard
-          label="Pending Now"
-          value={overview?.pendingConversations ?? 0}
-          sub="awaiting agent"
-          icon={ClockIcon}
-          loading={isLoading}
-          color="text-amber-500"
-        />
-        <KpiCard
-          label="Voice Calls"
-          value={overview?.calls.value ?? 0}
-          change={overview?.calls.change ?? null}
-          sub={`${overview?.voiceMinutes ?? 0} min total`}
-          icon={PhoneCallIcon}
-          loading={isLoading}
-          color="text-teal-500"
-        />
-        <KpiCard
-          label="Voice Minutes"
-          value={overview?.voiceMinutes ?? 0}
-          sub="call duration"
-          icon={PhoneCallIcon}
-          loading={isLoading}
-          color="text-teal-500"
-          suffix="min"
-        />
-      </div>
-
-      {/* ── Row 1: Conversation Trend + Status Breakdown ── */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-
-        {/* Conversation Volume — Area Chart (2/3 width) */}
-        <Card className="xl:col-span-2">
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="Conversation Volume"
-              description="Daily conversations by outcome status"
-            />
-          </CardHeader>
-          <CardContent className="px-2 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-52 w-full rounded-lg" />
-            ) : !hasConvData ? (
-              <div className="h-52"><EmptyChart /></div>
-            ) : (
-              <ResponsiveContainer width="100%" height={210}>
-                <AreaChart data={convTrendFormatted} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="gradResolved" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                    axisLine={false} tickLine={false}
-                    interval={tickInterval}
-                  />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} labelFormatter={(l) => `Date: ${l}`} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                  <Area type="monotone" dataKey="total" name="Total" stroke="#6366f1" fill="url(#gradTotal)" strokeWidth={2} dot={false} />
-                  <Area type="monotone" dataKey="resolved" name="Resolved" stroke="#10b981" fill="url(#gradResolved)" strokeWidth={2} dot={false} />
-                  <Area type="monotone" dataKey="pending" name="Pending" stroke="#f59e0b" fill="none" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Status Breakdown — Donut (1/3 width) */}
-        <Card>
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="Status Breakdown"
-              description={`${totalStatusCount} conversations`}
-            />
-          </CardHeader>
-          <CardContent className="flex flex-col items-center px-4 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-48 w-48 rounded-full mx-auto" />
-            ) : statusBreakdown.length === 0 ? (
-              <div className="h-48 w-full"><EmptyChart /></div>
-            ) : (
-              <>
-                <ResponsiveContainer width="100%" height={160}>
-                  <PieChart>
-                    <Pie
-                      data={statusBreakdown}
-                      cx="50%" cy="50%"
-                      innerRadius={48} outerRadius={72}
-                      dataKey="count"
-                      nameKey="status"
-                      paddingAngle={2}
-                      labelLine={false}
-                      label={renderCustomLabel}
-                    >
-                      {statusBreakdown.map((entry, index) => (
-                        <Cell key={index} fill={entry.color ?? STATUS_COLORS[entry.status] ?? '#94a3b8'} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      {...TOOLTIP_STYLE}
-                      formatter={(value, name) => [value, STATUS_LABELS[name as string] ?? name]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 mt-2">
-                  {statusBreakdown.map((entry, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
-                      <div className="size-2 rounded-full shrink-0" style={{ background: entry.color ?? STATUS_COLORS[entry.status] }} />
-                      <span className="text-[11px] text-muted-foreground">
-                        {STATUS_LABELS[entry.status] ?? entry.status}
-                      </span>
-                      <span className="text-[11px] font-semibold tabular-nums">{entry.count}</span>
-                    </div>
-                  ))}
+          <div className="rounded-xl border bg-muted/20 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Launch Readiness</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <ReadinessBadge status={launch?.status ?? 'watch'} />
+                  <span className="text-xs text-muted-foreground">{launch?.checks.length ?? 0} checks</span>
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </div>
+              <ShieldCheckIcon className="size-7 text-emerald-500" />
+            </div>
+            <div className="mt-5 flex items-end gap-2">
+              <span className="text-5xl font-semibold tracking-tight">{launch?.score ?? 0}</span>
+              <span className="mb-1.5 text-sm font-medium text-muted-foreground">/ 100</span>
+            </div>
+            <Progress value={launch?.score ?? 0} className="mt-4 h-2" />
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              Manual checks remain visible so launch readiness stays reviewable.
+            </p>
+          </div>
+        </div>
+      </section>
 
-      {/* ── Row 2: Message Volume + AI vs Human ── */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-
-        {/* Message Volume — Stacked Bar (2/3) */}
-        <Card className="xl:col-span-2">
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="Message Volume"
-              description="Daily breakdown by sender role"
-            />
-          </CardHeader>
-          <CardContent className="px-2 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-52 w-full rounded-lg" />
-            ) : !hasMsgData ? (
-              <div className="h-52"><EmptyChart /></div>
-            ) : (
-              <ResponsiveContainer width="100%" height={210}>
-                <BarChart data={msgVolumeFormatted} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} barSize={period === '7d' ? 24 : 8}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} interval={tickInterval} />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                  <Bar dataKey="user" name="Visitor" stackId="a" fill="#6366f1" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="assistant" name="AI" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="agent" name="Agent" stackId="a" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* AI vs Human Handling — Donut (1/3) */}
-        <Card>
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="AI vs Human"
-              description="Conversation handling split"
-            />
-          </CardHeader>
-          <CardContent className="flex flex-col items-center px-4 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-48 w-48 rounded-full mx-auto" />
-            ) : handlingBreakdown.every(d => d.value === 0) ? (
-              <div className="h-48 w-full"><EmptyChart /></div>
-            ) : (
-              <>
-                <ResponsiveContainer width="100%" height={160}>
-                  <PieChart>
-                    <Pie
-                      data={handlingBreakdown}
-                      cx="50%" cy="50%"
-                      innerRadius={48} outerRadius={72}
-                      dataKey="value"
-                      nameKey="label"
-                      paddingAngle={2}
-                      labelLine={false}
-                      label={renderCustomLabel}
-                    >
-                      {handlingBreakdown.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip {...TOOLTIP_STYLE} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-col gap-2 mt-2 w-full">
-                  {handlingBreakdown.map((entry, i) => {
-                    const total = handlingBreakdown.reduce((s, d) => s + d.value, 0)
-                    const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
-                    return (
-                      <div key={i} className="flex items-center gap-2">
-                        <div className="size-2.5 rounded-full shrink-0" style={{ background: entry.color }} />
-                        <span className="text-[11px] text-muted-foreground flex-1">{entry.label}</span>
-                        <span className="text-[11px] font-bold tabular-nums">{pct}%</span>
-                        <span className="text-[10px] text-muted-foreground">({entry.value})</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Row 3: Contact Growth + Resolution Rate ── */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-        {/* Contact Growth — Line Chart */}
-        <Card>
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="Contact Growth"
-              description="New contacts acquired over time"
-            />
-          </CardHeader>
-          <CardContent className="px-2 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-44 w-full rounded-lg" />
-            ) : !hasContactData ? (
-              <div className="h-44"><EmptyChart /></div>
-            ) : (
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={contactGrowthFormatted} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradCumulative" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} interval={tickInterval} />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                  <Line type="monotone" dataKey="cumulative" name="Total Contacts" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
-                  <Line type="monotone" dataKey="new" name="New This Day" stroke="#6366f1" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Resolution Rate Trend — Line Chart */}
-        <Card>
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="Resolution Rate"
-              description="Daily % of conversations resolved"
-            />
-          </CardHeader>
-          <CardContent className="px-2 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-44 w-full rounded-lg" />
-            ) : resolutionTrend.every(d => d.total === 0) ? (
-              <div className="h-44"><EmptyChart /></div>
-            ) : (
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={resolutionFormatted} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} interval={tickInterval} />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Resolution Rate']} />
-                  <Line type="monotone" dataKey="rate" name="Rate" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 4, fill: '#10b981' }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Row 4: Voice Call Analytics ── */}
-      {(hasCallData || isLoading) && (
-        <Card>
-          <CardHeader className="pb-0 px-5 pt-5">
-            <SectionHeader
-              title="Voice Call Analytics"
-              description="Daily call volume and minutes"
-            />
-          </CardHeader>
-          <CardContent className="px-2 pb-4">
-            {isLoading ? (
-              <Skeleton className="h-44 w-full rounded-lg" />
-            ) : !hasCallData ? (
-              <div className="h-44"><EmptyChart message="No voice calls in this period" /></div>
-            ) : (
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={callFormatted} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} barSize={period === '7d' ? 24 : 8}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} interval={tickInterval} />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                  <Bar dataKey="count" name="Calls" fill="#14b8a6" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="minutes" name="Minutes" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+      {isError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          {error?.message ?? 'Failed to load analytics.'}
+        </div>
       )}
 
-      {/* ── Footer note ── */}
-      <p className="text-center text-[11px] text-muted-foreground/60 pb-2">
-        Data reflects conversations and events in your active organization. Refreshes every 60 seconds.
-      </p>
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricTile
+          title="Conversations"
+          value={formatNumber(summary?.conversations.value)}
+          detail={`vs previous ${period}`}
+          change={summary?.conversations.change}
+          icon={MessageSquareIcon}
+          accent="bg-cyan-400"
+          loading={isLoading}
+        />
+        <MetricTile
+          title="SLA Breach Rate"
+          value={`${summary?.slaBreachRate ?? 0}%`}
+          detail={`${sla?.overview.activeBreaches ?? 0} active breaches`}
+          icon={SirenIcon}
+          accent="bg-rose-400"
+          invertedTrend
+          loading={isLoading}
+        />
+        <MetricTile
+          title="Action Success"
+          value={`${summary?.actionSuccessRate ?? 0}%`}
+          detail={`P95 ${formatLatency(summary?.actionP95LatencyMs)}`}
+          icon={WorkflowIcon}
+          accent="bg-emerald-400"
+          loading={isLoading}
+        />
+        <MetricTile
+          title="First Response"
+          value={formatDuration(summary?.avgFirstResponseSeconds)}
+          detail="average response speed"
+          icon={TimerResetIcon}
+          accent="bg-amber-400"
+          loading={isLoading}
+        />
+      </section>
 
+      <section className="grid gap-4 xl:grid-cols-[1.45fr_0.95fr]">
+        <PremiumPanel
+          title="SLA Operations Timeline"
+          description="Conversation volume, resolved work, and breach spikes in one launch view."
+          action={<Badge variant="outline">{period}</Badge>}
+        >
+          {isLoading ? (
+            <Skeleton className="h-80 rounded-2xl" />
+          ) : !hasTimeline ? (
+            <EmptyChart />
+          ) : (
+            <ResponsiveContainer width="100%" height={320}>
+              <ComposedChart data={timeline} margin={{ top: 12, right: 14, left: -18, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="conversationFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="resolvedFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={{ fontSize: 11 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                <Tooltip {...TOOLTIP_PROPS} />
+                <Area type="monotone" dataKey="conversations" name="Conversations" stroke="#38bdf8" fill="url(#conversationFill)" strokeWidth={2.5} />
+                <Area type="monotone" dataKey="resolved" name="Resolved" stroke="#22c55e" fill="url(#resolvedFill)" strokeWidth={2.5} />
+                <Bar dataKey="slaBreaches" name="SLA breaches" fill="#ef4444" radius={[6, 6, 0, 0]} maxBarSize={18} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </PremiumPanel>
+
+        <PremiumPanel title="SLA Health Mix" description="Current SLA posture by derived state.">
+          {isLoading ? (
+            <Skeleton className="h-80 rounded-2xl" />
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-[180px_1fr] xl:grid-cols-1 2xl:grid-cols-[180px_1fr]">
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'On Track', value: sla?.overview.onTrack ?? 0, color: SLA_COLORS.on_track },
+                      { name: 'At Risk', value: sla?.overview.atRisk ?? 0, color: SLA_COLORS.at_risk },
+                      { name: 'Breached', value: sla?.overview.breached ?? 0, color: SLA_COLORS.breached },
+                      { name: 'Met', value: sla?.overview.met ?? 0, color: SLA_COLORS.met },
+                    ]}
+                    dataKey="value"
+                    innerRadius={52}
+                    outerRadius={78}
+                    paddingAngle={3}
+                  >
+                    {['on_track', 'at_risk', 'breached', 'met'].map((key) => (
+                      <Cell key={key} fill={SLA_COLORS[key]} />
+                    ))}
+                  </Pie>
+                  <Tooltip {...TOOLTIP_PROPS} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-3">
+                {[
+                  ['On track', sla?.overview.onTrack ?? 0, SLA_COLORS.on_track],
+                  ['At risk', sla?.overview.atRisk ?? 0, SLA_COLORS.at_risk],
+                  ['Breached', sla?.overview.breached ?? 0, SLA_COLORS.breached],
+                  ['Met', sla?.overview.met ?? 0, SLA_COLORS.met],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="flex items-center gap-3 rounded-2xl border bg-background/60 px-3 py-2">
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: String(color) }} />
+                    <span className="flex-1 text-sm font-medium">{label}</span>
+                    <span className="font-black tabular-nums">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </PremiumPanel>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <PremiumPanel
+          title="AI Action Reliability"
+          description="Success/fail/retry/latency signals for production confidence."
+          action={<Badge variant="outline">{formatNumber(actions?.overview.total)} executions</Badge>}
+        >
+          {isLoading ? (
+            <Skeleton className="h-72 rounded-2xl" />
+          ) : (actions?.overview.total ?? 0) === 0 ? (
+            <EmptyChart message="No AI action executions in this period" />
+          ) : (
+            <ResponsiveContainer width="100%" height={290}>
+              <ComposedChart data={timeline} margin={{ top: 12, right: 14, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="count" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="latency" orientation="right" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={(value) => `${Number(value) / 1000}s`} />
+                <Tooltip {...TOOLTIP_PROPS} formatter={(value, name) => [name === 'Avg latency' ? formatLatency(Number(value)) : value, name]} />
+                <Bar yAxisId="count" dataKey="actionSuccess" name="Success" stackId="actions" fill="#22c55e" radius={[0, 0, 0, 0]} />
+                <Bar yAxisId="count" dataKey="actionFailed" name="Failed" stackId="actions" fill="#ef4444" radius={[8, 8, 0, 0]} />
+                <Line yAxisId="latency" type="monotone" dataKey="avgActionLatencyMs" name="Avg latency" stroke="#0ea5e9" strokeWidth={2.5} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </PremiumPanel>
+
+        <PremiumPanel title="Assignee Dashboard" description="Workload, SLA risk, and response ownership by teammate.">
+          {isLoading ? (
+            <Skeleton className="h-72 rounded-2xl" />
+          ) : assignees.length === 0 ? (
+            <EmptyChart message="No assignee data yet" />
+          ) : (
+            <div className="space-y-3">
+              {assignees.slice(0, 6).map((assignee) => {
+                const maxLoad = Math.max(...assignees.map((item) => item.loadScore), 1)
+                return (
+                  <div key={assignee.id} className="rounded-2xl border bg-background/70 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-bold">{assignee.name}</span>
+                          {assignee.isOnline && <span className="size-2 rounded-full bg-emerald-500" />}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {assignee.email || assignee.role} - {assignee.agentMessages} replies
+                        </p>
+                      </div>
+                      <Badge variant={assignee.breached > 0 ? 'destructive' : 'outline'}>
+                        {assignee.activeAssigned} active
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-xl bg-muted/40 p-2">
+                        <p className="text-muted-foreground">SLA met</p>
+                        <p className="font-black">{assignee.slaMetRate}%</p>
+                      </div>
+                      <div className="rounded-xl bg-muted/40 p-2">
+                        <p className="text-muted-foreground">First resp</p>
+                        <p className="font-black">{formatDuration(assignee.avgFirstResponseSeconds)}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted/40 p-2">
+                        <p className="text-muted-foreground">Breached</p>
+                        <p className="font-black">{assignee.breached}</p>
+                      </div>
+                    </div>
+                    <Progress value={(assignee.loadScore / maxLoad) * 100} className="mt-3 h-1.5" />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </PremiumPanel>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <PremiumPanel title="Launch QA Checklist" description="A live score plus manual launch gates.">
+          {isLoading ? (
+            <Skeleton className="h-96 rounded-2xl" />
+          ) : (
+            <ScrollArea className="h-[410px] pr-3">
+              <div className="space-y-3">
+                {(launch?.checks ?? []).map((check) => (
+                  <div key={check.id} className="rounded-2xl border bg-background/70 p-3">
+                    <div className="flex items-start gap-3">
+                      <CheckIcon status={check.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-bold">{check.title}</p>
+                          <Badge variant="outline" className="h-5 text-[10px]">{check.category}</Badge>
+                          <Badge variant={check.severity === 'high' ? 'destructive' : 'secondary'} className="h-5 text-[10px]">
+                            {check.severity}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
+                        <p className="mt-2 text-xs font-medium text-foreground">{check.nextStep}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </PremiumPanel>
+
+        <div className="grid gap-4">
+          <PremiumPanel title="SLA By Channel" description="Channel-level breach visibility and response speed.">
+            {isLoading ? (
+              <Skeleton className="h-44 rounded-2xl" />
+            ) : (sla?.byChannel.length ?? 0) === 0 ? (
+              <EmptyChart />
+            ) : (
+              <div className="space-y-2">
+                {sla?.byChannel.slice(0, 5).map((channel) => (
+                  <div key={channel.channel} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 rounded-2xl border bg-background/70 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-bold capitalize">{channel.channel}</p>
+                      <p className="text-xs text-muted-foreground">{channel.total} conv</p>
+                    </div>
+                    <div>
+                      <Progress value={Math.min(channel.breachRate, 100)} className="h-2" />
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Avg first response {formatDuration(channel.avgFirstResponseSeconds)}
+                      </p>
+                    </div>
+                    <Badge variant={channel.breached > 0 ? 'destructive' : 'outline'}>{channel.breachRate}%</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </PremiumPanel>
+
+          <PremiumPanel title="Queue Backlog" description="Where operational pressure is collecting right now.">
+            {isLoading ? (
+              <Skeleton className="h-36 rounded-2xl" />
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(sla?.queueBacklog ?? []).slice(0, 4).map((queue) => (
+                  <div key={queue.state} className="rounded-2xl border bg-background/70 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-bold">{statusLabel(queue.state)}</p>
+                      <Badge variant={queue.critical > 0 ? 'destructive' : 'outline'}>{queue.count}</Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Avg backlog {queue.avgBacklogMinutes}m - {queue.critical} critical
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </PremiumPanel>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <PremiumPanel title="Action Leaderboard" description="Per-action reliability, latency, retries, and failure rate.">
+          {isLoading ? (
+            <Skeleton className="h-72 rounded-2xl" />
+          ) : (actions?.byAction.length ?? 0) === 0 ? (
+            <EmptyChart message="No action leaderboard yet" />
+          ) : (
+            <div className="space-y-2">
+              {actions?.byAction.slice(0, 7).map((action) => (
+                <div key={action.actionId} className="rounded-2xl border bg-background/70 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">{action.displayName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {action.total} runs - {action.retryCount} retries - P95 {formatLatency(action.p95LatencyMs)}
+                      </p>
+                    </div>
+                    <Badge className={cn(
+                      action.successRate >= 95 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' :
+                      action.successRate >= 85 ? 'bg-amber-100 text-amber-700 hover:bg-amber-100' :
+                      'bg-rose-100 text-rose-700 hover:bg-rose-100'
+                    )}>
+                      {action.successRate}%
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3">
+                    <Progress value={action.successRate} className="h-1.5" />
+                    <span className="text-xs text-muted-foreground">{action.failed + action.timeout} fail</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </PremiumPanel>
+
+        <PremiumPanel title="Recent Action Failures" description="Launch blockers from external API actions.">
+          {isLoading ? (
+            <Skeleton className="h-72 rounded-2xl" />
+          ) : (actions?.recentFailures.length ?? 0) === 0 ? (
+            <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-center text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+              <CheckCircle2Icon className="mb-3 size-8" />
+              <p className="text-sm font-bold">No recent action failures</p>
+              <p className="mt-1 text-xs opacity-80">Keep the action test suite running before launch.</p>
+            </div>
+          ) : (
+            <ScrollArea className="h-72 pr-3">
+              <div className="space-y-2">
+                {actions?.recentFailures.map((failure) => (
+                  <div key={`${failure.id}-${failure.createdAt}`} className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3 text-rose-950 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-100">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-bold">{failure.actionName}</p>
+                      <Badge variant="destructive">{failure.status}</Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs opacity-80">{failure.errorMessage ?? 'No error message captured.'}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] opacity-80">
+                      <span>Latency {formatLatency(failure.durationMs)}</span>
+                      <span>Status {failure.statusCode ?? 'n/a'}</span>
+                      <span>Retries {failure.retryCount}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </PremiumPanel>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border bg-card p-4 ring-1 ring-border/40">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <BotIcon className="size-4 text-emerald-500" />
+            AI automation
+          </div>
+          <p className="mt-2 text-3xl font-black">{summary?.aiAutomationRate.value ?? 0}%</p>
+          <p className="mt-1 text-xs text-muted-foreground">{formatNumber(summary?.messages.ai)} AI messages vs {formatNumber(summary?.messages.agent)} agent messages</p>
+        </div>
+        <div className="rounded-2xl border bg-card p-4 ring-1 ring-border/40">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <UserRoundCheckIcon className="size-4 text-cyan-500" />
+            Resolution rate
+          </div>
+          <p className="mt-2 text-3xl font-black">{summary?.resolutionRate.value ?? 0}%</p>
+          <p className={cn('mt-1 text-xs font-semibold', trendClass(summary?.resolutionRate.change))}>
+            {summary?.resolutionRate.change != null ? `${summary.resolutionRate.change > 0 ? '+' : ''}${summary.resolutionRate.change}% vs previous` : 'No previous period baseline'}
+          </p>
+        </div>
+        <div className="rounded-2xl border bg-card p-4 ring-1 ring-border/40">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <GaugeIcon className="size-4 text-amber-500" />
+            Action retry rate
+          </div>
+          <p className="mt-2 text-3xl font-black">{actions?.overview.retryRate ?? 0}%</p>
+          <p className="mt-1 text-xs text-muted-foreground">{actions?.overview.retryCount ?? 0} retries captured in action logs</p>
+        </div>
+      </section>
+
+      <Separator />
+      <p className="text-center text-xs text-muted-foreground">
+        Reporting data refreshes every 60 seconds. Run the launch load test and rollback review before production cutover.
+      </p>
     </div>
   )
 }
