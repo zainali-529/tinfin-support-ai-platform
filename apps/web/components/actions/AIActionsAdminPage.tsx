@@ -261,8 +261,14 @@ export function AIActionsAdminPage() {
             AI Actions
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Actions let your AI take real steps for customers.
+            Secure single-step API actions for the AI assistant with secrets,
+            confirmations, approval gates, and execution logs.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge variant="outline">Single-step APIs</Badge>
+            <Badge variant="outline">Encrypted secrets</Badge>
+            <Badge variant="outline">Approval gates</Badge>
+          </div>
         </div>
         <Button onClick={openCreate} className="gap-1.5">
           <PlusIcon className="size-4" />
@@ -271,7 +277,7 @@ export function AIActionsAdminPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Card>
+        <Card className="shadow-none">
           <CardContent className="p-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Executions
@@ -281,7 +287,7 @@ export function AIActionsAdminPage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="shadow-none">
           <CardContent className="p-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Success Rate
@@ -291,7 +297,7 @@ export function AIActionsAdminPage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="shadow-none">
           <CardContent className="p-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Avg Duration
@@ -327,13 +333,13 @@ export function AIActionsAdminPage() {
       <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
         <div className="space-y-4">
           {loading ? (
-            <Card>
+            <Card className="shadow-none">
               <CardContent className="p-6 text-sm text-muted-foreground">
                 Loading actions...
               </CardContent>
             </Card>
           ) : filteredActions.length === 0 ? (
-            <Card>
+            <Card className="shadow-none">
               <CardContent className="p-6 text-sm text-muted-foreground">
                 No actions found for this filter.
               </CardContent>
@@ -347,7 +353,10 @@ export function AIActionsAdminPage() {
               }
 
               return (
-                <Card key={action.id}>
+                <Card
+                  key={action.id}
+                  className="shadow-none transition-colors hover:border-primary/30"
+                >
                   <CardContent className="space-y-3 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
@@ -437,7 +446,7 @@ export function AIActionsAdminPage() {
             })
           )}
 
-          <Card>
+          <Card className="shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Recent Executions</CardTitle>
             </CardHeader>

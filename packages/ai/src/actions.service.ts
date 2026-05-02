@@ -953,8 +953,8 @@ ${actionSummary}
 
 ## Rules
 1. Use searchKnowledgeBase for factual questions.
-2. Use custom actions for operational requests (orders, bookings, account changes).
-3. If an action needs confirmation, ask clearly before execution.
+2. Use actions for operational requests only when the relevant action is configured.
+3. If an action needs confirmation or approval, ask clearly before execution and do not bypass the safety gate.
 4. After action execution, report the result clearly.
 5. If you cannot help, use requestHumanAgent.
 6. Never fabricate data. Use tools for real information.

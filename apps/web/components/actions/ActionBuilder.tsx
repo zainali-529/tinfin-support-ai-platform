@@ -96,6 +96,13 @@ function toSnakeCase(input: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
+function toTemplateIdentifier(input: string): string {
+  return input
+    .trim()
+    .replace(/[^a-zA-Z0-9_]+/g, '')
+    .replace(/^[^a-zA-Z]+/g, '')
+}
+
 function fromAction(action: ActionConfig): ActionDraft {
   return {
     name: action.name,
@@ -514,7 +521,7 @@ export function ActionBuilder({
                           const next = [...prev.parameters]
                           next[index] = {
                             ...ensureParameter(next[index]),
-                            name: toSnakeCase(event.target.value),
+                            name: toTemplateIdentifier(event.target.value),
                           }
                           return { ...prev, parameters: next }
                         })

@@ -18,9 +18,10 @@ import {
 import { protectedProcedure, router } from '../trpc/trpc'
 
 const ACTION_NAME_REGEX = /^[a-z][a-z0-9_]*$/
+const TEMPLATE_IDENTIFIER_REGEX = /^[a-zA-Z][a-zA-Z0-9_]*$/
 
 const actionParameterSchema = z.object({
-  name: z.string().regex(ACTION_NAME_REGEX),
+  name: z.string().regex(TEMPLATE_IDENTIFIER_REGEX),
   type: z.enum(['string', 'number', 'boolean', 'enum']),
   description: z.string().min(1).max(500),
   required: z.boolean().default(false),
@@ -518,7 +519,7 @@ export const actionsRouter = router({
     .input(
       z.object({
         actionId: z.string().uuid(),
-        keyName: z.string().regex(ACTION_NAME_REGEX),
+        keyName: z.string().regex(TEMPLATE_IDENTIFIER_REGEX),
         keyValue: z.string().min(1).max(4000),
       })
     )
@@ -576,7 +577,7 @@ export const actionsRouter = router({
     .input(
       z.object({
         actionId: z.string().uuid(),
-        keyName: z.string().regex(ACTION_NAME_REGEX),
+        keyName: z.string().regex(TEMPLATE_IDENTIFIER_REGEX),
       })
     )
     .mutation(async ({ ctx, input }) => {
