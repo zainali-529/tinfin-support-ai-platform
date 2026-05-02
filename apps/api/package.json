@@ -9,7 +9,6 @@
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
     "eval:historical": "tsx src/scripts/eval-historical-replay.ts",
-    "eval:identity": "tsx src/scripts/eval-ai-identity.ts",
     "load:reporting": "tsx src/scripts/load-reporting-dashboard.ts"
   },
   "dependencies": {

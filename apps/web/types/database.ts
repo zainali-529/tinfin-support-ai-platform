@@ -150,28 +150,3 @@ export interface EmailAccountConfig {
   updatedAt: string
 }
 
-// ─── Canned Responses ──────────────────────────────────────────────────────────
-
-export type CannedResponseCategory = string
-
-export interface CannedResponse {
-  id: string
-  orgId: string
-  title: string
-  category: CannedResponseCategory
-  shortcut: string | null
-  content: string
-  tags: string[]
-  isActive: boolean
-  usageCount: number
-  lastUsedAt: string | null
-  createdBy: string | null
-  updatedBy: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface CannedResponseSuggestion extends CannedResponse {
-  score: number
-  reason: string
-}

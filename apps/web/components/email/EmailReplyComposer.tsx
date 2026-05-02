@@ -7,14 +7,8 @@
  * Used as the input area in EmailConversationView.
  */
 
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useEmailReply } from '@/hooks/useEmail'
-import {
-  useCannedResponsesList,
-  useCannedResponseSuggestions,
-  useCannedResponseUsage,
-} from '@/hooks/useCannedResponses'
-import { CannedResponsePicker } from '@/components/canned/CannedResponsePicker'
 import { Button } from '@workspace/ui/components/button'
 import { Textarea } from '@workspace/ui/components/textarea'
 import { Badge } from '@workspace/ui/components/badge'
@@ -25,7 +19,6 @@ import {
   CheckCircleIcon,
   AlertCircleIcon,
 } from 'lucide-react'
-import type { CannedResponse } from '@/types/database'
 
 interface Props {
   conversationId: string
@@ -38,37 +31,8 @@ interface Props {
 export function EmailReplyComposer({ conversationId, status, toEmail }: Props) {
   const { sendReply } = useEmailReply()
   const [content, setContent] = useState('')
-  const [cannedOpen, setCannedOpen] = useState(false)
-  const [cannedQuery, setCannedQuery] = useState('')
   const [sentOk, setSentOk] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { data: cannedResponses = [], isLoading: cannedLoading } = useCannedResponsesList({
-    query: cannedQuery || undefined,
-    limit: 50,
-  })
-  const { data: cannedSuggestions = [] } = useCannedResponseSuggestions(conversationId, 3)
-  const cannedUsage = useCannedResponseUsage()
-  const orderedCannedResponses = useMemo(() => {
-    if (cannedQuery.trim().length > 0) return cannedResponses
-
-    const merged: CannedResponse[] = []
-    const seen = new Set<string>()
-
-    for (const item of cannedSuggestions) {
-      if (!seen.has(item.id)) {
-        merged.push(item)
-        seen.add(item.id)
-      }
-    }
-    for (const item of cannedResponses) {
-      if (!seen.has(item.id)) {
-        merged.push(item)
-        seen.add(item.id)
-      }
-    }
-
-    return merged
-  }, [cannedQuery, cannedResponses, cannedSuggestions])
 
   const isResolved = status === 'resolved' || status === 'closed'
   const canSend = content.trim().length > 0 && !isResolved && !sendReply.isPending
@@ -90,28 +54,10 @@ export function EmailReplyComposer({ conversationId, status, toEmail }: Props) {
   }, [canSend, content, conversationId, sendReply])
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Escape' && cannedOpen) {
-      setCannedOpen(false)
-      return
-    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       void handleSend()
     }
   }
-
-  const handleCannedSelect = useCallback((item: CannedResponse) => {
-    setContent((prev) => {
-      const slashMatch = prev.match(/(?:^|\s)\/[a-z0-9_-]*$/i)
-      if (!slashMatch) return prev.trim().length > 0 ? `${prev}\n${item.content}` : item.content
-
-      const start = slashMatch.index ?? prev.length
-      const prefix = prev.slice(0, start).trimEnd()
-      return prefix.length > 0 ? `${prefix}\n${item.content}` : item.content
-    })
-    setCannedOpen(false)
-    setCannedQuery('')
-    void cannedUsage.mutateAsync({ id: item.id }).catch(() => undefined)
-  }, [cannedUsage])
 
   if (isResolved) {
     return (
@@ -126,14 +72,6 @@ export function EmailReplyComposer({ conversationId, status, toEmail }: Props) {
   return (
     <div className="border-t bg-card/50 p-3 shrink-0">
       <div className="relative rounded-xl border bg-background ring-1 ring-border/50 transition-shadow focus-within:ring-2 focus-within:ring-ring/30">
-        <CannedResponsePicker
-          open={cannedOpen}
-          query={cannedQuery}
-          loading={cannedLoading}
-          responses={orderedCannedResponses}
-          onSelect={handleCannedSelect}
-        />
-
         {/* To: header bar */}
         <div className="flex items-center gap-2 border-b px-3 py-2 bg-muted/20 rounded-t-xl">
           <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wide">To:</span>
@@ -158,22 +96,10 @@ export function EmailReplyComposer({ conversationId, status, toEmail }: Props) {
         {/* Reply textarea */}
         <Textarea
           ref={textareaRef}
-          placeholder="Write your reply… (Use / for canned responses, ⌘+Enter to send)"
+          placeholder="Write your reply… (⌘+Enter to send)"
           className="min-h-[96px] resize-none border-0 bg-transparent px-3 py-2.5 text-sm shadow-none focus-visible:ring-0"
           value={content}
-          onChange={(e) => {
-            const value = e.target.value
-            setContent(value)
-
-            const slashMatch = value.match(/(?:^|\s)\/([a-z0-9_-]*)$/i)
-            if (slashMatch) {
-              setCannedOpen(true)
-              setCannedQuery(slashMatch[1] ?? '')
-            } else {
-              setCannedOpen(false)
-              setCannedQuery('')
-            }
-          }}
+          onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKey}
         />
 

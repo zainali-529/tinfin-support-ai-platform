@@ -10,7 +10,6 @@ export const TEAM_PERMISSION_KEYS = [
   'widget',
   'embedding',
   'voiceAssistant',
-  'cannedResponses',
   'channels',
 ] as const
 
@@ -77,12 +76,6 @@ export const TEAM_PERMISSION_META: TeamPermissionMeta[] = [
     key: 'voiceAssistant',
     label: 'Voice Assistant',
     description: 'Configure AI voice assistant settings.',
-    defaultAgent: false,
-  },
-  {
-    key: 'cannedResponses',
-    label: 'Canned Replies',
-    description: 'Create and manage reusable support replies.',
     defaultAgent: false,
   },
   {
@@ -157,4 +150,3 @@ export function hasTeamPermission(
   if (role === 'admin') return true
   return permissions[key] === true
 }
-

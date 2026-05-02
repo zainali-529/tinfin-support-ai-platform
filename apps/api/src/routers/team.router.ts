@@ -20,7 +20,6 @@ const permissionsInputSchema = z
     widget: z.boolean().optional(),
     embedding: z.boolean().optional(),
     voiceAssistant: z.boolean().optional(),
-    cannedResponses: z.boolean().optional(),
     channels: z.boolean().optional(),
   })
   .optional()

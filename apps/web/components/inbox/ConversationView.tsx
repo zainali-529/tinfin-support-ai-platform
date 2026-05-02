@@ -40,16 +40,10 @@ import {
   FileIcon, ImageIcon, XIcon, Loader2Icon, DownloadIcon,
 } from 'lucide-react'
 import { useMessages } from '@/hooks/useMessages'
-import {
-  useCannedResponsesList,
-  useCannedResponseSuggestions,
-  useCannedResponseUsage,
-} from '@/hooks/useCannedResponses'
 import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
-import { CannedResponsePicker } from '@/components/canned/CannedResponsePicker'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
-import type { Conversation, Attachment, CannedResponse } from '@/types/database'
+import type { Conversation, Attachment } from '@/types/database'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -83,17 +77,6 @@ function formatFileSize(bytes: number): string {
 
 function isImageType(type: string): boolean {
   return type.startsWith('image/')
-}
-
-function insertCannedText(current: string, cannedContent: string): string {
-  const slashMatch = current.match(/(?:^|\s)\/[a-z0-9_-]*$/i)
-  if (!slashMatch) {
-    return current.trim().length > 0 ? `${current}\n${cannedContent}` : cannedContent
-  }
-
-  const start = slashMatch.index ?? current.length
-  const prefix = current.slice(0, start).trimEnd()
-  return prefix.length > 0 ? `${prefix}\n${cannedContent}` : cannedContent
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -463,8 +446,6 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   })
   const updateConversationLabels = trpc.chat.updateLabels.useMutation()
   const [reply, setReply] = useState('')
-  const [cannedOpen, setCannedOpen] = useState(false)
-  const [cannedQuery, setCannedQuery] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [resolvingActionKey, setResolvingActionKey] = useState<string | null>(null)
   const [assigningAgentValue, setAssigningAgentValue] = useState<string | null>(null)
@@ -481,33 +462,6 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   const isResolved = status === 'resolved' || status === 'closed'
   const canReply = isAgentMode && !isResolved
   const aiTyping = aiTypingConversationId === conversation.id
-  const { data: cannedResponses = [], isLoading: cannedLoading } = useCannedResponsesList({
-    query: cannedQuery || undefined,
-    limit: 50,
-  })
-  const { data: cannedSuggestions = [] } = useCannedResponseSuggestions(conversation.id, 3)
-  const cannedUsage = useCannedResponseUsage()
-  const orderedCannedResponses = useMemo(() => {
-    if (cannedQuery.trim().length > 0) return cannedResponses
-
-    const merged: CannedResponse[] = []
-    const seen = new Set<string>()
-
-    for (const item of cannedSuggestions) {
-      if (!seen.has(item.id)) {
-        merged.push(item)
-        seen.add(item.id)
-      }
-    }
-    for (const item of cannedResponses) {
-      if (!seen.has(item.id)) {
-        merged.push(item)
-        seen.add(item.id)
-      }
-    }
-
-    return merged
-  }, [cannedQuery, cannedResponses, cannedSuggestions])
   const assignableMembers = useMemo(() => {
     const raw = (teamMembersQuery.data ?? []) as TeamMember[]
     return raw
@@ -774,19 +728,8 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
   ])
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape' && cannedOpen) {
-      setCannedOpen(false)
-      return
-    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend()
   }
-
-  const handleCannedSelect = useCallback((item: CannedResponse) => {
-    setReply((prev) => insertCannedText(prev, item.content))
-    setCannedOpen(false)
-    setCannedQuery('')
-    void cannedUsage.mutateAsync({ id: item.id }).catch(() => undefined)
-  }, [cannedUsage])
 
   const handleTakeover = useCallback(async () => {
     const previousStatus = status
@@ -1351,14 +1294,6 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
           </div>
         ) : (
           <div className="relative rounded-xl border bg-background ring-1 ring-border/50 transition-shadow focus-within:ring-2 focus-within:ring-ring/30">
-            <CannedResponsePicker
-              open={cannedOpen}
-              query={cannedQuery}
-              loading={cannedLoading}
-              responses={orderedCannedResponses}
-              onSelect={handleCannedSelect}
-            />
-
             {hasReplyCollision && (
               <div className="mx-3 mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
                 Another teammate is already typing in this conversation. Please coordinate before sending.
@@ -1405,22 +1340,10 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
 
             <Textarea
               ref={textareaRef}
-              placeholder="Type your reply… (Use / for canned responses, ⌘+Enter to send)"
+              placeholder="Type your reply… (⌘+Enter to send)"
               className="min-h-[72px] resize-none border-0 bg-transparent px-3 py-2.5 text-sm shadow-none focus-visible:ring-0"
               value={reply}
-              onChange={(e) => {
-                const value = e.target.value
-                setReply(value)
-
-                const slashMatch = value.match(/(?:^|\s)\/([a-z0-9_-]*)$/i)
-                if (slashMatch) {
-                  setCannedOpen(true)
-                  setCannedQuery(slashMatch[1] ?? '')
-                } else {
-                  setCannedOpen(false)
-                  setCannedQuery('')
-                }
-              }}
+              onChange={(e) => setReply(e.target.value)}
               onKeyDown={handleKey}
             />
 

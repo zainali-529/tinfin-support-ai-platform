@@ -13,11 +13,8 @@ import { analyticsRouter } from '../routers/analytics.router'
 import { emailRouter } from '../routers/email.router'
 import { whatsappRouter } from '../routers/whatsapp.router'
 import { contactsRouter } from '../routers/contacts.router'
-import { cannedResponsesRouter } from '../routers/canned-responses.router'
 import { dashboardRouter } from '../routers/dashboard.router'
 import { actionsRouter } from '../routers/actions.router'
-import { aiProfileRouter } from '../routers/ai-profile.router'
-import { knowledgeQualityRouter } from '../routers/knowledge-quality.router'
 import { widgetInstallRouter } from '../routers/widget-install.router'
 
 export const appRouter = router({
@@ -35,11 +32,8 @@ export const appRouter = router({
   email: emailRouter,
   whatsapp: whatsappRouter,
   contacts: contactsRouter,
-  cannedResponses: cannedResponsesRouter,
   dashboard: dashboardRouter,
   actions: actionsRouter,
-  aiProfile: aiProfileRouter,
-  knowledgeQuality: knowledgeQualityRouter,
   widgetInstall: widgetInstallRouter,
 })
 

@@ -10,8 +10,6 @@ export interface IngestUrlParams {
   orgId: string
   openaiApiKey?: string
   sourceType?: string
-  isPinned?: boolean
-  pinnedReason?: string
 }
 
 export interface IngestFileParams {
@@ -22,8 +20,6 @@ export interface IngestFileParams {
   orgId: string
   openaiApiKey?: string
   sourceType?: string
-  isPinned?: boolean
-  pinnedReason?: string
 }
 
 export interface IngestTextParams {
@@ -33,8 +29,6 @@ export interface IngestTextParams {
   orgId: string
   openaiApiKey?: string
   sourceType?: string
-  isPinned?: boolean
-  pinnedReason?: string
 }
 
 export interface IngestResult {
@@ -52,9 +46,6 @@ interface KbChunkInsert {
   embedding: number[]
   source_url: string | null
   source_title: string | null
-  source_type?: string
-  is_pinned?: boolean
-  pinned_reason?: string | null
   metadata: Record<string, unknown>
 }
 
@@ -83,7 +74,7 @@ async function storeChunks(records: KbChunkInsert[]): Promise<void> {
  * Crawl a URL, chunk its content, embed, and store in kb_chunks.
  */
 export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> {
-  const { url, kbId, orgId, openaiApiKey, sourceType = 'url', isPinned = false, pinnedReason } = params
+  const { url, kbId, orgId, openaiApiKey, sourceType = 'url' } = params
 
   try {
     // 1. Crawl
@@ -121,13 +112,9 @@ export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> 
       embedding: embeddings[i] ?? [],
       source_url: chunk.sourceUrl ?? null,
       source_title: chunk.sourceTitle ?? null,
-      source_type: sourceType,
-      is_pinned: isPinned,
-      pinned_reason: pinnedReason ?? null,
       metadata: {
         ...((chunk.metadata ?? {}) as Record<string, unknown>),
         sourceType,
-        pinned: isPinned,
       },
     }))
 
@@ -152,7 +139,7 @@ export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> 
  * Parse a file buffer (PDF/DOCX), chunk, embed, and store in kb_chunks.
  */
 export async function ingestFile(params: IngestFileParams): Promise<IngestResult> {
-  const { fileBuffer, mimeType, filename, kbId, orgId, openaiApiKey, sourceType = 'file', isPinned = false, pinnedReason } = params
+  const { fileBuffer, mimeType, filename, kbId, orgId, openaiApiKey, sourceType = 'file' } = params
 
   try {
     // 1. Parse
@@ -187,13 +174,9 @@ export async function ingestFile(params: IngestFileParams): Promise<IngestResult
       embedding: embeddings[i] ?? [],
       source_url: null,
       source_title: chunk.sourceTitle ?? null,
-      source_type: sourceType,
-      is_pinned: isPinned,
-      pinned_reason: pinnedReason ?? null,
       metadata: {
         ...((chunk.metadata ?? {}) as Record<string, unknown>),
         sourceType,
-        pinned: isPinned,
       },
     }))
 
@@ -220,8 +203,6 @@ export async function ingestText(params: IngestTextParams): Promise<IngestResult
     orgId,
     openaiApiKey,
     sourceType = 'text_note',
-    isPinned = false,
-    pinnedReason,
   } = params
 
   try {
@@ -252,13 +233,9 @@ export async function ingestText(params: IngestTextParams): Promise<IngestResult
       embedding: embeddings[index] ?? [],
       source_url: null,
       source_title: chunk.sourceTitle ?? sourceTitle,
-      source_type: sourceType,
-      is_pinned: isPinned,
-      pinned_reason: pinnedReason ?? null,
       metadata: {
         ...(chunk.metadata ?? {}),
         sourceType,
-        pinned: isPinned,
       },
     }))
 

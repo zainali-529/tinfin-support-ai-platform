@@ -277,23 +277,6 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_messages (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.canned_responses (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id       UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  title        TEXT NOT NULL,
-  category     TEXT NOT NULL DEFAULT 'general',
-  shortcut     TEXT,
-  content      TEXT NOT NULL,
-  tags         JSONB NOT NULL DEFAULT '[]'::jsonb,
-  is_active    BOOLEAN NOT NULL DEFAULT TRUE,
-  usage_count  INTEGER NOT NULL DEFAULT 0,
-  last_used_at TIMESTAMPTZ,
-  created_by   UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  updated_by   UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS public.ai_actions (
   id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id                   UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -414,8 +397,6 @@ CREATE INDEX IF NOT EXISTS idx_calls_vapi_id ON public.calls(vapi_call_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_wa_id ON public.whatsapp_messages(wa_message_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_conv ON public.whatsapp_messages(conversation_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS canned_responses_org_shortcut_unique ON public.canned_responses(org_id, shortcut);
-
 CREATE INDEX IF NOT EXISTS idx_ai_actions_org_active ON public.ai_actions(org_id) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_ai_action_logs_conv ON public.ai_action_logs(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_ai_action_logs_org_date ON public.ai_action_logs(org_id, created_at DESC);
@@ -459,11 +440,6 @@ CREATE TRIGGER calls_updated_at
 DROP TRIGGER IF EXISTS whatsapp_accounts_updated_at ON public.whatsapp_accounts;
 CREATE TRIGGER whatsapp_accounts_updated_at
   BEFORE UPDATE ON public.whatsapp_accounts
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
-DROP TRIGGER IF EXISTS canned_responses_updated_at ON public.canned_responses;
-CREATE TRIGGER canned_responses_updated_at
-  BEFORE UPDATE ON public.canned_responses
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 DROP TRIGGER IF EXISTS ai_actions_updated_at ON public.ai_actions;
@@ -657,7 +633,6 @@ BEGIN
       'widget', true,
       'embedding', true,
       'voiceAssistant', true,
-      'cannedResponses', true,
       'channels', true
     )
   )
@@ -784,7 +759,6 @@ ALTER TABLE public.vapi_assistants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.canned_responses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_action_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_action_logs ENABLE ROW LEVEL SECURITY;
@@ -846,9 +820,6 @@ CREATE POLICY service_role_whatsapp_accounts ON public.whatsapp_accounts FOR ALL
 
 DROP POLICY IF EXISTS service_role_whatsapp_messages ON public.whatsapp_messages;
 CREATE POLICY service_role_whatsapp_messages ON public.whatsapp_messages FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
-
-DROP POLICY IF EXISTS service_role_canned_responses ON public.canned_responses;
-CREATE POLICY service_role_canned_responses ON public.canned_responses FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
 
 DROP POLICY IF EXISTS service_role_ai_actions ON public.ai_actions;
 CREATE POLICY service_role_ai_actions ON public.ai_actions FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
