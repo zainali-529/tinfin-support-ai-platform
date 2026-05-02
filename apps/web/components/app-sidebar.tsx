@@ -34,6 +34,7 @@ import {
   MessageSquareQuoteIcon,
   MicIcon,
   PhoneCallIcon,
+  SearchCheckIcon,
   SettingsIcon,
   UsersIcon,
   WorkflowIcon,
@@ -76,6 +77,7 @@ const navGroups: NavGroup[] = [
     label: 'AI Studio',
     items: [
       { label: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon, permission: 'knowledge' },
+      { label: 'Quality Center', href: '/knowledge-quality', icon: SearchCheckIcon, permission: 'knowledge' },
       { label: 'AI Profile', href: '/ai-profile', icon: BrainCircuitIcon, permission: 'knowledge' },
       { label: 'Canned Replies', href: '/canned-responses', icon: MessageSquareQuoteIcon, permission: 'cannedResponses' },
       { label: 'Widget', href: '/widget', icon: CodeIcon, permission: 'widget' },

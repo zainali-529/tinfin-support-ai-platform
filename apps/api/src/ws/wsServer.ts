@@ -454,9 +454,34 @@ interface ContactIdentityRow {
   created_at: string
 }
 
+interface ContactIdentityInput {
+  orgId: string
+  visitorId: string
+  name?: string
+  email?: string
+  userId?: string
+  phone?: string
+  userHash?: string
+  company?: Record<string, unknown>
+  traits?: Record<string, unknown>
+  page?: Record<string, unknown>
+  customAttributes?: Record<string, unknown>
+}
+
 function normalizeEmail(email?: string): string | undefined {
   const value = email?.trim().toLowerCase()
   return value || undefined
+}
+
+function cleanOptionalText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function cleanObject(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined)
+  )
 }
 
 function readVisitorId(meta: unknown): string | null {
@@ -465,9 +490,19 @@ function readVisitorId(meta: unknown): string | null {
   return typeof visitorId === 'string' && visitorId.trim().length > 0 ? visitorId.trim() : null
 }
 
-function mergeMeta(meta: unknown, visitorId: string): Record<string, unknown> {
+function mergeMeta(meta: unknown, identity: Omit<ContactIdentityInput, 'orgId'>): Record<string, unknown> {
   const base = (meta && typeof meta === 'object') ? (meta as Record<string, unknown>) : {}
-  return { ...base, visitorId }
+  return {
+    ...base,
+    visitorId: identity.visitorId,
+    ...(identity.userId ? { externalUserId: identity.userId } : {}),
+    ...(identity.phone ? { phone: identity.phone } : {}),
+    ...(identity.userHash ? { userHash: identity.userHash } : {}),
+    ...(identity.company ? { company: identity.company } : {}),
+    ...(identity.traits ? { traits: identity.traits } : {}),
+    ...(identity.page ? { lastPage: identity.page } : {}),
+    ...(identity.customAttributes ? { customAttributes: identity.customAttributes } : {}),
+  }
 }
 
 function pickCanonicalContact(
@@ -508,7 +543,7 @@ async function relinkDuplicateContacts(orgId: string, canonicalId: string, dupli
   } catch (e) { console.error('[ws] relinkDuplicateContacts:', e) }
 }
 
-async function upsertContact(params: { orgId: string; visitorId: string; name?: string; email?: string }): Promise<string | null> {
+async function upsertContact(params: ContactIdentityInput): Promise<string | null> {
   const email = normalizeEmail(params.email)
   try {
     const [visitorContacts, emailContacts] = await Promise.all([
@@ -523,7 +558,16 @@ async function upsertContact(params: { orgId: string; visitorId: string; name?: 
     if (canonical) {
       const nextName = params.name?.trim() || canonical.name || null
       const nextEmail = email || canonical.email || null
-      const nextMeta = mergeMeta(canonical.meta, params.visitorId)
+      const nextMeta = mergeMeta(canonical.meta, {
+        visitorId: params.visitorId,
+        userId: cleanOptionalText(params.userId),
+        phone: cleanOptionalText(params.phone),
+        userHash: cleanOptionalText(params.userHash),
+        company: cleanObject(params.company),
+        traits: cleanObject(params.traits),
+        page: cleanObject(params.page),
+        customAttributes: cleanObject(params.customAttributes),
+      })
       await getSupabase().from('contacts').update({ name: nextName, email: nextEmail, meta: nextMeta })
         .eq('id', canonical.id).eq('org_id', params.orgId)
       const duplicateIds = candidates.filter(c => c.id !== canonical.id).map(c => c.id)
@@ -533,7 +577,17 @@ async function upsertContact(params: { orgId: string; visitorId: string; name?: 
 
     const { data: created } = await getSupabase().from('contacts').insert({
       org_id: params.orgId, name: params.name?.trim() || null,
-      email: email || null, meta: { visitorId: params.visitorId },
+      email: email || null,
+      meta: mergeMeta(null, {
+        visitorId: params.visitorId,
+        userId: cleanOptionalText(params.userId),
+        phone: cleanOptionalText(params.phone),
+        userHash: cleanOptionalText(params.userHash),
+        company: cleanObject(params.company),
+        traits: cleanObject(params.traits),
+        page: cleanObject(params.page),
+        customAttributes: cleanObject(params.customAttributes),
+      }),
     }).select('id').maybeSingle()
     return created?.id ?? null
   } catch (e) { console.error('[ws] upsertContact:', e); return null }
@@ -632,16 +686,41 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
 
 async function handleVisitorIdentify(socket: TinfinSocket, msg: Record<string, unknown>) {
   const orgId = socket.orgId!
+  const visitorInfo = (msg.visitorInfo as Record<string, unknown> | undefined) ?? {}
   const name = (msg.name as string | undefined)?.trim()
   const email = (msg.email as string | undefined)?.trim().toLowerCase()
-  if (!name && !email) return
+  const userId = cleanOptionalText(msg.userId ?? visitorInfo.id)
+  const phone = cleanOptionalText(msg.phone ?? visitorInfo.phone)
+  const userHash = cleanOptionalText(msg.userHash ?? visitorInfo.userHash)
+  const company = cleanObject(msg.company ?? visitorInfo.company)
+  const traits = cleanObject(msg.traits ?? visitorInfo.traits)
+  const page = cleanObject(msg.page ?? visitorInfo.page)
+  const customAttributes = cleanObject(msg.customAttributes ?? visitorInfo.customAttributes)
 
-  const contactId = await upsertContact({ orgId, visitorId: socket.visitorId!, name, email })
+  if (!name && !email && !userId && !phone) return
+
+  const contactId = await upsertContact({
+    orgId,
+    visitorId: socket.visitorId!,
+    name,
+    email,
+    userId,
+    phone,
+    userHash,
+    company,
+    traits,
+    page,
+    customAttributes,
+  })
   if (contactId && socket.conversationId) {
     await getSupabase().from('conversations').update({ contact_id: contactId })
       .eq('id', socket.conversationId).eq('org_id', orgId)
   }
-  broadcastToAgents(orgId, { type: 'contact:updated', conversationId: socket.conversationId, contact: { name, email } })
+  broadcastToAgents(orgId, {
+    type: 'contact:updated',
+    conversationId: socket.conversationId,
+    contact: { name, email, userId, phone, company, traits, customAttributes },
+  })
 }
 
 // ── Visitor: message (with attachments) ───────────────────────────────────────
@@ -658,6 +737,13 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
   const visitorInfo = (msg.visitorInfo as Record<string, unknown> | undefined) ?? {}
   const name = ((msg.name as string | undefined) ?? (visitorInfo.name as string | undefined))?.trim()
   const email = ((msg.email as string | undefined) ?? (visitorInfo.email as string | undefined))?.trim().toLowerCase()
+  const userId = cleanOptionalText(msg.userId ?? visitorInfo.id)
+  const phone = cleanOptionalText(msg.phone ?? visitorInfo.phone)
+  const userHash = cleanOptionalText(msg.userHash ?? visitorInfo.userHash)
+  const company = cleanObject(msg.company ?? visitorInfo.company)
+  const traits = cleanObject(msg.traits ?? visitorInfo.traits)
+  const page = cleanObject(msg.page ?? visitorInfo.page)
+  const customAttributes = cleanObject(msg.customAttributes ?? visitorInfo.customAttributes)
 
   if (requestedConversationId) {
     const ownsConversation = await visitorOwnsConversation(orgId, socket.visitorId!, requestedConversationId)
@@ -684,8 +770,20 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 
   const conversationId = socket.conversationId
 
-  if (name || email) {
-    const contactId = await upsertContact({ orgId, visitorId: socket.visitorId!, name, email })
+  if (name || email || userId || phone) {
+    const contactId = await upsertContact({
+      orgId,
+      visitorId: socket.visitorId!,
+      name,
+      email,
+      userId,
+      phone,
+      userHash,
+      company,
+      traits,
+      page,
+      customAttributes,
+    })
     if (contactId) {
       await getSupabase().from('conversations').update({ contact_id: contactId })
         .eq('id', conversationId).eq('org_id', orgId)

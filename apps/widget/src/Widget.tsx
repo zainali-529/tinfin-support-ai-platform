@@ -156,6 +156,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const [formError, setFormError] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const autoOpenDone = useRef(false)
+  const identityAppliedRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -220,6 +221,40 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const headerBg = headerStyle === 'gradient'
     ? `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)`
     : color
+
+  useEffect(() => {
+    const user = config.user
+    if (!user && !config.company && !config.customAttributes) return
+
+    const email = typeof user?.email === 'string' ? user.email.trim().toLowerCase() : ''
+    const name =
+      (typeof user?.name === 'string' ? user.name.trim() : '') ||
+      (email ? email.split('@')[0] ?? '' : '') ||
+      (typeof user?.id === 'string' ? user.id.trim() : '') ||
+      'Visitor'
+
+    if (!name && !email && !user?.id) return
+
+    const identity: VisitorInfo = {
+      name,
+      email,
+      id: typeof user?.id === 'string' ? user.id.trim() : undefined,
+      phone: typeof user?.phone === 'string' ? user.phone.trim() : undefined,
+      userHash: typeof user?.userHash === 'string' ? user.userHash.trim() : undefined,
+      company: config.company,
+      traits: user?.traits,
+      page: config.page,
+      customAttributes: config.customAttributes,
+    }
+
+    const signature = JSON.stringify(identity)
+    if (identityAppliedRef.current === signature) return
+    identityAppliedRef.current = signature
+
+    setNameInput(identity.name)
+    if (identity.email) setEmailInput(identity.email)
+    initWithVisitorInfo(identity)
+  }, [config.user, config.company, config.page, config.customAttributes, initWithVisitorInfo])
 
   // ── Auto-open ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -380,6 +415,50 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     startNewChat()
     setTab('chat')
   }, [startNewChat])
+
+  useEffect(() => {
+    const onCommand = (event: Event) => {
+      const detail = (event as CustomEvent<{ type?: string; payload?: unknown }>).detail
+      const type = detail?.type
+      const payload = detail?.payload
+
+      if (type === 'show' || type === 'open') {
+        setOpen(true)
+        return
+      }
+
+      if (type === 'hide' || type === 'close') {
+        setOpen(false)
+        return
+      }
+
+      if (type === 'newChat') {
+        setOpen(true)
+        handleStartChat()
+        return
+      }
+
+      if (type === 'openNewMessage') {
+        const message =
+          typeof payload === 'string'
+            ? payload
+            : typeof payload === 'object' && payload !== null && 'message' in payload
+              ? String((payload as { message?: unknown }).message ?? '')
+              : ''
+
+        setOpen(true)
+        setTab('chat')
+        if (!activeConversationId) startNewChat()
+        if (message.trim()) {
+          setInput(message)
+          requestAnimationFrame(() => textareaRef.current?.focus())
+        }
+      }
+    }
+
+    window.addEventListener('tinfin:command', onCommand)
+    return () => window.removeEventListener('tinfin:command', onCommand)
+  }, [activeConversationId, handleStartChat, startNewChat])
 
   const handleStartCall = useCallback(async () => {
     setTab('call')

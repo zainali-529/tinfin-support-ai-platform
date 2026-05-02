@@ -17,6 +17,8 @@ import { cannedResponsesRouter } from '../routers/canned-responses.router'
 import { dashboardRouter } from '../routers/dashboard.router'
 import { actionsRouter } from '../routers/actions.router'
 import { aiProfileRouter } from '../routers/ai-profile.router'
+import { knowledgeQualityRouter } from '../routers/knowledge-quality.router'
+import { widgetInstallRouter } from '../routers/widget-install.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -37,6 +39,8 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   actions: actionsRouter,
   aiProfile: aiProfileRouter,
+  knowledgeQuality: knowledgeQualityRouter,
+  widgetInstall: widgetInstallRouter,
 })
 
 export type AppRouter = typeof appRouter;

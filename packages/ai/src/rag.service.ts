@@ -70,6 +70,122 @@ const GPT_MODEL = 'gpt-4o-mini'
 const KB_SCOPE_SEARCH_FACTOR = 8
 const KB_SCOPE_MIN_COUNT = 50
 const KB_SCOPE_MAX_COUNT = 200
+const LEXICAL_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'about',
+  'can',
+  'do',
+  'does',
+  'for',
+  'hai',
+  'hain',
+  'hota',
+  'hoti',
+  'hotay',
+  'hote',
+  'how',
+  'is',
+  'ka',
+  'ke',
+  'ki',
+  'kya',
+  'kia',
+  'me',
+  'mein',
+  'of',
+  'on',
+  'tell',
+  'the',
+  'this',
+  'to',
+  'what',
+  'who',
+  'why',
+  'you',
+  'your',
+])
+const TOKEN_SYNONYMS: Record<string, string[]> = {
+  pricing: ['pricing', 'price', 'prices', 'cost', 'charges', 'plan', 'plans', 'billing', 'subscription'],
+  price: ['pricing', 'price', 'prices', 'cost', 'charges', 'plan', 'plans', 'billing', 'subscription'],
+  cost: ['pricing', 'price', 'prices', 'cost', 'charges', 'plan', 'plans', 'billing', 'subscription'],
+  refund: ['refund', 'return', 'reimbursement'],
+  returns: ['return', 'returns', 'refund'],
+  issue: ['issue', 'problem', 'error', 'bug', 'trouble'],
+  problem: ['issue', 'problem', 'error', 'bug', 'trouble'],
+}
+const COMPANY_IDENTITY_INTENTS = new Set<AIIntentResult['intent']>([
+  'company_identity',
+  'product_overview',
+])
+
+function canUsePinnedCompanyContext(intentResult: AIIntentResult): boolean {
+  return COMPANY_IDENTITY_INTENTS.has(intentResult.intent)
+}
+
+function requiresGroundedEvidence(intentResult: AIIntentResult): boolean {
+  return !['small_talk', 'human_handoff'].includes(intentResult.intent)
+}
+
+function isRomanUrduLike(intentResult: AIIntentResult): boolean {
+  return intentResult.languageHint === 'roman_urdu' || intentResult.languageHint === 'mixed'
+}
+
+function buildGroundedNoAnswerMessage(
+  aiContext: AIContextBundle,
+  intentResult: AIIntentResult
+): string {
+  const companyName = aiContext.profile.companyName
+
+  if (isRomanUrduLike(intentResult)) {
+    if (intentResult.intent === 'out_of_scope') {
+      return `Mere paas is topic ke bare mein verified information available nahi hai. Main ${companyName}-related questions mein help kar sakta hoon.`
+    }
+
+    return `Mere paas is sawal ka verified answer available nahi hai. Agar aap chahen to main aapko human agent se connect kar sakta hoon. (Reply **yes** to connect)`
+  }
+
+  if (intentResult.intent === 'out_of_scope') {
+    return `I don't have verified information about that topic. I can help with ${companyName}-related questions.`
+  }
+
+  return `I don't have verified information for that question right now. Would you like me to connect you with a human agent who can help further? (Reply **yes** to connect)`
+}
+
+function extractSalientTokens(query: string): string[] {
+  const tokens = query
+    .toLowerCase()
+    .match(/[a-z0-9]+/g) ?? []
+
+  return [...new Set(tokens.filter((token) =>
+    token.length >= 3 &&
+    !LEXICAL_STOP_WORDS.has(token) &&
+    !/^\d+$/.test(token)
+  ))].slice(0, 8)
+}
+
+function expandToken(token: string): string[] {
+  return TOKEN_SYNONYMS[token] ?? [token]
+}
+
+function hasLexicalEvidence(query: string, chunks: MatchedChunk[]): boolean {
+  const tokens = extractSalientTokens(query)
+  if (tokens.length === 0) return true
+  if (chunks.length === 0) return false
+
+  const haystack = chunks
+    .map((chunk) => chunk.content)
+    .join('\n')
+    .toLowerCase()
+  const hits = tokens.filter((token) =>
+    expandToken(token).some((candidate) => haystack.includes(candidate))
+  )
+
+  if (tokens.length <= 2) return hits.length === tokens.length
+  return hits.length / tokens.length >= 0.5
+}
 
 // ─── Human Handoff Detection ──────────────────────────────────────────────────
 
@@ -232,6 +348,7 @@ function buildMasterPrompt(
 ${organizationSection}
 
 Your factual answers must come from the organization identity, guidance, and knowledge context provided below. You do not have access to external information, the internet, or unsupported knowledge.
+Organization Identity is only grounding for questions about this organization, your role, or what this organization offers. It is not evidence for third-party products, companies, definitions, coding questions, world facts, or general knowledge.
 
 ${kbSection}
 
@@ -258,6 +375,9 @@ Answer accurately and professionally using ONLY the knowledge base context provi
 
 **For company identity questions ("tell me about your company", "who are you", "what do you do", "aapki company kya karti hai"):**
 Answer directly as ${aiContext.profile.companyName}'s assistant. Use the Organization Identity and any company profile context. Do not ask "which company?" unless the user clearly names a different third-party company and asks about that company.
+
+**For definition/general-knowledge questions ("what is X", "who is X", "X kya hai") that are not clearly about ${aiContext.profile.companyName}:**
+Respond with exactly this token and nothing else: OUT_OF_DOMAIN
 
 **For questions that are completely unrelated to your knowledge base** (other companies, entertainment, anime, coding help unrelated to KB, world news, unrelated topics):
 Respond with exactly this token and nothing else: OUT_OF_DOMAIN
@@ -425,7 +545,8 @@ The user just opened the chat. Greet them warmly as ${aiContext.profile.companyN
     kbId
   )
 
-  const pinnedCompanyChunks = intentResult.shouldUseCompanyIdentity
+  const allowPinnedCompanyContext = canUsePinnedCompanyContext(intentResult)
+  const pinnedCompanyChunks = allowPinnedCompanyContext
     ? await fetchPinnedCompanyChunks({ orgId, kbId, limit: 4 })
     : []
   const usedPinnedCompanyContext = pinnedCompanyChunks.length > 0
@@ -435,14 +556,19 @@ The user just opened the chat. Greet them warmly as ${aiContext.profile.companyN
   ]).slice(0, Math.max(maxChunks, pinnedCompanyChunks.length + maxChunks))
 
   const semanticConfidence = calculateConfidence(semanticChunks)
+  const lexicalEvidence = hasLexicalEvidence(trimmedQuery, semanticChunks)
+  const semanticHasStrongEvidence = semanticConfidence >= KB_RELEVANCE_THRESHOLD && lexicalEvidence
+  const identityProfileConfidence =
+    allowPinnedCompanyContext && (usedPinnedCompanyContext || Boolean(aiContext.profile.companySummary))
+      ? 0.86
+      : 0
   const confidence = Math.max(
-    semanticConfidence,
-    usedPinnedCompanyContext ? 0.92 : 0,
-    intentResult.shouldUseCompanyIdentity && aiContext.profile.companySummary ? 0.82 : 0
+    semanticHasStrongEvidence ? semanticConfidence : 0,
+    identityProfileConfidence
   )
   const hasStrongContext =
-    confidence >= KB_RELEVANCE_THRESHOLD ||
-    (intentResult.shouldUseCompanyIdentity && Boolean(aiContext.profile.companySummary))
+    semanticHasStrongEvidence ||
+    identityProfileConfidence > 0
 
   const sources: RAGSource[] = matchedChunks.map((chunk) => ({
     title: chunk.source_title,
@@ -457,6 +583,29 @@ The user just opened the chat. Greet them warmly as ${aiContext.profile.companyN
 
   const context = buildContext(matchedChunks)
   const topicsHint = deriveTopicsHint(matchedChunks)
+
+  if (requiresGroundedEvidence(intentResult) && !hasStrongContext) {
+    const message = buildGroundedNoAnswerMessage(aiContext, intentResult)
+
+    return finish({
+      type: intentResult.intent === 'out_of_scope' ? 'casual' : 'ask_handoff',
+      message,
+      confidence,
+      sources: [],
+      tokensUsed: 0,
+    }, {
+      usedPinnedCompanyContext,
+      sourcesForTrace: sources,
+      tokensUsed: 0,
+      metadata: {
+        searchQuery,
+        semanticConfidence,
+        lexicalEvidence,
+        groundedGate: 'blocked_without_strong_context',
+      },
+    })
+  }
+
   const systemPrompt = buildMasterPrompt(
     context,
     topicsHint,
@@ -479,50 +628,37 @@ The user just opened the chat. Greet them warmly as ${aiContext.profile.companyN
   const mainTokens = mainCompletion.usage?.total_tokens ?? 0
 
   if (!rawAnswer || rawAnswer === 'OUT_OF_SCOPE' || rawAnswer.includes('OUT_OF_SCOPE')) {
-    const { text, tokens } = await generateContextualResponse(
-      client,
-      `${buildOrganizationPrompt(aiContext)}
-
-The user asked something within your general support domain, but you do not have enough specific information to answer it well. Apologize briefly, then ask if they want a human agent. Include "(Reply **yes** to connect)" naturally at the end. Keep it to 2-3 sentences.`,
-      trimmedQuery,
-      150,
-      0.5
-    )
+    const message = buildGroundedNoAnswerMessage(aiContext, intentResult)
 
     return finish({
       type: 'ask_handoff',
-      message: text || "I'm sorry, I don't have specific information about that at the moment. Would you like me to connect you with a human agent who can help further? (Reply **yes** to connect)",
+      message,
       confidence,
       sources,
-      tokensUsed: mainTokens + tokens,
+      tokensUsed: mainTokens,
     }, {
       usedPinnedCompanyContext,
       sourcesForTrace: sources,
-      tokensUsed: mainTokens + tokens,
+      tokensUsed: mainTokens,
       metadata: { searchQuery, rawAnswer: rawAnswer || null },
     })
   }
 
   if (rawAnswer === 'OUT_OF_DOMAIN' || rawAnswer.includes('OUT_OF_DOMAIN')) {
-    const { text, tokens } = await generateContextualResponse(
-      client,
-      `${buildOrganizationPrompt(aiContext)}
-
-The user asked something outside your support scope. Politely say you can help with ${aiContext.profile.companyName}-related questions and invite them to ask about that. Keep it to 2 sentences.`,
-      trimmedQuery,
-      120,
-      0.5
-    )
+    const message = buildGroundedNoAnswerMessage(aiContext, {
+      ...intentResult,
+      intent: 'out_of_scope',
+    })
 
     return finish({
       type: 'casual',
-      message: text || `That's outside my support scope. I can help with ${aiContext.profile.companyName}-related questions, setup, policies, and support topics.`,
+      message,
       confidence: 0,
       sources: [],
-      tokensUsed: mainTokens + tokens,
+      tokensUsed: mainTokens,
     }, {
       usedPinnedCompanyContext,
-      tokensUsed: mainTokens + tokens,
+      tokensUsed: mainTokens,
       metadata: { searchQuery, rawAnswer },
     })
   }
@@ -537,6 +673,6 @@ The user asked something outside your support scope. Politely say you can help w
     usedPinnedCompanyContext,
     sourcesForTrace: sources,
     tokensUsed: mainTokens,
-    metadata: { searchQuery, semanticConfidence },
+    metadata: { searchQuery, semanticConfidence, lexicalEvidence },
   })
 }

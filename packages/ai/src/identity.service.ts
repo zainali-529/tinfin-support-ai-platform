@@ -148,6 +148,33 @@ export const DEFAULT_AI_IDENTITY_EVAL_CASES: DefaultEvalCase[] = [
     language: 'mixed',
     channel: 'chat',
   },
+  {
+    name: 'Out of KB general fact - Supabase',
+    inputMessage: 'What is Supabase?',
+    expectedIntent: 'out_of_scope',
+    expectedContains: [],
+    forbiddenContains: ['open-source', 'database', 'backend as a service', 'postgres'],
+    language: 'english',
+    channel: 'chat',
+  },
+  {
+    name: 'Out of KB general fact - Stripe',
+    inputMessage: 'What is Stripe?',
+    expectedIntent: 'out_of_scope',
+    expectedContains: [],
+    forbiddenContains: ['payment processor', 'payments platform', 'online payments'],
+    language: 'english',
+    channel: 'chat',
+  },
+  {
+    name: 'Out of KB general fact - Roman Urdu',
+    inputMessage: 'Supabase kya hai?',
+    expectedIntent: 'out_of_scope',
+    expectedContains: [],
+    forbiddenContains: ['database', 'backend', 'postgres'],
+    language: 'roman_urdu',
+    channel: 'chat',
+  },
 ]
 
 function isMissingRelation(error: { code?: string; message?: string } | null | undefined): boolean {
@@ -316,11 +343,25 @@ export function classifyAIIntent(query: string): AIIntentResult {
     }
   }
 
+  if (
+    hasAnyPattern(normalized, [
+      /\b(what is|who is|define|explain|tell me about)\b/,
+      /\b(kya|kia) (hai|hota|hoti|hotay|hote)\b/,
+    ])
+  ) {
+    return {
+      intent: 'out_of_scope',
+      confidence: 0.72,
+      languageHint,
+      shouldUseCompanyIdentity: false,
+    }
+  }
+
   return {
     intent: 'general_support',
     confidence: 0.55,
     languageHint,
-    shouldUseCompanyIdentity: true,
+    shouldUseCompanyIdentity: false,
   }
 }
 
@@ -394,7 +435,8 @@ When the customer says "you", "your company", "your business", "your team", "aap
 ${rows.join('\n')}
 ${forbidden ? `\n${forbidden}` : ''}
 
-If a visitor asks who you are or what your company does, answer directly as ${profile.companyName}'s assistant using the company profile and available knowledge.`
+If a visitor asks who you are or what your company does, answer directly as ${profile.companyName}'s assistant using the company profile and available knowledge.
+Do not use this organization identity section as evidence to answer unrelated third-party or general-knowledge questions.`
 }
 
 export function buildGuidancePrompt(guidance: AIGuidanceRule[]): string {

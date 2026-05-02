@@ -237,10 +237,19 @@ export function useChat(orgId: string) {
         }
 
         if (stored.current.visitorInfo) {
+          const info = stored.current.visitorInfo
           ws.send(JSON.stringify({
             type: 'visitor:identify',
-            name: stored.current.visitorInfo.name,
-            email: stored.current.visitorInfo.email,
+            name: info.name,
+            email: info.email,
+            userId: info.id,
+            phone: info.phone,
+            userHash: info.userHash,
+            company: info.company,
+            traits: info.traits,
+            page: info.page,
+            customAttributes: info.customAttributes,
+            visitorInfo: info,
             visitorId: visitorIdRef.current,
           }))
         }
@@ -531,6 +540,14 @@ export function useChat(orgId: string) {
         type: 'visitor:identify',
         name: info.name,
         email: info.email,
+        userId: info.id,
+        phone: info.phone,
+        userHash: info.userHash,
+        company: info.company,
+        traits: info.traits,
+        page: info.page,
+        customAttributes: info.customAttributes,
+        visitorInfo: info,
         visitorId: visitorIdRef.current,
       }))
       requestInbox()

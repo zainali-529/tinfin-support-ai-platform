@@ -35,6 +35,29 @@ export interface WidgetSuggestion {
   message: string
 }
 
+export interface WidgetUser {
+  id?: string
+  email?: string
+  name?: string
+  phone?: string
+  userHash?: string
+  traits?: Record<string, unknown>
+}
+
+export interface WidgetCompany {
+  id?: string
+  name?: string
+  plan?: string
+  website?: string
+  traits?: Record<string, unknown>
+}
+
+export interface WidgetPageContext {
+  url?: string
+  title?: string
+  referrer?: string
+}
+
 export interface WidgetConfig {
   orgId: string
   // Basic — direct DB columns
@@ -66,11 +89,23 @@ export interface WidgetConfig {
   vapiAssistantId?: string | null
   voiceEnabled?: boolean
   callButtonLabel?: string
+  // Runtime identity and context passed through the JS API.
+  user?: WidgetUser
+  company?: WidgetCompany
+  page?: WidgetPageContext
+  customAttributes?: Record<string, unknown>
 }
 
 export interface VisitorInfo {
   name: string
   email: string
+  id?: string
+  phone?: string
+  userHash?: string
+  company?: WidgetCompany
+  traits?: Record<string, unknown>
+  page?: WidgetPageContext
+  customAttributes?: Record<string, unknown>
 }
 
 export interface StoredChat {

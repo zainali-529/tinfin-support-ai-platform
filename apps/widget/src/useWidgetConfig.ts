@@ -33,6 +33,10 @@ export type ResolvedConfig = {
   vapiAssistantId: string | null
   voiceEnabled: boolean
   callButtonLabel: string
+  user?: WidgetConfig['user']
+  company?: WidgetConfig['company']
+  page?: WidgetConfig['page']
+  customAttributes?: WidgetConfig['customAttributes']
 }
 
 const DEFAULTS: Omit<ResolvedConfig, 'orgId'> = {

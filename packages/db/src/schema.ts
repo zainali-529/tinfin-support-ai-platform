@@ -202,6 +202,10 @@ export const kbChunks = pgTable('kb_chunks', {
   sourceType: text('source_type').default('general').notNull(),
   isPinned: boolean('is_pinned').default(false).notNull(),
   pinnedReason: text('pinned_reason'),
+  qualityStatus: text('quality_status').default('active').notNull(),
+  qualityNotes: text('quality_notes'),
+  lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true }),
+  lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),
   metadata: jsonb('metadata').default({}).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
