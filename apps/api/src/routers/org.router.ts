@@ -11,6 +11,25 @@ import { router, protectedProcedure } from '../trpc/trpc'
 import { requireFeature } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 
+const widgetThemeSchema = z.object({
+  backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  surfaceColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  textColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  mutedTextColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  borderColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  assistantBubbleColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  assistantTextColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  userBubbleTextColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  inputBackgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  headerTextColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+})
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
 export const orgRouter = router({
   getOrg: protectedProcedure
     .input(z.object({ orgId: z.string().uuid().optional() }).optional())
@@ -47,15 +66,21 @@ export const orgRouter = router({
       welcomeMessage: z.string().max(200).optional(),
       companyName: z.string().max(80).optional(),
       logoUrl: z.string().url().optional().or(z.literal('')),
-      position: z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']).optional(),
+      position: z.enum(['bottom-right', 'bottom-left']).optional(),
       showBranding: z.boolean().optional(),
       settings: z.object({
+        themeMode: z.enum(['light', 'dark', 'system']).optional(),
+        lightTheme: widgetThemeSchema.optional(),
+        darkTheme: widgetThemeSchema.optional(),
         botName: z.string().max(50).optional(),
         inputPlaceholder: z.string().max(100).optional(),
         responseTimeText: z.string().max(100).optional(),
         launcherSize: z.enum(['sm', 'md', 'lg']).optional(),
         borderRadius: z.number().min(8).max(28).optional(),
-        widgetWidth: z.number().min(300).max(440).optional(),
+        widgetWidth: z.number().min(300).max(460).optional(),
+        widgetHeight: z.number().min(480).max(720).optional(),
+        expandedWidth: z.number().min(520).max(900).optional(),
+        expandedHeight: z.number().min(560).max(820).optional(),
         headerStyle: z.enum(['gradient', 'solid']).optional(),
         userBubbleColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().or(z.literal('')),
         autoOpen: z.boolean().optional(),
@@ -68,6 +93,15 @@ export const orgRouter = router({
             message: z.string().min(1).max(240),
           })
         ).max(6).optional(),
+        helpItems: z.array(
+          z.object({
+            id: z.string().max(60).optional(),
+            question: z.string().min(1).max(90),
+            answer: z.string().min(1).max(700),
+            actionLabel: z.string().max(40).optional(),
+            actionMessage: z.string().max(240).optional(),
+          })
+        ).max(8).optional(),
         talkToHumanLabel: z.string().max(40).optional(),
         talkToHumanMessage: z.string().max(240).optional(),
       }).optional(),
@@ -94,8 +128,15 @@ export const orgRouter = router({
           .eq('org_id', orgId)
           .maybeSingle()
 
-        const existingSettings = (existing?.settings as Record<string, unknown>) ?? {}
-        payload.settings = { ...existingSettings, ...settings }
+        const existingSettings = asRecord(existing?.settings)
+        const nextSettings: Record<string, unknown> = { ...existingSettings, ...settings }
+        if (settings.lightTheme) {
+          nextSettings.lightTheme = { ...asRecord(existingSettings.lightTheme), ...settings.lightTheme }
+        }
+        if (settings.darkTheme) {
+          nextSettings.darkTheme = { ...asRecord(existingSettings.darkTheme), ...settings.darkTheme }
+        }
+        payload.settings = nextSettings
       }
 
       const { data, error } = await ctx.supabase

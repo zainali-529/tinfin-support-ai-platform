@@ -35,6 +35,30 @@ export interface WidgetSuggestion {
   message: string
 }
 
+export type WidgetPosition = 'bottom-right' | 'bottom-left'
+export type WidgetThemeMode = 'light' | 'dark' | 'system'
+
+export interface WidgetThemeColors {
+  backgroundColor?: string
+  surfaceColor?: string
+  textColor?: string
+  mutedTextColor?: string
+  borderColor?: string
+  assistantBubbleColor?: string
+  assistantTextColor?: string
+  userBubbleTextColor?: string
+  inputBackgroundColor?: string
+  headerTextColor?: string
+}
+
+export interface WidgetHelpItem {
+  id?: string
+  question: string
+  answer: string
+  actionLabel?: string
+  actionMessage?: string
+}
+
 export interface WidgetUser {
   id?: string
   email?: string
@@ -65,15 +89,21 @@ export interface WidgetConfig {
   welcomeMessage?: string
   companyName?: string
   logoUrl?: string
-  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+  position?: WidgetPosition
   showBranding?: boolean
   // Advanced — from settings JSONB
+  themeMode?: WidgetThemeMode
+  lightTheme?: WidgetThemeColors
+  darkTheme?: WidgetThemeColors
   botName?: string
   inputPlaceholder?: string
   responseTimeText?: string
   launcherSize?: 'sm' | 'md' | 'lg'
   borderRadius?: number
   widgetWidth?: number
+  widgetHeight?: number
+  expandedWidth?: number
+  expandedHeight?: number
   headerStyle?: 'gradient' | 'solid'
   userBubbleColor?: string | null
   autoOpen?: boolean
@@ -82,6 +112,7 @@ export interface WidgetConfig {
   offlineMessage?: string | null
   // Quick replies
   suggestions?: WidgetSuggestion[]
+  helpItems?: WidgetHelpItem[]
   talkToHumanLabel?: string
   talkToHumanMessage?: string
   // ── Voice / Vapi ────────────────────────────────────────────────────────────

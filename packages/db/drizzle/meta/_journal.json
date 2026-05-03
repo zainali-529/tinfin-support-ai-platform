@@ -26,15 +26,8 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1777708800000,
-      "tag": "0004_ai_actions_v2",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1777795200000,
-      "tag": "0005_remove_ai_actions_v2",
+      "when": 1777881600000,
+      "tag": "0004_widget_customization_advanced",
       "breakpoints": true
     }
   ]

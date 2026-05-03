@@ -120,7 +120,11 @@ function readScriptConfig(script: HTMLScriptElement | undefined): Partial<Widget
     orgId,
     primaryColor: script?.getAttribute('data-color') || undefined,
     companyName,
-    position: (script?.getAttribute('data-position') as WidgetConfig['position']) || 'bottom-right',
+    position: script?.getAttribute('data-position') === 'bottom-left'
+      ? 'bottom-left'
+      : script?.getAttribute('data-position') === 'bottom-right'
+        ? 'bottom-right'
+        : undefined,
     user: userId || userEmail || userName || userHash
       ? {
           id: userId,

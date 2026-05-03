@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useDeferredValue, useRef } from 'react'
 import Link from 'next/link'
 import { trpc } from '@/lib/trpc'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@workspace/ui/components/card'
@@ -38,14 +38,20 @@ interface WidgetSettings {
   welcomeMessage: string
   companyName: string
   logoUrl: string
-  position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+  position: 'bottom-right' | 'bottom-left'
   showBranding: boolean
+  themeMode: 'light' | 'dark' | 'system'
+  lightTheme: WidgetThemeColors
+  darkTheme: WidgetThemeColors
   botName: string
   inputPlaceholder: string
   responseTimeText: string
   launcherSize: 'sm' | 'md' | 'lg'
   borderRadius: number
   widgetWidth: number
+  widgetHeight: number
+  expandedWidth: number
+  expandedHeight: number
   headerStyle: 'gradient' | 'solid'
   userBubbleColor: string
   autoOpen: boolean
@@ -53,13 +59,61 @@ interface WidgetSettings {
   showTypingIndicator: boolean
   offlineMessage: string
   suggestions: WidgetSuggestion[]
+  helpItems: WidgetHelpItem[]
   talkToHumanLabel: string
   talkToHumanMessage: string
+}
+
+interface WidgetThemeColors {
+  backgroundColor: string
+  surfaceColor: string
+  textColor: string
+  mutedTextColor: string
+  borderColor: string
+  assistantBubbleColor: string
+  assistantTextColor: string
+  userBubbleTextColor: string
+  inputBackgroundColor: string
+  headerTextColor: string
 }
 
 interface WidgetSuggestion {
   label: string
   message: string
+}
+
+interface WidgetHelpItem {
+  id: string
+  question: string
+  answer: string
+  actionLabel?: string
+  actionMessage?: string
+}
+
+const DEFAULT_LIGHT_THEME: WidgetThemeColors = {
+  backgroundColor: '#f8fafc',
+  surfaceColor: '#ffffff',
+  textColor: '#111827',
+  mutedTextColor: '#6b7280',
+  borderColor: '#e5e7eb',
+  assistantBubbleColor: '#ffffff',
+  assistantTextColor: '#111827',
+  userBubbleTextColor: '#ffffff',
+  inputBackgroundColor: '#f3f4f6',
+  headerTextColor: '#ffffff',
+}
+
+const DEFAULT_DARK_THEME: WidgetThemeColors = {
+  backgroundColor: '#0f172a',
+  surfaceColor: '#111827',
+  textColor: '#f8fafc',
+  mutedTextColor: '#94a3b8',
+  borderColor: '#263244',
+  assistantBubbleColor: '#172033',
+  assistantTextColor: '#f8fafc',
+  userBubbleTextColor: '#ffffff',
+  inputBackgroundColor: '#0b1220',
+  headerTextColor: '#ffffff',
 }
 
 const DEFAULT_SETTINGS: WidgetSettings = {
@@ -69,12 +123,18 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   logoUrl: '',
   position: 'bottom-right',
   showBranding: true,
+  themeMode: 'light',
+  lightTheme: DEFAULT_LIGHT_THEME,
+  darkTheme: DEFAULT_DARK_THEME,
   botName: 'AI Assistant',
   inputPlaceholder: 'Type a message...',
   responseTimeText: 'AI · We reply instantly',
   launcherSize: 'md',
   borderRadius: 20,
   widgetWidth: 380,
+  widgetHeight: 580,
+  expandedWidth: 720,
+  expandedHeight: 720,
   headerStyle: 'gradient',
   userBubbleColor: '',
   autoOpen: false,
@@ -82,6 +142,15 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   showTypingIndicator: true,
   offlineMessage: '',
   suggestions: [],
+  helpItems: [
+    {
+      id: 'getting-started',
+      question: 'How can I get support?',
+      answer: 'Send us a message here and our AI or support team will help you as quickly as possible.',
+      actionLabel: 'Start a chat',
+      actionMessage: 'I need help from support.',
+    },
+  ],
   talkToHumanLabel: 'Talk to Human',
   talkToHumanMessage: 'I want to talk to a human agent.',
 }
@@ -89,8 +158,6 @@ const DEFAULT_SETTINGS: WidgetSettings = {
 const POSITIONS = [
   { value: 'bottom-right', label: 'Bottom Right', dot: { bottom: 0, right: 0 } },
   { value: 'bottom-left',  label: 'Bottom Left',  dot: { bottom: 0, left: 0 } },
-  { value: 'top-right',    label: 'Top Right',    dot: { top: 0, right: 0 } },
-  { value: 'top-left',     label: 'Top Left',     dot: { top: 0, left: 0 } },
 ] as const
 
 const LAUNCHER_SIZES = {
@@ -106,6 +173,8 @@ const PRESET_COLORS = [
 ]
 
 const MAX_SUGGESTIONS = 6
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+const COLOR_COMMIT_DELAY_MS = 90
 
 function parseSuggestions(value: unknown): WidgetSuggestion[] {
   if (!Array.isArray(value)) return []
@@ -135,15 +204,90 @@ function normalizeSuggestions(items: WidgetSuggestion[]): WidgetSuggestion[] {
     .slice(0, MAX_SUGGESTIONS)
 }
 
+function parseTheme(value: unknown, fallback: WidgetThemeColors): WidgetThemeColors {
+  const raw = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Partial<WidgetThemeColors>
+    : {}
+
+  return {
+    backgroundColor: typeof raw.backgroundColor === 'string' ? raw.backgroundColor : fallback.backgroundColor,
+    surfaceColor: typeof raw.surfaceColor === 'string' ? raw.surfaceColor : fallback.surfaceColor,
+    textColor: typeof raw.textColor === 'string' ? raw.textColor : fallback.textColor,
+    mutedTextColor: typeof raw.mutedTextColor === 'string' ? raw.mutedTextColor : fallback.mutedTextColor,
+    borderColor: typeof raw.borderColor === 'string' ? raw.borderColor : fallback.borderColor,
+    assistantBubbleColor: typeof raw.assistantBubbleColor === 'string' ? raw.assistantBubbleColor : fallback.assistantBubbleColor,
+    assistantTextColor: typeof raw.assistantTextColor === 'string' ? raw.assistantTextColor : fallback.assistantTextColor,
+    userBubbleTextColor: typeof raw.userBubbleTextColor === 'string' ? raw.userBubbleTextColor : fallback.userBubbleTextColor,
+    inputBackgroundColor: typeof raw.inputBackgroundColor === 'string' ? raw.inputBackgroundColor : fallback.inputBackgroundColor,
+    headerTextColor: typeof raw.headerTextColor === 'string' ? raw.headerTextColor : fallback.headerTextColor,
+  }
+}
+
+function parseHelpItems(value: unknown): WidgetHelpItem[] {
+  if (!Array.isArray(value)) return DEFAULT_SETTINGS.helpItems
+  const items: WidgetHelpItem[] = []
+
+  value.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return
+    const raw = item as Partial<WidgetHelpItem>
+    const question = typeof raw.question === 'string' ? raw.question.trim() : ''
+    const answer = typeof raw.answer === 'string' ? raw.answer.trim() : ''
+    if (!question || !answer) return
+
+    items.push({
+      id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `help-${index + 1}`,
+      question,
+      answer,
+      actionLabel: typeof raw.actionLabel === 'string' ? raw.actionLabel : '',
+      actionMessage: typeof raw.actionMessage === 'string' ? raw.actionMessage : '',
+    })
+  })
+
+  return items.slice(0, 8)
+}
+
+function normalizeHelpItems(items: WidgetHelpItem[]): WidgetHelpItem[] {
+  return items
+    .map((item, index) => ({
+      id: item.id || `help-${index + 1}`,
+      question: item.question.trim(),
+      answer: item.answer.trim(),
+      actionLabel: item.actionLabel?.trim() || undefined,
+      actionMessage: item.actionMessage?.trim() || undefined,
+    }))
+    .filter(item => item.question.length > 0 && item.answer.length > 0)
+    .slice(0, 8)
+}
+
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [hex, setHex] = useState(value)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => setHex(value), [value])
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+  }, [])
+
+  const commit = useCallback((next: string, immediate = false) => {
+    if (!HEX_COLOR_RE.test(next)) return
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+
+    if (immediate) {
+      onChange(next)
+      return
+    }
+
+    timeoutRef.current = setTimeout(() => {
+      onChange(next)
+      timeoutRef.current = null
+    }, COLOR_COMMIT_DELAY_MS)
+  }, [onChange])
 
   const handleHex = (v: string) => {
     setHex(v)
-    if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v)
+    commit(v)
   }
 
   return (
@@ -154,23 +298,126 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (v: string)
             className="relative w-full aspect-square rounded-md border-2 transition-all hover:scale-105"
             style={{
               background: c,
-              borderColor: value === c ? '#000' : 'transparent',
-              outline: value === c ? `2px solid ${c}` : 'none',
+              borderColor: hex === c ? '#000' : 'transparent',
+              outline: hex === c ? `2px solid ${c}` : 'none',
               outlineOffset: 2,
             }}
-            onClick={() => onChange(c)}>
-            {value === c && <CheckIcon className="absolute inset-0 m-auto w-3 h-3 text-white drop-shadow" />}
+            onClick={() => {
+              setHex(c)
+              commit(c, true)
+            }}>
+            {hex === c && <CheckIcon className="absolute inset-0 m-auto w-3 h-3 text-white drop-shadow" />}
           </button>
         ))}
       </div>
       <div className="flex items-center gap-2">
         <div className="relative">
-          <input type="color" value={value} onChange={e => onChange(e.target.value)}
+          <input
+            type="color"
+            value={HEX_COLOR_RE.test(hex) ? hex : value}
+            onChange={e => handleHex(e.target.value)}
             className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
-          <div className="w-9 h-9 rounded-lg border border-border cursor-pointer" style={{ background: value }} />
+          <div className="w-9 h-9 rounded-lg border border-border cursor-pointer" style={{ background: HEX_COLOR_RE.test(hex) ? hex : value }} />
         </div>
-        <Input value={hex} onChange={e => handleHex(e.target.value)}
+        <Input
+          value={hex}
+          onChange={e => handleHex(e.target.value)}
+          onBlur={() => {
+            if (HEX_COLOR_RE.test(hex)) commit(hex, true)
+            else setHex(value)
+          }}
           placeholder="#6366f1" className="h-9 font-mono text-sm flex-1" />
+      </div>
+    </div>
+  )
+}
+
+function CompactColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hex, setHex] = useState(value)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    setHex(value)
+  }, [value])
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+  }, [])
+
+  const commit = useCallback((next: string, immediate = false) => {
+    if (!HEX_COLOR_RE.test(next)) return
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+
+    if (immediate) {
+      onChange(next)
+      return
+    }
+
+    timeoutRef.current = setTimeout(() => {
+      onChange(next)
+      timeoutRef.current = null
+    }, COLOR_COMMIT_DELAY_MS)
+  }, [onChange])
+
+  const handleHexChange = (next: string) => {
+    setHex(next)
+    commit(next)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="color"
+        value={HEX_COLOR_RE.test(hex) ? hex : value}
+        onChange={event => handleHexChange(event.target.value)}
+        className="h-8 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+      />
+      <Input
+        value={hex}
+        onChange={event => handleHexChange(event.target.value)}
+        onBlur={() => {
+          if (HEX_COLOR_RE.test(hex)) commit(hex, true)
+          else setHex(value)
+        }}
+        className="h-8 flex-1 font-mono text-xs"
+      />
+    </div>
+  )
+}
+
+function ThemeColorEditor({
+  title,
+  value,
+  onChange,
+}: {
+  title: string
+  value: WidgetThemeColors
+  onChange: (patch: Partial<WidgetThemeColors>) => void
+}) {
+  const fields: Array<{ key: keyof WidgetThemeColors; label: string }> = [
+    { key: 'backgroundColor', label: 'Panel background' },
+    { key: 'surfaceColor', label: 'Cards / surfaces' },
+    { key: 'textColor', label: 'Primary text' },
+    { key: 'mutedTextColor', label: 'Muted text' },
+    { key: 'borderColor', label: 'Borders' },
+    { key: 'assistantBubbleColor', label: 'Assistant bubble' },
+    { key: 'assistantTextColor', label: 'Assistant text' },
+    { key: 'userBubbleTextColor', label: 'User bubble text' },
+    { key: 'inputBackgroundColor', label: 'Input background' },
+    { key: 'headerTextColor', label: 'Header text' },
+  ]
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {fields.map(field => (
+          <div key={field.key} className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">{field.label}</Label>
+            <CompactColorInput value={value[field.key]} onChange={v => onChange({ [field.key]: v })} />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -201,6 +448,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   const [isDirty, setIsDirty] = useState(false)
   const [activeTab, setActiveTab] = useState('style')
   const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
+  const deferredSettings = useDeferredValue(settings)
   const { planId } = usePlan()
   const isReadOnly = planId === 'free'
 
@@ -217,14 +465,20 @@ export function WidgetCustomizationPage({ orgId }: Props) {
       welcomeMessage:    (existingConfig.welcome_message as string)   ?? DEFAULT_SETTINGS.welcomeMessage,
       companyName:       (existingConfig.company_name as string)      ?? DEFAULT_SETTINGS.companyName,
       logoUrl:           (existingConfig.logo_url as string)          ?? DEFAULT_SETTINGS.logoUrl,
-      position:          (existingConfig.position as WidgetSettings['position']) ?? DEFAULT_SETTINGS.position,
+      position:          existingConfig.position === 'bottom-left' ? 'bottom-left' : DEFAULT_SETTINGS.position,
       showBranding:      (existingConfig.show_branding as boolean)    ?? DEFAULT_SETTINGS.showBranding,
+      themeMode:         s.themeMode === 'dark' || s.themeMode === 'system' ? s.themeMode : DEFAULT_SETTINGS.themeMode,
+      lightTheme:        parseTheme(s.lightTheme, DEFAULT_LIGHT_THEME),
+      darkTheme:         parseTheme(s.darkTheme, DEFAULT_DARK_THEME),
       botName:           typeof s.botName === 'string'          ? s.botName          : DEFAULT_SETTINGS.botName,
       inputPlaceholder:  typeof s.inputPlaceholder === 'string' ? s.inputPlaceholder : DEFAULT_SETTINGS.inputPlaceholder,
       responseTimeText:  typeof s.responseTimeText === 'string' ? s.responseTimeText : DEFAULT_SETTINGS.responseTimeText,
       launcherSize:      typeof s.launcherSize === 'string'     ? s.launcherSize as WidgetSettings['launcherSize'] : DEFAULT_SETTINGS.launcherSize,
       borderRadius:      typeof s.borderRadius === 'number'     ? s.borderRadius     : DEFAULT_SETTINGS.borderRadius,
       widgetWidth:       typeof s.widgetWidth === 'number'      ? s.widgetWidth      : DEFAULT_SETTINGS.widgetWidth,
+      widgetHeight:      typeof s.widgetHeight === 'number'     ? s.widgetHeight     : DEFAULT_SETTINGS.widgetHeight,
+      expandedWidth:     typeof s.expandedWidth === 'number'    ? s.expandedWidth    : DEFAULT_SETTINGS.expandedWidth,
+      expandedHeight:    typeof s.expandedHeight === 'number'   ? s.expandedHeight   : DEFAULT_SETTINGS.expandedHeight,
       headerStyle:       typeof s.headerStyle === 'string'      ? s.headerStyle as WidgetSettings['headerStyle'] : DEFAULT_SETTINGS.headerStyle,
       userBubbleColor:   typeof s.userBubbleColor === 'string'  ? s.userBubbleColor  : DEFAULT_SETTINGS.userBubbleColor,
       autoOpen:          typeof s.autoOpen === 'boolean'        ? s.autoOpen         : DEFAULT_SETTINGS.autoOpen,
@@ -232,6 +486,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
       showTypingIndicator: typeof s.showTypingIndicator === 'boolean' ? s.showTypingIndicator : DEFAULT_SETTINGS.showTypingIndicator,
       offlineMessage:    typeof s.offlineMessage === 'string'   ? s.offlineMessage   : DEFAULT_SETTINGS.offlineMessage,
       suggestions:       parseSuggestions(s.suggestions),
+      helpItems:         parseHelpItems(s.helpItems),
       talkToHumanLabel:  typeof s.talkToHumanLabel === 'string' && s.talkToHumanLabel.trim()
         ? s.talkToHumanLabel
         : DEFAULT_SETTINGS.talkToHumanLabel,
@@ -255,6 +510,18 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     })
   }, [settings.suggestions, update])
 
+  const updateTheme = useCallback((
+    mode: 'lightTheme' | 'darkTheme',
+    patch: Partial<WidgetThemeColors>
+  ) => {
+    update({
+      [mode]: {
+        ...settings[mode],
+        ...patch,
+      },
+    } as Partial<WidgetSettings>)
+  }, [settings, update])
+
   const addSuggestion = useCallback(() => {
     if (settings.suggestions.length >= MAX_SUGGESTIONS) return
     update({ suggestions: [...settings.suggestions, { label: '', message: '' }] })
@@ -263,6 +530,34 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   const removeSuggestion = useCallback((index: number) => {
     update({ suggestions: settings.suggestions.filter((_, idx) => idx !== index) })
   }, [settings.suggestions, update])
+
+  const updateHelpItem = useCallback((index: number, patch: Partial<WidgetHelpItem>) => {
+    update({
+      helpItems: settings.helpItems.map((item, idx) =>
+        idx === index ? { ...item, ...patch } : item
+      ),
+    })
+  }, [settings.helpItems, update])
+
+  const addHelpItem = useCallback(() => {
+    if (settings.helpItems.length >= 8) return
+    update({
+      helpItems: [
+        ...settings.helpItems,
+        {
+          id: `help-${Date.now()}`,
+          question: '',
+          answer: '',
+          actionLabel: '',
+          actionMessage: '',
+        },
+      ],
+    })
+  }, [settings.helpItems, update])
+
+  const removeHelpItem = useCallback((index: number) => {
+    update({ helpItems: settings.helpItems.filter((_, idx) => idx !== index) })
+  }, [settings.helpItems, update])
 
   const openUpgradeDialog = useCallback(() => {
     setIsUpgradeDialogOpen(true)
@@ -300,12 +595,18 @@ export function WidgetCustomizationPage({ orgId }: Props) {
         position:       settings.position,
         showBranding:   settings.showBranding,
         settings: {
+          themeMode:         settings.themeMode,
+          lightTheme:        settings.lightTheme,
+          darkTheme:         settings.darkTheme,
           botName:            settings.botName,
           inputPlaceholder:   settings.inputPlaceholder,
           responseTimeText:   settings.responseTimeText,
           launcherSize:       settings.launcherSize,
           borderRadius:       settings.borderRadius,
           widgetWidth:        settings.widgetWidth,
+          widgetHeight:       settings.widgetHeight,
+          expandedWidth:      settings.expandedWidth,
+          expandedHeight:     settings.expandedHeight,
           headerStyle:        settings.headerStyle,
           userBubbleColor:    settings.userBubbleColor || undefined,
           autoOpen:           settings.autoOpen,
@@ -313,6 +614,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
           showTypingIndicator: settings.showTypingIndicator,
           offlineMessage:     settings.offlineMessage || undefined,
           suggestions:        normalizeSuggestions(settings.suggestions),
+          helpItems:          normalizeHelpItems(settings.helpItems),
           talkToHumanLabel:   settings.talkToHumanLabel.trim() || undefined,
           talkToHumanMessage: settings.talkToHumanMessage.trim() || undefined,
         },
@@ -328,27 +630,34 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   }
 
   const previewConfig = {
-    primaryColor:        settings.primaryColor,
-    welcomeMessage:      settings.welcomeMessage,
-    companyName:         settings.companyName,
-    logoUrl:             settings.logoUrl,
-    position:            settings.position,
-    showBranding:        settings.showBranding,
-    botName:             settings.botName,
-    inputPlaceholder:    settings.inputPlaceholder,
-    responseTimeText:    settings.responseTimeText,
-    launcherSize:        settings.launcherSize,
-    borderRadius:        settings.borderRadius,
-    widgetWidth:         settings.widgetWidth,
-    headerStyle:         settings.headerStyle,
-    userBubbleColor:     settings.userBubbleColor || settings.primaryColor,
-    autoOpen:            settings.autoOpen,
-    autoOpenDelay:       settings.autoOpenDelay,
-    showTypingIndicator: settings.showTypingIndicator,
-    offlineMessage:      settings.offlineMessage,
-    suggestions:         settings.suggestions,
-    talkToHumanLabel:    settings.talkToHumanLabel,
-    talkToHumanMessage:  settings.talkToHumanMessage,
+    primaryColor:        deferredSettings.primaryColor,
+    welcomeMessage:      deferredSettings.welcomeMessage,
+    companyName:         deferredSettings.companyName,
+    logoUrl:             deferredSettings.logoUrl,
+    position:            deferredSettings.position,
+    showBranding:        deferredSettings.showBranding,
+    themeMode:           deferredSettings.themeMode,
+    lightTheme:          deferredSettings.lightTheme,
+    darkTheme:           deferredSettings.darkTheme,
+    botName:             deferredSettings.botName,
+    inputPlaceholder:    deferredSettings.inputPlaceholder,
+    responseTimeText:    deferredSettings.responseTimeText,
+    launcherSize:        deferredSettings.launcherSize,
+    borderRadius:        deferredSettings.borderRadius,
+    widgetWidth:         deferredSettings.widgetWidth,
+    widgetHeight:        deferredSettings.widgetHeight,
+    expandedWidth:       deferredSettings.expandedWidth,
+    expandedHeight:      deferredSettings.expandedHeight,
+    headerStyle:         deferredSettings.headerStyle,
+    userBubbleColor:     deferredSettings.userBubbleColor || deferredSettings.primaryColor,
+    autoOpen:            deferredSettings.autoOpen,
+    autoOpenDelay:       deferredSettings.autoOpenDelay,
+    showTypingIndicator: deferredSettings.showTypingIndicator,
+    offlineMessage:      deferredSettings.offlineMessage,
+    suggestions:         deferredSettings.suggestions,
+    helpItems:           deferredSettings.helpItems,
+    talkToHumanLabel:    deferredSettings.talkToHumanLabel,
+    talkToHumanMessage:  deferredSettings.talkToHumanMessage,
   }
 
   return (
@@ -445,6 +754,40 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   </CardHeader>
                   <CardContent>
                     <ColorPicker value={settings.primaryColor} onChange={v => update({ primaryColor: v })} />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Theme Mode</CardTitle>
+                    <CardDescription className="text-xs">Choose light, dark, or follow the visitor's device setting.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['light', 'dark', 'system'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => update({ themeMode: mode })}
+                          className={`rounded-lg border px-3 py-2 text-xs font-semibold capitalize transition-colors ${
+                            settings.themeMode === mode
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                    <ThemeColorEditor
+                      title="Light palette"
+                      value={settings.lightTheme}
+                      onChange={patch => updateTheme('lightTheme', patch)}
+                    />
+                    <ThemeColorEditor
+                      title="Dark palette"
+                      value={settings.darkTheme}
+                      onChange={patch => updateTheme('darkTheme', patch)}
+                    />
                   </CardContent>
                 </Card>
 
@@ -597,6 +940,39 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     </div>
                   </CardContent>
                 </Card>
+
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="space-y-5">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium">Widget Height</div>
+                            <div className="text-xs text-muted-foreground">Compact panel height before visitor expands it.</div>
+                          </div>
+                          <div className="text-sm font-mono text-muted-foreground">{settings.widgetHeight}px</div>
+                        </div>
+                        <Slider min={480} max={720} step={10} value={[settings.widgetHeight]}
+                          onValueChange={([v]) => update({ widgetHeight: v! })} />
+                      </div>
+                      <div className="space-y-3 border-t pt-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium">Expanded Size</div>
+                            <div className="text-xs text-muted-foreground">Size used when the visitor clicks the expand icon.</div>
+                          </div>
+                          <div className="text-sm font-mono text-muted-foreground">
+                            {settings.expandedWidth} x {settings.expandedHeight}
+                          </div>
+                        </div>
+                        <Slider min={520} max={900} step={10} value={[settings.expandedWidth]}
+                          onValueChange={([v]) => update({ expandedWidth: v! })} />
+                        <Slider min={560} max={820} step={10} value={[settings.expandedHeight]}
+                          onValueChange={([v]) => update({ expandedHeight: v! })} />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               {/* ── CONTENT TAB ── */}
@@ -724,6 +1100,91 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                       disabled={settings.suggestions.length >= MAX_SUGGESTIONS}
                     >
                       Add suggestion
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Help Center / FAQs</CardTitle>
+                    <CardDescription className="text-xs">
+                      Shown in the widget Help tab. Add concise answers for common visitor questions.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {settings.helpItems.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">
+                        No help items yet. Add one to show a Help tab in the widget.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {settings.helpItems.map((item, idx) => (
+                          <div key={item.id || idx} className="space-y-2 rounded-lg border p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold">Help item {idx + 1}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => removeHelpItem(idx)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground font-medium">Question</Label>
+                              <Input
+                                placeholder="How do I contact support?"
+                                value={item.question}
+                                onChange={e => updateHelpItem(idx, { question: e.target.value })}
+                                className="h-8 text-sm"
+                                maxLength={90}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground font-medium">Answer</Label>
+                              <Textarea
+                                placeholder="Explain the answer clearly."
+                                value={item.answer}
+                                onChange={e => updateHelpItem(idx, { answer: e.target.value })}
+                                className="min-h-[86px] text-sm resize-none"
+                                maxLength={700}
+                              />
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground font-medium">Action Label</Label>
+                                <Input
+                                  placeholder="Ask support"
+                                  value={item.actionLabel ?? ''}
+                                  onChange={e => updateHelpItem(idx, { actionLabel: e.target.value })}
+                                  className="h-8 text-sm"
+                                  maxLength={40}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground font-medium">Action Message</Label>
+                                <Input
+                                  placeholder="I need help with this."
+                                  value={item.actionMessage ?? ''}
+                                  onChange={e => updateHelpItem(idx, { actionMessage: e.target.value })}
+                                  className="h-8 text-sm"
+                                  maxLength={240}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={addHelpItem}
+                      disabled={settings.helpItems.length >= 8}
+                    >
+                      Add help item
                     </Button>
                   </CardContent>
                 </Card>

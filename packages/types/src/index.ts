@@ -71,20 +71,61 @@ export interface AIMetadata {
   shouldHandoff?: boolean
 }
 
+export type WidgetPosition = 'bottom-right' | 'bottom-left'
+export type WidgetThemeMode = 'light' | 'dark' | 'system'
+
+export interface WidgetThemeColors {
+  backgroundColor: string
+  surfaceColor: string
+  textColor: string
+  mutedTextColor: string
+  borderColor: string
+  assistantBubbleColor: string
+  assistantTextColor: string
+  userBubbleTextColor: string
+  inputBackgroundColor: string
+  headerTextColor: string
+}
+
+export interface WidgetHelpItem {
+  id: string
+  question: string
+  answer: string
+  actionLabel?: string
+  actionMessage?: string
+}
+
 export interface WidgetConfig {
   primaryColor: string
   textColor: string
   bgColor: string
-  position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+  position: WidgetPosition
   offsetX: number
   offsetY: number
   welcomeMessage: string
   companyName: string
   logoUrl?: string
   showBranding: boolean
+  themeMode?: WidgetThemeMode
+  lightTheme?: WidgetThemeColors
+  darkTheme?: WidgetThemeColors
+  botName?: string
+  inputPlaceholder?: string
+  responseTimeText?: string
+  launcherSize?: 'sm' | 'md' | 'lg'
+  borderRadius?: number
+  widgetWidth?: number
+  widgetHeight?: number
+  expandedWidth?: number
+  expandedHeight?: number
+  headerStyle?: 'gradient' | 'solid'
+  userBubbleColor?: string
   autoOpen: boolean
   autoOpenDelay: number
+  showTypingIndicator?: boolean
+  offlineMessage?: string
   suggestions?: Array<{ label: string; message: string }>
+  helpItems?: WidgetHelpItem[]
   talkToHumanLabel?: string
   talkToHumanMessage?: string
 }

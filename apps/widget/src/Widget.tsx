@@ -7,6 +7,8 @@ import {
   SendIcon, CloseIcon, ChatIcon, BotIcon, AgentIcon, NewChatIcon,
   PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon,
   AttachIcon, FileIcon, ImageIcon, XCircleIcon,
+  InboxIcon, HelpIcon, ExpandIcon, ShrinkIcon,
+  BackIcon,
 } from './icons'
 import { STYLES } from './styles'
 import type { WidgetConfig, VisitorInfo } from './types'
@@ -60,7 +62,7 @@ const ALLOWED_FILE_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
-type ActiveTab = 'inbox' | 'chat' | 'call'
+type ActiveTab = 'inbox' | 'chat' | 'help' | 'call'
 
 // ── Attachment Card ───────────────────────────────────────────────────────────
 
@@ -150,6 +152,8 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<ActiveTab>('inbox')
   const [input, setInput] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const [systemDark, setSystemDark] = useState(false)
   const [showNewChatConfirm, setShowNewChatConfirm] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [emailInput, setEmailInput] = useState('')
@@ -188,12 +192,22 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const sync = () => setSystemDark(query.matches)
+    sync()
+    query.addEventListener?.('change', sync)
+    return () => query.removeEventListener?.('change', sync)
+  }, [])
+
   // ── Config values ─────────────────────────────────────────────────────────
   const color = config.primaryColor || '#6366f1'
   const userBubbleColor = config.userBubbleColor || color
   const launcherPx = LAUNCHER_PX[config.launcherSize || 'md'] ?? 56
   const borderRadius = config.borderRadius ?? 20
-  const widgetWidth = config.widgetWidth ?? 380
+  const widgetWidth = expanded ? (config.expandedWidth ?? 720) : (config.widgetWidth ?? 380)
+  const widgetHeight = expanded ? (config.expandedHeight ?? 720) : (config.widgetHeight ?? 580)
   const headerStyle = config.headerStyle ?? 'gradient'
   const showTyping = config.showTypingIndicator !== false
   const botName = config.botName || 'AI Assistant'
@@ -214,8 +228,55 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     .filter((item): item is { label: string; message: string } => Boolean(item))
     .slice(0, 6)
 
-  const isLeft = config.position === 'bottom-left' || config.position === 'top-left'
-  const isTop = config.position === 'top-left' || config.position === 'top-right'
+  const helpItems = (Array.isArray(config.helpItems) ? config.helpItems : [])
+    .map((item, index) => {
+      const question = typeof item?.question === 'string' ? item.question.trim() : ''
+      const answer = typeof item?.answer === 'string' ? item.answer.trim() : ''
+      if (!question || !answer) return null
+      return {
+        id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `help-${index}`,
+        question,
+        answer,
+        actionLabel: typeof item.actionLabel === 'string' ? item.actionLabel.trim() : '',
+        actionMessage: typeof item.actionMessage === 'string' ? item.actionMessage.trim() : '',
+      }
+    })
+    .filter((item): item is { id: string; question: string; answer: string; actionLabel: string; actionMessage: string } => Boolean(item))
+    .slice(0, 8)
+
+  const themeMode = config.themeMode ?? 'light'
+  const activeThemeMode = themeMode === 'system'
+    ? (systemDark ? 'dark' : 'light')
+    : themeMode
+  const theme = activeThemeMode === 'dark' ? config.darkTheme : config.lightTheme
+  const themeFallback = activeThemeMode === 'dark'
+    ? {
+        backgroundColor: '#0f172a',
+        surfaceColor: '#111827',
+        textColor: '#f8fafc',
+        mutedTextColor: '#94a3b8',
+        borderColor: '#263244',
+        assistantBubbleColor: '#172033',
+        assistantTextColor: '#f8fafc',
+        userBubbleTextColor: '#ffffff',
+        inputBackgroundColor: '#0b1220',
+        headerTextColor: '#ffffff',
+      }
+    : {
+        backgroundColor: '#f8fafc',
+        surfaceColor: '#ffffff',
+        textColor: '#111827',
+        mutedTextColor: '#6b7280',
+        borderColor: '#e5e7eb',
+        assistantBubbleColor: '#ffffff',
+        assistantTextColor: '#111827',
+        userBubbleTextColor: '#ffffff',
+        inputBackgroundColor: '#f3f4f6',
+        headerTextColor: '#ffffff',
+      }
+  const themeColor = (key: keyof typeof themeFallback) => theme?.[key] || themeFallback[key]
+
+  const isLeft = config.position === 'bottom-left'
   const showPreChat = !visitorInfo
 
   const headerBg = headerStyle === 'gradient'
@@ -294,12 +355,29 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
 
   // ── Dynamic styles ────────────────────────────────────────────────────────
   const dynamicStyles = `
-    :host { --brand: ${color}; --brand-user: ${userBubbleColor}; --radius: ${borderRadius}px; }
+    :host {
+      --brand: ${color};
+      --brand-user: ${userBubbleColor};
+      --brand-user-text: ${themeColor('userBubbleTextColor')};
+      --radius: ${borderRadius}px;
+      --bg: ${themeColor('surfaceColor')};
+      --bg-subtle: ${themeColor('backgroundColor')};
+      --bg-muted: ${themeColor('inputBackgroundColor')};
+      --border: ${themeColor('borderColor')};
+      --border-strong: ${themeColor('borderColor')};
+      --text-primary: ${themeColor('textColor')};
+      --text-secondary: ${themeColor('mutedTextColor')};
+      --text-muted: ${themeColor('mutedTextColor')};
+      --assistant-bg: ${themeColor('assistantBubbleColor')};
+      --assistant-text: ${themeColor('assistantTextColor')};
+      --header-text: ${themeColor('headerTextColor')};
+    }
     .launcher { width: ${launcherPx}px !important; height: ${launcherPx}px !important; }
-    .window { width: ${widgetWidth}px !important; border-radius: var(--radius) !important; }
+    .window { width: ${widgetWidth}px !important; height: ${widgetHeight}px !important; border-radius: var(--radius) !important; }
     .bubble.user { background: var(--brand-user) !important; }
-    .tab-indicator { background: var(--brand); }
-    .send-btn { background: var(--brand) !important; }
+    .bubble.bot { background: var(--assistant-bg) !important; color: var(--assistant-text) !important; }
+    .bottom-nav-btn.active { color: var(--brand); }
+    .send-btn.active { background: var(--brand) !important; color: #fff !important; }
     .status-dot-active { background: #22c55e; }
     .prechat-submit { background: var(--brand) !important; }
     .inbox-start-btn { background: var(--brand) !important; }
@@ -307,11 +385,9 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     .call-control-active { background: #fee2e2; color: #dc2626; }
     .inbox-item.selected { border-color: var(--brand); }
     @media (max-width: 440px) {
-      .window { width: calc(100vw - 20px) !important; }
+      .window { width: calc(100vw - 20px) !important; height: min(${widgetHeight}px, calc(100vh - 110px)) !important; }
     }
   `
-
-  const tabCount = (config.voiceEnabled && config.vapiPublicKey && config.vapiAssistantId) ? 3 : 2
 
   // ── File handling ─────────────────────────────────────────────────────────
 
@@ -493,7 +569,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const statusLabel = !connected
     ? (config.offlineMessage || 'Connecting…')
     : agentActive ? 'Agent is online'
-    : isCallActive ? `🎙️ ${formatDuration(callDurationSeconds)}`
+    : isCallActive ? `Call - ${formatDuration(callDurationSeconds)}`
     : responseTimeText
 
   const isResolvedConversation = activeConversation?.status === 'resolved' || activeConversation?.status === 'closed'
@@ -527,7 +603,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
       />
 
       {/* ── Chat Window ── */}
-      <div className={`window ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''} ${open ? '' : 'hidden'}`}>
+      <div className={`window ${isLeft ? 'left' : ''} ${expanded ? 'expanded' : ''} ${open ? '' : 'hidden'}`}>
 
         {/* Header */}
         <div className="header" style={{ background: headerBg }}>
@@ -545,6 +621,13 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
             </div>
           </div>
           <div className="header-actions">
+            <button
+              className="header-btn"
+              onClick={() => setExpanded(value => !value)}
+              title={expanded ? 'Return to compact view' : 'Expand widget'}
+            >
+              {expanded ? <ShrinkIcon /> : <ExpandIcon />}
+            </button>
             {!showPreChat && (
               <button className="header-btn" onClick={() => setShowNewChatConfirm(true)} title="New conversation">
                 <NewChatIcon />
@@ -608,30 +691,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
           </div>
         ) : (
           <>
-            {/* Tabs */}
-            <div className="tabs" style={{ gridTemplateColumns: `repeat(${tabCount}, 1fr)` }}>
-              {(['inbox', 'chat'] as const).map(t => (
-                <button
-                  key={t}
-                  className={`tab-btn ${tab === t ? 'active' : ''}`}
-                  onClick={() => setTab(t)}
-                >
-                  {t === 'inbox' ? 'Inbox' : 'Chat'}
-                  {tab === t && <span className="tab-indicator" />}
-                </button>
-              ))}
-              {voiceEnabled && (
-                <button
-                  className={`tab-btn ${tab === 'call' ? 'active' : ''} ${isCallActive ? 'tab-call-live' : ''}`}
-                  onClick={() => setTab('call')}
-                >
-                  {isCallActive ? `📞 ${formatDuration(callDurationSeconds)}` : '📞 Call'}
-                  {tab === 'call' && <span className="tab-indicator" />}
-                </button>
-              )}
-            </div>
-
-            {/* ── Inbox Tab ── */}
+            {/* Inbox Tab */}
             {tab === 'inbox' && (
               <div className="inbox-list">
                 <div className="inbox-ctas">
@@ -682,8 +742,60 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
             )}
 
             {/* ── Chat Tab ── */}
+            {tab === 'help' && (
+              <div className="help-panel">
+                <div className="help-intro">
+                  <p className="help-kicker">Help center</p>
+                  <h3>Find quick answers</h3>
+                  <p>Browse the most common questions or start a chat with our team.</p>
+                </div>
+
+                {helpItems.length === 0 ? (
+                  <div className="help-empty">
+                    <HelpIcon />
+                    <p>No help articles are configured yet.</p>
+                  </div>
+                ) : (
+                  <div className="help-list">
+                    {helpItems.map(item => (
+                      <details key={item.id} className="help-item">
+                        <summary>{item.question}</summary>
+                        <p>{item.answer}</p>
+                        {item.actionLabel && item.actionMessage && (
+                          <button
+                            className="help-action"
+                            onClick={() => {
+                              setTab('chat')
+                              if (!activeConversationId) startNewChat()
+                              setInput(item.actionMessage)
+                              requestAnimationFrame(() => textareaRef.current?.focus())
+                            }}
+                          >
+                            {item.actionLabel}
+                          </button>
+                        )}
+                      </details>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {tab === 'chat' && (
-              <>
+              <div className="chat-page">
+                <div className="chat-topbar">
+                  <button className="chat-back-btn" onClick={() => setTab('inbox')} aria-label="Back to inbox">
+                    <BackIcon />
+                  </button>
+                  <div className="chat-topbar-copy">
+                    <span className="chat-topbar-title">
+                      {activeConversation?.contactName || activeConversation?.contactEmail || 'Support Chat'}
+                    </span>
+                    <span className="chat-topbar-subtitle">
+                      {agentActive ? 'Agent joined' : responseTimeText}
+                    </span>
+                  </div>
+                </div>
                 <div className="messages">
                   {!activeConversationId ? (
                     <div className="messages-empty">
@@ -754,6 +866,29 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                     })
                   )}
 
+                  {showQuickSuggestions && (
+                    <div className="msg-row suggestions-row">
+                      <div className="msg-avatar" style={{ background: `${color}18`, color }}>
+                        <BotIcon />
+                      </div>
+                      <div className="suggestions-card">
+                        <span className="suggestions-title">Suggested replies</span>
+                        <div className="inline-suggestions">
+                          {quickSuggestions.map((item, idx) => (
+                            <button
+                              key={`${item.label}-${idx}`}
+                              className="inline-suggestion-btn"
+                              onClick={() => handleQuickReply(item.message)}
+                              disabled={!canSendQuickReply}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Typing indicator */}
                   {showTyping && typing && activeConversationId && (
                     <div className="msg-row">
@@ -789,23 +924,19 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                   </div>
                 )}
 
+                {showTalkToHuman && (
+                  <button
+                    className="floating-human-btn"
+                    onClick={() => handleQuickReply(talkToHumanPayload)}
+                    disabled={!canSendQuickReply}
+                  >
+                    {talkToHumanLabel}
+                  </button>
+                )}
+
                 {/* Input area */}
                 {!isResolvedConversation && (
                   <div className="input-area">
-                    {showQuickSuggestions && (
-                      <div className="quick-suggestions">
-                        {quickSuggestions.map((item, idx) => (
-                          <button
-                            key={`${item.label}-${idx}`}
-                            className="quick-suggestion-btn"
-                            onClick={() => handleQuickReply(item.message)}
-                            disabled={!canSendQuickReply}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                     <div className="input-row">
                       <button
                         className="input-attach-btn"
@@ -842,18 +973,9 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                         {isUploading ? <span className="send-spinner" /> : <SendIcon />}
                       </button>
                     </div>
-                    {showTalkToHuman && (
-                      <button
-                        className="talk-human-btn"
-                        onClick={() => handleQuickReply(talkToHumanPayload)}
-                        disabled={!canSendQuickReply}
-                      >
-                        {talkToHumanLabel}
-                      </button>
-                    )}
                   </div>
                 )}
-              </>
+              </div>
             )}
 
             {/* ── Voice Call Tab ── */}
@@ -868,10 +990,39 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                 callError={callError}
                 botName={botName}
                 callButtonLabel={config.callButtonLabel || 'Talk to AI'}
+                onBack={() => setTab('inbox')}
                 onStartCall={handleStartCall}
                 onEndCall={endCall}
                 onToggleMute={toggleMute}
               />
+            )}
+
+            {tab !== 'chat' && tab !== 'call' && (
+              <nav className="bottom-nav" aria-label="Widget navigation">
+                {([
+                  { value: 'inbox' as const, label: 'Inbox', icon: <InboxIcon /> },
+                  { value: 'chat' as const, label: 'Chat', icon: <ChatIcon /> },
+                  { value: 'help' as const, label: 'Help', icon: <HelpIcon /> },
+                ]).map(item => (
+                  <button
+                    key={item.value}
+                    className={`bottom-nav-btn ${tab === item.value ? 'active' : ''}`}
+                    onClick={() => setTab(item.value)}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+                {voiceEnabled && (
+                  <button
+                    className={`bottom-nav-btn ${isCallActive ? 'live' : ''}`}
+                    onClick={() => setTab('call')}
+                  >
+                    <PhoneIcon />
+                    <span>{isCallActive ? formatDuration(callDurationSeconds) : 'Calls'}</span>
+                  </button>
+                )}
+              </nav>
             )}
           </>
         )}
@@ -886,7 +1037,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
 
       {/* ── Launcher ── */}
       <button
-        className={`launcher ${isLeft ? 'left' : ''} ${isTop ? 'top' : ''} ${isCallActive ? 'launcher-live' : ''}`}
+        className={`launcher ${isLeft ? 'left' : ''} ${isCallActive ? 'launcher-live' : ''}`}
         style={{ background: isCallActive ? '#16a34a' : headerBg }}
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'Close chat' : 'Open chat'}
@@ -909,6 +1060,7 @@ interface VoiceCallPanelProps {
   callError: string | null
   botName: string
   callButtonLabel: string
+  onBack: () => void
   onStartCall: () => Promise<void>
   onEndCall: () => void
   onToggleMute: () => void
@@ -917,67 +1069,108 @@ interface VoiceCallPanelProps {
 function VoiceCallPanel({
   color, callState, isMuted, volumeLevel, callDurationSeconds,
   callTranscript, callError, botName, callButtonLabel,
-  onStartCall, onEndCall, onToggleMute,
+  onBack, onStartCall, onEndCall, onToggleMute,
 }: VoiceCallPanelProps) {
   const isActive = callState === 'active'
   const isConnecting = callState === 'connecting' || callState === 'ending'
   const isIdle = callState === 'idle' || callState === 'ended' || callState === 'error'
-
-  const bars = 5
+  const isErrored = callState === 'error'
+  const bars = 14
   const activeBarCount = Math.round(volumeLevel * bars)
+  const visibleTranscript = callTranscript.slice(-8)
+  const statusText =
+    callState === 'idle' ? 'Ready to start' :
+    callState === 'connecting' ? 'Connecting' :
+    callState === 'active' ? 'Live call in progress' :
+    callState === 'ending' ? 'Ending call' :
+    callState === 'ended' ? 'Call ended' :
+    callError ?? 'Call failed'
 
   return (
-    <div className="call-panel">
-      {/* Avatar */}
-      <div className="call-avatar-wrap">
-        <div
-          className={`call-avatar ${isActive ? 'pulsing' : ''}`}
-          style={{ borderColor: isActive ? color : '#e5e7eb' }}
-        >
-          🤖
+    <div className={`call-panel ${isActive ? 'is-active' : ''} ${isErrored ? 'is-error' : ''}`}>
+      <div className="call-topbar">
+        <button className="call-back-btn" onClick={onBack} aria-label="Back to inbox">
+          <BackIcon />
+        </button>
+        <div className="call-topbar-copy">
+          <span className="call-topbar-title">Voice call</span>
+          <span className="call-topbar-subtitle">{botName}</span>
         </div>
-        {isActive && (
-          <div className="call-volume">
-            {Array.from({ length: bars }, (_, i) => (
-              <div
+        <span className={`call-status-pill state-${callState}`}>
+          {isActive ? formatDuration(callDurationSeconds) : statusText}
+        </span>
+      </div>
+
+      <div className="call-main">
+        <div className="call-identity">
+          <div className={`call-avatar ${isActive ? 'pulsing' : ''}`} style={{ borderColor: isActive ? color : undefined }}>
+            <span>AI</span>
+          </div>
+          <div className="call-status">
+            <p className="call-bot-name">{botName}</p>
+            <p className="call-state-label">{statusText}</p>
+          </div>
+        </div>
+
+        <div className={`call-waveform ${isActive ? 'listening' : ''}`} aria-label="Voice activity">
+          {Array.from({ length: bars }, (_, i) => {
+            const distance = Math.abs(i - (bars - 1) / 2)
+            const baseHeight = Math.max(10, 38 - distance * 4)
+            const activeHeight = i < activeBarCount
+              ? Math.min(48, baseHeight + Math.round(volumeLevel * 18))
+              : Math.max(8, baseHeight * 0.45)
+
+            return (
+              <span
                 key={i}
-                className="call-bar"
+                className={i < activeBarCount ? 'active' : ''}
                 style={{
-                  background: i < activeBarCount ? color : '#e5e7eb',
-                  height: `${[8, 14, 20, 14, 8][i]}px`,
+                  height: `${activeHeight}px`,
+                  animationDelay: `${i * 55}ms`,
+                  background: i < activeBarCount ? color : undefined,
                 }}
               />
+            )
+          })}
+        </div>
+
+        <div className="call-metrics">
+          <div>
+            <span>Connection</span>
+            <strong>{isActive ? 'Live' : isConnecting ? 'Working' : 'Standby'}</strong>
+          </div>
+          <div>
+            <span>Duration</span>
+            <strong>{formatDuration(callDurationSeconds)}</strong>
+          </div>
+          <div>
+            <span>Microphone</span>
+            <strong>{isMuted ? 'Muted' : 'Open'}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="call-transcript">
+        <div className="call-transcript-head">
+          <span>Live transcript</span>
+          <small>{visibleTranscript.length > 0 ? `${visibleTranscript.length} recent` : 'Waiting for speech'}</small>
+        </div>
+        {visibleTranscript.length > 0 ? (
+          <div className="call-transcript-list">
+            {visibleTranscript.map((entry, i) => (
+              <div key={`${entry.role}-${i}-${entry.text}`} className={`transcript-entry ${entry.role}`}>
+                <span className="transcript-role">{entry.role === 'user' ? 'You' : botName}</span>
+                <span className="transcript-text">{entry.text}</span>
+              </div>
             ))}
+          </div>
+        ) : (
+          <div className="call-transcript-empty">
+            Transcript will appear here once the call starts.
           </div>
         )}
       </div>
 
-      {/* Status */}
-      <div className="call-status">
-        <p className="call-bot-name">{botName}</p>
-        <p className="call-state-label">
-          {callState === 'idle' && callButtonLabel}
-          {callState === 'connecting' && '⏳ Connecting…'}
-          {callState === 'active' && `🎙️ ${formatDuration(callDurationSeconds)}`}
-          {callState === 'ending' && 'Ending call…'}
-          {callState === 'ended' && '✅ Call ended'}
-          {callState === 'error' && `❌ ${callError ?? 'Call failed'}`}
-        </p>
-      </div>
-
-      {/* Transcript */}
-      {callTranscript.length > 0 && (
-        <div className="call-transcript">
-          {callTranscript.slice(-4).map((entry, i) => (
-            <div key={i} className={`transcript-entry ${entry.role}`}>
-              <span className="transcript-role">{entry.role === 'user' ? 'You' : botName}</span>
-              <span className="transcript-text">{entry.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Controls */}
       <div className="call-controls">
         {isIdle && (
           <button className="call-start-btn" onClick={onStartCall}>
@@ -997,13 +1190,13 @@ function VoiceCallPanel({
             </button>
             <button className="call-end-btn" onClick={onEndCall}>
               <PhoneOffIcon />
-              <span>End</span>
+              <span>End Call</span>
             </button>
           </>
         )}
       </div>
 
-      <p className="call-disclaimer">Calls may be recorded for quality purposes.</p>
+      <p className="call-disclaimer">Calls may be recorded for quality and support follow-up.</p>
     </div>
   )
 }
