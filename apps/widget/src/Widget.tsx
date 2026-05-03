@@ -166,6 +166,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const {
     messages, conversations, activeConversation, activeConversationId,
     typing, connected, agentActive, visitorId, visitorInfo,
+    identityResetVersion,
     sendMessage, uploadFile, sendTyping, startNewChat, openConversation, refreshInbox, initWithVisitorInfo,
   } = useChat(config.orgId)
 
@@ -284,6 +285,26 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     : color
 
   useEffect(() => {
+    if (identityResetVersion <= 0) return
+
+    identityAppliedRef.current = null
+    setNameInput('')
+    setEmailInput('')
+    setInput('')
+    setFormError('')
+    setPendingFiles((current) => {
+      current.forEach((file) => {
+        if (file.previewUrl) URL.revokeObjectURL(file.previewUrl)
+      })
+      return []
+    })
+    setTab('inbox')
+    setShowNewChatConfirm(false)
+  }, [identityResetVersion])
+
+  useEffect(() => {
+    if (identityResetVersion > 0) return
+
     const user = config.user
     if (!user && !config.company && !config.customAttributes) return
 
@@ -315,7 +336,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setNameInput(identity.name)
     if (identity.email) setEmailInput(identity.email)
     initWithVisitorInfo(identity)
-  }, [config.user, config.company, config.page, config.customAttributes, initWithVisitorInfo])
+  }, [config.user, config.company, config.page, config.customAttributes, identityResetVersion, initWithVisitorInfo])
 
   // ── Auto-open ─────────────────────────────────────────────────────────────
   useEffect(() => {

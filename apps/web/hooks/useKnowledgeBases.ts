@@ -132,6 +132,16 @@ export function useKBSources(kbId: string | null, orgId: string) {
   return { sources, chunkCount, loading, refetch: fetch }
 }
 
+export function useDeleteKBSource() {
+  const utils = trpc.useUtils()
+
+  return trpc.knowledge.deleteKnowledgeSource.useMutation({
+    onSuccess: () => {
+      void utils.knowledge.getKnowledgeBases.invalidate()
+    },
+  })
+}
+
 export function useSession() {
   const [session, setSession] = useState<{
     orgId: string

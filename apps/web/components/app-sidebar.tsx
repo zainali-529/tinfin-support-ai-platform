@@ -14,6 +14,12 @@ import {
   CollapsibleTrigger,
 } from '@workspace/ui/components/collapsible'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@workspace/ui/components/dropdown-menu'
+import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -28,6 +34,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
+  useSidebar,
 } from '@workspace/ui/components/sidebar'
 import {
   BarChart2Icon,
@@ -188,6 +195,7 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
   const pathname = usePathname()
   const isAdmin = activeOrg.role === 'admin'
   const { planId } = usePlan()
+  const { state: sidebarState } = useSidebar()
   const unreadCount = useUnreadCount(activeOrg.id)
 
   const identityLabel = user?.name?.trim() || user?.email?.trim() || 'Tinfin User'
@@ -216,6 +224,36 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
     const hasChildren = visibleChildren.length > 0
 
     if (hasChildren) {
+      if (sidebarState === 'collapsed') {
+        return (
+          <SidebarMenuItem key={item.href}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  type="button"
+                  isActive={isItemActive(item)}
+                  className="h-9 gap-3 rounded-lg px-3 font-medium"
+                  aria-label={item.label}
+                >
+                  <item.icon className="size-4 shrink-0" />
+                  <span className="flex-1 truncate text-[13px]">{item.label}</span>
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="right" align="start" className="w-44">
+                {visibleChildren.map((child) => (
+                  <DropdownMenuItem key={child.href} asChild className="gap-2 text-xs">
+                    <Link href={child.href}>
+                      <child.icon className="size-3.5 shrink-0" />
+                      <span>{child.label}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        )
+      }
+
       return (
         <Collapsible
           key={item.href}

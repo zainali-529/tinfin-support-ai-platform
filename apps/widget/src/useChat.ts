@@ -105,6 +105,7 @@ export function useChat(orgId: string) {
   const [agentActive, setAgentActive] = useState(false)
   const [visitorId, setVisitorId] = useState<string>(stored.current.visitorId)
   const [visitorInfo, setVisitorInfo] = useState<VisitorInfo | null>(stored.current.visitorInfo)
+  const [identityResetVersion, setIdentityResetVersion] = useState(0)
 
   const wsRef = useRef<WebSocket | null>(null)
 
@@ -227,32 +228,6 @@ export function useChat(orgId: string) {
 
       ws.onopen = () => {
         setConnected(true)
-        requestInbox()
-
-        if (activeConversationIdRef.current) {
-          ws.send(JSON.stringify({
-            type: 'conversation:select',
-            conversationId: activeConversationIdRef.current,
-          }))
-        }
-
-        if (stored.current.visitorInfo) {
-          const info = stored.current.visitorInfo
-          ws.send(JSON.stringify({
-            type: 'visitor:identify',
-            name: info.name,
-            email: info.email,
-            userId: info.id,
-            phone: info.phone,
-            userHash: info.userHash,
-            company: info.company,
-            traits: info.traits,
-            page: info.page,
-            customAttributes: info.customAttributes,
-            visitorInfo: info,
-            visitorId: visitorIdRef.current,
-          }))
-        }
       }
 
       ws.onclose = () => {
@@ -269,9 +244,70 @@ export function useChat(orgId: string) {
           switch (msg.type) {
             case 'connected':
               if (typeof msg.visitorId === 'string' && msg.visitorId.length > 0) {
-                visitorIdRef.current = msg.visitorId
-                setVisitorId(msg.visitorId)
+                const nextVisitorId = msg.visitorId
+                const staleStoredIdentity = msg.knownVisitor === false && visitorInfoRef.current !== null
+                const identityReset =
+                  msg.identityReset === true ||
+                  nextVisitorId !== visitorIdRef.current ||
+                  staleStoredIdentity
+
+                visitorIdRef.current = nextVisitorId
+                setVisitorId(nextVisitorId)
+
+                if (identityReset) {
+                  visitorInfoRef.current = null
+                  conversationsRef.current = []
+                  activeConversationIdRef.current = null
+                  messagesByConversationRef.current = {}
+                  pendingUserMessagesRef.current = []
+
+                  setVisitorInfo(null)
+                  setConversations([])
+                  setActiveConversationId(null)
+                  setMessagesByConversation({})
+                  setIdentityResetVersion((version) => version + 1)
+
+                  const resetState: StoredChat = {
+                    visitorId: nextVisitorId,
+                    visitorInfo: null,
+                    activeConversationId: null,
+                    conversations: [],
+                    messagesByConversation: {},
+                  }
+                  stored.current = resetState
+                  saveStoredChat(orgId, resetState)
+                  requestInbox()
+                  break
+                }
+
                 persist()
+
+                requestInbox()
+
+                if (activeConversationIdRef.current) {
+                  ws.send(JSON.stringify({
+                    type: 'conversation:select',
+                    conversationId: activeConversationIdRef.current,
+                  }))
+                }
+
+                if (visitorInfoRef.current) {
+                  const info = visitorInfoRef.current
+                  ws.send(JSON.stringify({
+                    type: 'visitor:identify',
+                    name: info.name,
+                    email: info.email,
+                    userId: info.id,
+                    phone: info.phone,
+                    userHash: info.userHash,
+                    company: info.company,
+                    traits: info.traits,
+                    page: info.page,
+                    customAttributes: info.customAttributes,
+                    visitorInfo: info,
+                    visitorId: visitorIdRef.current,
+                  }))
+                }
               }
               break
 
@@ -527,7 +563,23 @@ export function useChat(orgId: string) {
     setAgentActive(false)
     pendingUserMessagesRef.current = []
     persist()
-    wsRef.current?.send(JSON.stringify({ type: 'conversation:new' }))
+    const visitor = visitorInfoRef.current
+    wsRef.current?.send(JSON.stringify({
+      type: 'conversation:new',
+      visitorId: visitorIdRef.current,
+      ...(visitor ? {
+        name: visitor.name,
+        email: visitor.email,
+        userId: visitor.id,
+        phone: visitor.phone,
+        userHash: visitor.userHash,
+        company: visitor.company,
+        traits: visitor.traits,
+        page: visitor.page,
+        customAttributes: visitor.customAttributes,
+        visitorInfo: visitor,
+      } : {}),
+    }))
   }, [persist])
 
   const initWithVisitorInfo = useCallback((info: VisitorInfo) => {
@@ -574,6 +626,7 @@ export function useChat(orgId: string) {
     agentActive,
     visitorId,
     visitorInfo,
+    identityResetVersion,
     sendMessage,
     uploadFile,
     sendTyping,

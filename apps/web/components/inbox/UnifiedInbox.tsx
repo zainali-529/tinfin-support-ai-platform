@@ -29,6 +29,7 @@ import { ConversationListItem } from './ConversationListItem'
 import { ConversationRenderer } from './ConversationRenderer'
 import { EmptyState } from './EmptyState'
 import { PendingApprovals } from '@/components/actions/PendingApprovals'
+import type { Conversation } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
@@ -68,6 +69,8 @@ const QUEUE_OPTIONS: Array<{ value: QueueFilter; label: string }> = [
   { value: 'resolved', label: 'Resolved' },
 ]
 
+const EMPTY_CONVERSATION_ID = '00000000-0000-0000-0000-000000000000'
+
 function useAgentId() {
   const [agentId, setAgentId] = useState<string | null>(null)
 
@@ -90,6 +93,8 @@ export function UnifiedInbox() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
+  const utils = trpc.useUtils()
+  const queryConversationId = searchParams.get('conversation')
 
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -137,6 +142,15 @@ export function UnifiedInbox() {
     staleTime: 10_000,
     refetchInterval: 15_000,
   })
+  const selectedConversationLoaded = conversations.some((conversation) => conversation.id === queryConversationId)
+  const deepLinkedConversationQuery = trpc.chat.getConversation.useQuery(
+    { conversationId: queryConversationId ?? EMPTY_CONVERSATION_ID },
+    {
+      enabled: Boolean(queryConversationId && !selectedConversationLoaded),
+      staleTime: 30_000,
+      retry: false,
+    }
+  )
 
   const approveAction = trpc.actions.approveAction.useMutation({
     onSuccess: () => {
@@ -167,12 +181,8 @@ export function UnifiedInbox() {
   }))
 
   useEffect(() => {
-    const queryConversationId = searchParams.get('conversation')
-    if (!queryConversationId) return
-    if (!conversations.some((conversation) => conversation.id === queryConversationId)) return
-
     setSelectedId((prev) => (prev === queryConversationId ? prev : queryConversationId))
-  }, [conversations, searchParams])
+  }, [queryConversationId])
 
   useEffect(() => {
     if (previousOrgId.current !== orgId) {
@@ -224,7 +234,9 @@ export function UnifiedInbox() {
     [channelFilter, pushQueryState]
   )
 
-  const selectedConversation = conversations.find((conversation) => conversation.id === selectedId) ?? null
+  const selectedConversation =
+    conversations.find((conversation) => conversation.id === selectedId) ??
+    ((deepLinkedConversationQuery.data ?? null) as Conversation | null)
 
   const handleStatusMutation = useCallback((
     id: string,
@@ -234,14 +246,26 @@ export function UnifiedInbox() {
     const assignedTo = patch && 'assigned_to' in patch
       ? patch.assigned_to
       : selectedConversation?.assigned_to
+    const nextQueueState = queueStateForConversation(status as StatusFilter | 'closed', assignedTo ?? null)
 
     patchConversation(id, {
       ...patch,
       status: status as NonNullable<typeof selectedConversation>['status'],
-      queue_state: queueStateForConversation(status as StatusFilter | 'closed', assignedTo ?? null),
+      queue_state: nextQueueState,
       assigned_to: assignedTo ?? null,
     })
-  }, [patchConversation, selectedConversation?.assigned_to])
+
+    utils.chat.getConversation.setData({ conversationId: id }, (previous) => previous
+      ? {
+          ...previous,
+          status,
+          queue_state: nextQueueState,
+          assigned_to: assignedTo ?? null,
+          ai_context: patch?.ai_context ?? previous.ai_context,
+        }
+      : previous
+    )
+  }, [patchConversation, selectedConversation?.assigned_to, utils.chat.getConversation])
 
   const handleListScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
@@ -412,6 +436,11 @@ export function UnifiedInbox() {
             agentId={agentId}
             onStatusChange={handleStatusMutation}
           />
+        ) : selectedId && deepLinkedConversationQuery.isFetching ? (
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner className="size-4" />
+            Opening conversation...
+          </div>
         ) : (
           <EmptyState />
         )}

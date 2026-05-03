@@ -34,6 +34,7 @@ interface TinfinSocket extends WebSocket {
   agentId?: string
   awaitingHandoffConfirm?: boolean
   pendingActionLogId?: string
+  identityReset?: boolean
 }
 
 type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
@@ -51,6 +52,8 @@ interface VisitorConversationSummary {
 
 // orgId → all sockets in that org
 const rooms = new Map<string, Set<TinfinSocket>>()
+
+const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
 const DEFAULT_WELCOME_MESSAGE = 'Hi 👋 How can we help?'
 
@@ -87,6 +90,49 @@ function broadcastToAgents(orgId: string, data: unknown) {
       s.send(JSON.stringify(data))
     }
   })
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function isVisitorIdentityDeleted(settings: unknown, visitorId: string): boolean {
+  const tombstones = asRecord(settings).visitorIdentityTombstones
+  if (!Array.isArray(tombstones)) return false
+
+  const now = Date.now()
+  return tombstones.some((item) => {
+    const row = asRecord(item)
+    const deletedVisitorId = typeof row.visitorId === 'string' ? row.visitorId.trim() : ''
+    const deletedAt = typeof row.deletedAt === 'string' ? row.deletedAt : ''
+    if (deletedVisitorId !== visitorId || !deletedAt) return false
+
+    const age = now - new Date(deletedAt).getTime()
+    return Number.isFinite(age) && age < VISITOR_TOMBSTONE_MAX_AGE_MS
+  })
+}
+
+async function resolveVisitorIdentity(
+  orgId: string,
+  requestedVisitorId: string
+): Promise<{ visitorId: string; identityReset: boolean }> {
+  try {
+    const { data } = await getSupabase()
+      .from('organizations')
+      .select('settings')
+      .eq('id', orgId)
+      .maybeSingle()
+
+    if (!isVisitorIdentityDeleted(data?.settings, requestedVisitorId)) {
+      return { visitorId: requestedVisitorId, identityReset: false }
+    }
+
+    return { visitorId: crypto.randomUUID(), identityReset: true }
+  } catch (error) {
+    console.error('[ws] resolveVisitorIdentity:', error)
+    return { visitorId: requestedVisitorId, identityReset: false }
+  }
 }
 
 async function getWelcomeMessage(orgId: string): Promise<string> {
@@ -1226,12 +1272,48 @@ async function handleConversationSelect(socket: TinfinSocket, msg: Record<string
   send(socket, { type: 'conversation:history', conversationId, messages })
 }
 
-async function handleNewChat(socket: TinfinSocket) {
+async function handleNewChat(socket: TinfinSocket, msg: Record<string, unknown>) {
   const orgId = socket.orgId!
+  const visitorInfo = (msg.visitorInfo as Record<string, unknown> | undefined) ?? {}
+  const name = ((msg.name as string | undefined) ?? (visitorInfo.name as string | undefined))?.trim()
+  const email = ((msg.email as string | undefined) ?? (visitorInfo.email as string | undefined))?.trim().toLowerCase()
+  const userId = cleanOptionalText(msg.userId ?? visitorInfo.id)
+  const phone = cleanOptionalText(msg.phone ?? visitorInfo.phone)
+  const userHash = cleanOptionalText(msg.userHash ?? visitorInfo.userHash)
+  const company = cleanObject(msg.company ?? visitorInfo.company)
+  const traits = cleanObject(msg.traits ?? visitorInfo.traits)
+  const page = cleanObject(msg.page ?? visitorInfo.page)
+  const customAttributes = cleanObject(msg.customAttributes ?? visitorInfo.customAttributes)
+
   const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
   socket.conversationId = result.conversationId
   socket.awaitingHandoffConfirm = false
   socket.pendingActionLogId = undefined
+
+  if (name || email || userId || phone) {
+    const contactId = await upsertContact({
+      orgId,
+      visitorId: socket.visitorId!,
+      name,
+      email,
+      userId,
+      phone,
+      userHash,
+      company,
+      traits,
+      page,
+      customAttributes,
+    })
+
+    if (contactId) {
+      await getSupabase()
+        .from('conversations')
+        .update({ contact_id: contactId })
+        .eq('id', result.conversationId)
+        .eq('org_id', orgId)
+    }
+  }
+
   send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
   if (result.isNew) {
     await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
@@ -1247,7 +1329,7 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
     case 'visitor:message': await handleVisitorMessage(socket, msg); break
     case 'visitor:identify': await handleVisitorIdentify(socket, msg); break
     case 'conversation:resume': await handleConversationResume(socket, msg); break
-    case 'conversation:new': await handleNewChat(socket); break
+    case 'conversation:new': await handleNewChat(socket, msg); break
     case 'agent:message': await handleAgentMessage(socket, msg); break
     case 'agent:takeover': await handleAgentTakeover(socket, msg); break
     case 'agent:release': await handleAgentRelease(socket, msg); break
@@ -1394,7 +1476,7 @@ export function createWsServer(port: number) {
     try {
       const url = new URL(req.url || '/', `http://localhost`)
       const orgId = (url.searchParams.get('orgId') || '').trim()
-      const visitorId = url.searchParams.get('visitorId') || crypto.randomUUID()
+      let visitorId = url.searchParams.get('visitorId') || crypto.randomUUID()
       const isAgent = url.searchParams.get('type') === 'agent'
       const requestedAgentId = url.searchParams.get('agentId') || undefined
       const token = url.searchParams.get('token') || undefined
@@ -1405,6 +1487,10 @@ export function createWsServer(port: number) {
       if (isAgent) {
         verifiedAgentId = await authenticateAgentSocket({ orgId, requestedAgentId, token }) ?? undefined
         if (!verifiedAgentId) return socket.close(1008, 'Unauthorized agent socket')
+      } else {
+        const resolvedIdentity = await resolveVisitorIdentity(orgId, visitorId)
+        visitorId = resolvedIdentity.visitorId
+        socket.identityReset = resolvedIdentity.identityReset
       }
 
       socket.orgId = orgId
@@ -1418,7 +1504,13 @@ export function createWsServer(port: number) {
       if (!rooms.has(orgId)) rooms.set(orgId, new Set())
       rooms.get(orgId)!.add(socket)
 
-      send(socket, { type: 'connected', visitorId })
+      const knownVisitor = isAgent ? undefined : (await getVisitorContactIds(orgId, visitorId)).length > 0
+      send(socket, {
+        type: 'connected',
+        visitorId,
+        identityReset: socket.identityReset === true,
+        knownVisitor,
+      })
       if (!isAgent) void handleConversationsList(socket)
 
       socket.on('pong', () => { socket.isAlive = true })

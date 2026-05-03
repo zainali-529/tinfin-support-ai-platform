@@ -25,6 +25,7 @@ import { cn } from '@workspace/ui/lib/utils'
 import {
   UsersIcon,
   MailIcon,
+  MessageCircleIcon,
   PhoneCallIcon,
   MessageSquareIcon,
   CheckCircleIcon,
@@ -141,6 +142,11 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
     email: contact.email ?? null,
     phone: contact.phone ?? null,
   }
+  const chatConversations = contact.conversations.filter((conversation) => conversation.channel === 'chat')
+  const totalChats = contact.stats.totalChats ?? chatConversations.length
+  const totalEmails = contact.stats.totalEmails ?? contact.emailThreads.length
+  const totalWhatsApp = contact.stats.totalWhatsApp ?? contact.whatsappThreads.length
+  const totalCalls = contact.stats.totalCalls ?? contact.calls.length
 
   const handleDelete = async () => {
     setDeleteError('')
@@ -205,21 +211,22 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3 px-6 py-4 border-b shrink-0">
-        <StatCard label="Conversations" value={contact.stats.totalConversations} icon={MessageSquareIcon} />
-        <StatCard label="Resolved" value={contact.stats.resolvedConversations} icon={CheckCircleIcon} />
-        <StatCard label="Calls" value={contact.stats.totalCalls} icon={PhoneCallIcon} />
-        <StatCard label="Email Threads" value={contact.stats.totalEmails} icon={MailIcon} />
+        <StatCard label="Chats" value={totalChats} icon={MessageSquareIcon} />
+        <StatCard label="Email" value={totalEmails} icon={MailIcon} />
+        <StatCard label="WhatsApp" value={totalWhatsApp} icon={MessageCircleIcon} />
+        <StatCard label="Calls" value={totalCalls} icon={PhoneCallIcon} />
       </div>
 
       {/* Tabs */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        <Tabs defaultValue="conversations" className="flex flex-col h-full">
+        <Tabs defaultValue="chats" className="flex flex-col h-full">
           <div className="border-b px-6 pt-3 pb-0 shrink-0">
             <TabsList className="h-8 gap-0 bg-transparent p-0 border-0">
               {[
-                { value: 'conversations', label: 'All Conversations', count: contact.stats.totalConversations },
-                { value: 'calls', label: 'Calls', count: contact.stats.totalCalls },
-                { value: 'emails', label: 'Email Threads', count: contact.stats.totalEmails },
+                { value: 'chats', label: 'Chats', count: totalChats },
+                { value: 'emails', label: 'Email', count: totalEmails },
+                { value: 'whatsapp', label: 'WhatsApp', count: totalWhatsApp },
+                { value: 'calls', label: 'Calls', count: totalCalls },
               ].map(({ value, label, count }) => (
                 <TabsTrigger
                   key={value}
@@ -241,19 +248,19 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
               ))}
             </TabsList>
             <p className="pb-3 text-[10px] text-muted-foreground">
-              Conversations include all channels (chat, email, whatsapp, and others). Email Threads shows email-only threads.
+              Activity is split by channel so chat, email, WhatsApp, and calls stay easy to audit.
             </p>
           </div>
 
           <div className="flex-1 min-h-0">
-            {/* Conversations Tab */}
-            <TabsContent value="conversations" className="m-0 h-full">
+            {/* Chats Tab */}
+            <TabsContent value="chats" className="m-0 h-full">
               <ScrollArea className="h-full">
                 <div className="p-4 space-y-2">
-                  {contact.conversations.length === 0 ? (
-                    <EmptyTabState icon={InboxIcon} message="No conversations yet" />
+                  {chatConversations.length === 0 ? (
+                    <EmptyTabState icon={InboxIcon} message="No chats yet" />
                   ) : (
-                    contact.conversations.map(conv => (
+                    chatConversations.map(conv => (
                       <button
                         key={conv.id}
                         onClick={() => router.push(`/inbox?conversation=${conv.id}`)}
@@ -281,6 +288,77 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
                           {conv.lastMessagePreview && (
                             <p className="text-xs text-muted-foreground truncate">{conv.lastMessagePreview}</p>
                           )}
+                        </div>
+                        <ExternalLinkIcon className="size-3 text-muted-foreground/40 shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            {/* Emails Tab */}
+            <TabsContent value="emails" className="m-0 h-full">
+              <ScrollArea className="h-full">
+                <div className="p-4 space-y-2">
+                  {contact.emailThreads.length === 0 ? (
+                    <EmptyTabState icon={MailIcon} message="No emails yet" />
+                  ) : (
+                    contact.emailThreads.map(thread => (
+                      <button
+                        key={thread.conversationId}
+                        onClick={() => router.push(`/inbox?channel=email&conversation=${thread.conversationId}`)}
+                        className="w-full flex items-start gap-3 rounded-xl border bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors group"
+                      >
+                        <MailIcon className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{thread.subject || 'Email conversation'}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">
+                              {thread.direction}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              {format(new Date(thread.createdAt), 'MMM d, h:mm a')}
+                            </span>
+                          </div>
+                        </div>
+                        <ExternalLinkIcon className="size-3 text-muted-foreground/40 shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            {/* WhatsApp Tab */}
+            <TabsContent value="whatsapp" className="m-0 h-full">
+              <ScrollArea className="h-full">
+                <div className="p-4 space-y-2">
+                  {contact.whatsappThreads.length === 0 ? (
+                    <EmptyTabState icon={MessageCircleIcon} message="No WhatsApp conversations yet" />
+                  ) : (
+                    contact.whatsappThreads.map(thread => (
+                      <button
+                        key={thread.conversationId}
+                        onClick={() => router.push(`/inbox?channel=whatsapp&conversation=${thread.conversationId}`)}
+                        className="w-full flex items-start gap-3 rounded-xl border bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors group"
+                      >
+                        <MessageCircleIcon className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">
+                            {thread.waContactId ? `WhatsApp ${thread.waContactId}` : 'WhatsApp conversation'}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">
+                              {thread.direction}
+                            </Badge>
+                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">
+                              {thread.status}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              {format(new Date(thread.createdAt), 'MMM d, h:mm a')}
+                            </span>
+                          </div>
                         </div>
                         <ExternalLinkIcon className="size-3 text-muted-foreground/40 shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </button>
@@ -325,38 +403,6 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
               </ScrollArea>
             </TabsContent>
 
-            {/* Emails Tab */}
-            <TabsContent value="emails" className="m-0 h-full">
-              <ScrollArea className="h-full">
-                <div className="p-4 space-y-2">
-                  {contact.emailThreads.length === 0 ? (
-                    <EmptyTabState icon={MailIcon} message="No emails yet" />
-                  ) : (
-                    contact.emailThreads.map(thread => (
-                      <button
-                        key={thread.conversationId}
-                        onClick={() => router.push(`/inbox?channel=email&conversation=${thread.conversationId}`)}
-                        className="w-full flex items-start gap-3 rounded-xl border bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors group"
-                      >
-                        <MailIcon className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{thread.subject}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 capitalize">
-                              {thread.direction}
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground">
-                              {format(new Date(thread.createdAt), 'MMM d, h:mm a')}
-                            </span>
-                          </div>
-                        </div>
-                        <ExternalLinkIcon className="size-3 text-muted-foreground/40 shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </button>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
           </div>
         </Tabs>
       </div>
@@ -377,7 +423,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
             <AlertDialogTitle>Delete Contact?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete <strong>{displayName}</strong> and cannot be undone.
-              Their conversations may be preserved but will be unlinked.
+              Related chats, email threads, WhatsApp threads, calls, and widget visitor history will also be removed.
             </AlertDialogDescription>
             {deleteError && (
               <p className="text-xs font-medium text-destructive">{deleteError}</p>
@@ -386,7 +432,10 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={(event) => {
+                event.preventDefault()
+                void handleDelete()
+              }}
               disabled={deleteContact.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >

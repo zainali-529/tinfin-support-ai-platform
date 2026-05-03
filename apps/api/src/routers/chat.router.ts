@@ -24,6 +24,28 @@ const queueFilterSchema = z.enum([
   'resolved',
 ])
 
+const conversationSelectFields = [
+  'id',
+  'org_id',
+  'contact_id',
+  'status',
+  'queue_state',
+  'queue_entered_at',
+  'channel',
+  'assigned_to',
+  'ai_context',
+  'started_at',
+  'resolved_at',
+  'first_response_due_at',
+  'next_response_due_at',
+  'resolution_due_at',
+  'first_response_at',
+  'last_customer_message_at',
+  'last_agent_reply_at',
+  'routing_assigned_at',
+  'contacts(id, name, email, phone)',
+].join(',')
+
 function cleanSearchValue(value: string): string {
   return value.replace(/[,%()]/g, ' ').trim()
 }
@@ -121,6 +143,198 @@ type ConversationListItem = {
   ai_context: Record<string, unknown>
 }
 
+type ConversationBaseRow = {
+  id: string
+  org_id: string
+  contact_id: string | null
+  status: string
+  queue_state: string | null
+  queue_entered_at: string | null
+  channel: string
+  assigned_to: string | null
+  ai_context: Record<string, unknown> | null
+  started_at: string
+  resolved_at: string | null
+  first_response_due_at: string | null
+  next_response_due_at: string | null
+  resolution_due_at: string | null
+  first_response_at: string | null
+  last_customer_message_at: string | null
+  last_agent_reply_at: string | null
+  routing_assigned_at: string | null
+  contacts: unknown
+}
+
+type SupabaseQueryClient = {
+  from: (table: string) => any
+}
+
+async function hydrateConversationListItems(
+  supabase: SupabaseQueryClient,
+  orgId: string,
+  rows: ConversationBaseRow[]
+): Promise<ConversationListItem[]> {
+  const conversationIds = rows.map((row) => row.id)
+  const assignedAgentIds = Array.from(
+    new Set(rows.map((row) => row.assigned_to).filter((value): value is string => Boolean(value)))
+  )
+  const latestMessageByConversation = new Map<string, { content: string | null; created_at: string }>()
+  const latestEmailByConversation = new Map<string, { subject: string | null; created_at: string }>()
+  const assignedAgentById = new Map<string, { name: string | null; email: string | null }>()
+
+  if (conversationIds.length > 0 || assignedAgentIds.length > 0) {
+    const messageLimit = Math.min(Math.max(conversationIds.length * 25, 80), 1200)
+    const emailLimit = Math.min(Math.max(conversationIds.length * 10, 40), 600)
+    const [
+      messagesResult,
+      emailsResult,
+      assignedMembersResult,
+    ] = await Promise.all([
+      conversationIds.length > 0
+        ? supabase
+            .from('messages')
+            .select('conversation_id, content, created_at')
+            .eq('org_id', orgId)
+            .in('conversation_id', conversationIds)
+            .order('created_at', { ascending: false })
+            .limit(messageLimit)
+        : Promise.resolve({ data: [], error: null }),
+      conversationIds.length > 0
+        ? supabase
+            .from('email_messages')
+            .select('conversation_id, subject, created_at')
+            .eq('org_id', orgId)
+            .in('conversation_id', conversationIds)
+            .order('created_at', { ascending: false })
+            .limit(emailLimit)
+        : Promise.resolve({ data: [], error: null }),
+      assignedAgentIds.length > 0
+        ? supabase
+            .from('user_organizations')
+            .select('user_id, users(name, email)')
+            .eq('org_id', orgId)
+            .in('user_id', assignedAgentIds)
+        : Promise.resolve({ data: [], error: null }),
+    ])
+
+    if (messagesResult.error || emailsResult.error || assignedMembersResult.error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to load conversation previews.',
+      })
+    }
+
+    for (const row of (messagesResult.data ?? []) as Array<{
+      conversation_id: string
+      content: string | null
+      created_at: string
+    }>) {
+      if (!latestMessageByConversation.has(row.conversation_id)) {
+        latestMessageByConversation.set(row.conversation_id, {
+          content: row.content,
+          created_at: row.created_at,
+        })
+      }
+    }
+
+    for (const row of (emailsResult.data ?? []) as Array<{
+      conversation_id: string
+      subject: string | null
+      created_at: string
+    }>) {
+      if (!latestEmailByConversation.has(row.conversation_id)) {
+        latestEmailByConversation.set(row.conversation_id, {
+          subject: row.subject,
+          created_at: row.created_at,
+        })
+      }
+    }
+
+    for (const row of (assignedMembersResult.data ?? []) as Array<{
+      user_id: string
+      users:
+        | {
+            name: string | null
+            email: string | null
+          }
+        | Array<{
+            name: string | null
+            email: string | null
+          }>
+        | null
+    }>) {
+      const user = Array.isArray(row.users) ? row.users[0] : row.users
+      assignedAgentById.set(row.user_id, {
+        name: user?.name ?? null,
+        email: user?.email ?? null,
+      })
+    }
+  }
+
+  const nowMs = Date.now()
+
+  return rows.map((row) => {
+    const latestMessage = latestMessageByConversation.get(row.id)
+    const latestEmail = latestEmailByConversation.get(row.id)
+    const metricRow = {
+      status: row.status,
+      queue_state: row.queue_state,
+      assigned_to: row.assigned_to,
+      started_at: row.started_at,
+      queue_entered_at: row.queue_entered_at,
+      first_response_due_at: row.first_response_due_at,
+      next_response_due_at: row.next_response_due_at,
+      resolution_due_at: row.resolution_due_at,
+      first_response_at: row.first_response_at,
+      last_customer_message_at: row.last_customer_message_at,
+      last_agent_reply_at: row.last_agent_reply_at,
+      resolved_at: row.resolved_at,
+    }
+    const normalizedQueueState = normalizeQueueState(metricRow)
+    const backlog = deriveInboxBacklog(metricRow, nowMs)
+    const sla = deriveInboxSla(metricRow, nowMs)
+
+    const assignedAgent = row.assigned_to
+      ? assignedAgentById.get(row.assigned_to) ?? null
+      : null
+
+    return {
+      id: row.id,
+      org_id: row.org_id,
+      contact_id: row.contact_id,
+      status: row.status,
+      queue_state: normalizedQueueState,
+      channel: row.channel,
+      assigned_to: row.assigned_to,
+      ai_context: asRecord(row.ai_context),
+      started_at: row.started_at,
+      queue_entered_at: row.queue_entered_at ?? row.started_at,
+      resolved_at: row.resolved_at,
+      first_response_due_at: row.first_response_due_at,
+      next_response_due_at: row.next_response_due_at,
+      resolution_due_at: row.resolution_due_at,
+      first_response_at: row.first_response_at,
+      last_customer_message_at: row.last_customer_message_at,
+      last_agent_reply_at: row.last_agent_reply_at,
+      routing_assigned_at: row.routing_assigned_at,
+      backlog_minutes: backlog.backlogMinutes,
+      backlog_state: backlog.backlogState,
+      sla_target_at: sla.slaTargetAt,
+      sla_state: sla.slaState,
+      sla_remaining_seconds: sla.slaRemainingSeconds,
+      sla_stage: sla.slaStage,
+      sla_is_live: sla.slaIsLive,
+      contacts: normalizeContact(row.contacts),
+      latest_message_content: latestMessage?.content ?? null,
+      latest_message_at: latestMessage?.created_at ?? null,
+      latest_email_subject: latestEmail?.subject ?? null,
+      latest_email_at: latestEmail?.created_at ?? null,
+      assigned_agent_name: assignedAgent?.name ?? null,
+      assigned_agent_email: assignedAgent?.email ?? null,
+    }
+  })
+}
+
 export const chatRouter = router({
   getConversations: protectedProcedure
     .input(
@@ -151,30 +365,7 @@ export const chatRouter = router({
 
       let query = ctx.supabase
         .from('conversations')
-        .select(
-          [
-            'id',
-            'org_id',
-            'contact_id',
-            'status',
-            'queue_state',
-            'queue_entered_at',
-            'channel',
-            'assigned_to',
-            'ai_context',
-            'started_at',
-            'resolved_at',
-            'first_response_due_at',
-            'next_response_due_at',
-            'resolution_due_at',
-            'first_response_at',
-            'last_customer_message_at',
-            'last_agent_reply_at',
-            'routing_assigned_at',
-            'contacts(id, name, email, phone)',
-          ].join(','),
-          { count: 'exact' }
-        )
+        .select(conversationSelectFields, { count: 'exact' })
         .eq('org_id', orgId)
 
       if (channel !== 'all') {
@@ -265,189 +456,10 @@ export const chatRouter = router({
         })
       }
 
-      const rows = ((baseRows ?? []) as unknown) as Array<{
-        id: string
-        org_id: string
-        contact_id: string | null
-        status: string
-        queue_state: string | null
-        queue_entered_at: string | null
-        channel: string
-        assigned_to: string | null
-        ai_context: Record<string, unknown> | null
-        started_at: string
-        resolved_at: string | null
-        first_response_due_at: string | null
-        next_response_due_at: string | null
-        resolution_due_at: string | null
-        first_response_at: string | null
-        last_customer_message_at: string | null
-        last_agent_reply_at: string | null
-        routing_assigned_at: string | null
-        contacts: unknown
-      }>
-
-      const conversationIds = rows.map((row) => row.id)
-      const assignedAgentIds = Array.from(
-        new Set(rows.map((row) => row.assigned_to).filter((value): value is string => Boolean(value)))
-      )
-      const latestMessageByConversation = new Map<string, { content: string | null; created_at: string }>()
-      const latestEmailByConversation = new Map<string, { subject: string | null; created_at: string }>()
-      const assignedAgentById = new Map<string, { name: string | null; email: string | null }>()
-
-      if (conversationIds.length > 0 || assignedAgentIds.length > 0) {
-        const messageLimit = Math.min(Math.max(conversationIds.length * 25, 80), 1200)
-        const emailLimit = Math.min(Math.max(conversationIds.length * 10, 40), 600)
-        const [
-          messagesResult,
-          emailsResult,
-          assignedMembersResult,
-        ] = await Promise.all([
-          conversationIds.length > 0
-            ? ctx.supabase
-                .from('messages')
-                .select('conversation_id, content, created_at')
-                .eq('org_id', orgId)
-                .in('conversation_id', conversationIds)
-                .order('created_at', { ascending: false })
-                .limit(messageLimit)
-            : Promise.resolve({ data: [], error: null }),
-          conversationIds.length > 0
-            ? ctx.supabase
-                .from('email_messages')
-                .select('conversation_id, subject, created_at')
-                .eq('org_id', orgId)
-                .in('conversation_id', conversationIds)
-                .order('created_at', { ascending: false })
-                .limit(emailLimit)
-            : Promise.resolve({ data: [], error: null }),
-          assignedAgentIds.length > 0
-            ? ctx.supabase
-                .from('user_organizations')
-                .select('user_id, users(name, email)')
-                .eq('org_id', orgId)
-                .in('user_id', assignedAgentIds)
-            : Promise.resolve({ data: [], error: null }),
-        ])
-
-        if (messagesResult.error || emailsResult.error || assignedMembersResult.error) {
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to load conversation previews.',
-          })
-        }
-
-        for (const row of (messagesResult.data ?? []) as Array<{
-          conversation_id: string
-          content: string | null
-          created_at: string
-        }>) {
-          if (!latestMessageByConversation.has(row.conversation_id)) {
-            latestMessageByConversation.set(row.conversation_id, {
-              content: row.content,
-              created_at: row.created_at,
-            })
-          }
-        }
-
-        for (const row of (emailsResult.data ?? []) as Array<{
-          conversation_id: string
-          subject: string | null
-          created_at: string
-        }>) {
-          if (!latestEmailByConversation.has(row.conversation_id)) {
-            latestEmailByConversation.set(row.conversation_id, {
-              subject: row.subject,
-              created_at: row.created_at,
-            })
-          }
-        }
-
-        for (const row of (assignedMembersResult.data ?? []) as Array<{
-          user_id: string
-          users:
-            | {
-                name: string | null
-                email: string | null
-              }
-            | Array<{
-                name: string | null
-                email: string | null
-              }>
-            | null
-        }>) {
-          const user = Array.isArray(row.users) ? row.users[0] : row.users
-          assignedAgentById.set(row.user_id, {
-            name: user?.name ?? null,
-            email: user?.email ?? null,
-          })
-        }
-      }
-
+      const rows = ((baseRows ?? []) as unknown) as ConversationBaseRow[]
       const totalCount = count ?? 0
       const hasMore = page * limit < totalCount
-      const nowMs = Date.now()
-
-      const items: ConversationListItem[] = rows.map((row) => {
-        const latestMessage = latestMessageByConversation.get(row.id)
-        const latestEmail = latestEmailByConversation.get(row.id)
-        const metricRow = {
-          status: row.status,
-          queue_state: row.queue_state,
-          assigned_to: row.assigned_to,
-          started_at: row.started_at,
-          queue_entered_at: row.queue_entered_at,
-          first_response_due_at: row.first_response_due_at,
-          next_response_due_at: row.next_response_due_at,
-          resolution_due_at: row.resolution_due_at,
-          first_response_at: row.first_response_at,
-          last_customer_message_at: row.last_customer_message_at,
-          last_agent_reply_at: row.last_agent_reply_at,
-          resolved_at: row.resolved_at,
-        }
-        const normalizedQueueState = normalizeQueueState(metricRow)
-        const backlog = deriveInboxBacklog(metricRow, nowMs)
-        const sla = deriveInboxSla(metricRow, nowMs)
-
-        const assignedAgent = row.assigned_to
-          ? assignedAgentById.get(row.assigned_to) ?? null
-          : null
-
-        return {
-          id: row.id,
-          org_id: row.org_id,
-          contact_id: row.contact_id,
-          status: row.status,
-          queue_state: normalizedQueueState,
-          channel: row.channel,
-          assigned_to: row.assigned_to,
-          ai_context: asRecord(row.ai_context),
-          started_at: row.started_at,
-          queue_entered_at: row.queue_entered_at ?? row.started_at,
-          resolved_at: row.resolved_at,
-          first_response_due_at: row.first_response_due_at,
-          next_response_due_at: row.next_response_due_at,
-          resolution_due_at: row.resolution_due_at,
-          first_response_at: row.first_response_at,
-          last_customer_message_at: row.last_customer_message_at,
-          last_agent_reply_at: row.last_agent_reply_at,
-          routing_assigned_at: row.routing_assigned_at,
-          backlog_minutes: backlog.backlogMinutes,
-          backlog_state: backlog.backlogState,
-          sla_target_at: sla.slaTargetAt,
-          sla_state: sla.slaState,
-          sla_remaining_seconds: sla.slaRemainingSeconds,
-          sla_stage: sla.slaStage,
-          sla_is_live: sla.slaIsLive,
-          contacts: normalizeContact(row.contacts),
-          latest_message_content: latestMessage?.content ?? null,
-          latest_message_at: latestMessage?.created_at ?? null,
-          latest_email_subject: latestEmail?.subject ?? null,
-          latest_email_at: latestEmail?.created_at ?? null,
-          assigned_agent_name: assignedAgent?.name ?? null,
-          assigned_agent_email: assignedAgent?.email ?? null,
-        }
-      })
+      const items = await hydrateConversationListItems(ctx.supabase, orgId, rows)
 
       return {
         items,
@@ -456,6 +468,43 @@ export const chatRouter = router({
         limit,
         hasMore,
       }
+    }),
+
+  getConversation: protectedProcedure
+    .input(z.object({ conversationId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      const orgId = ctx.userOrgId
+
+      const { data, error } = await ctx.supabase
+        .from('conversations')
+        .select(conversationSelectFields)
+        .eq('id', input.conversationId)
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load conversation: ${error.message}`,
+        })
+      }
+
+      if (!data) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
+      }
+
+      const [item] = await hydrateConversationListItems(
+        ctx.supabase,
+        orgId,
+        [data as unknown as ConversationBaseRow]
+      )
+
+      if (!item) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
+      }
+
+      return item
     }),
 
   getMessages: protectedProcedure

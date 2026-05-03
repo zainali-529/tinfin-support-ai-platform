@@ -33,7 +33,13 @@ import {
   LayersIcon, ClockIcon, CheckCircleIcon, ChevronRightIcon,
   InboxIcon, SparklesIcon, RefreshCwIcon, DatabaseIcon,
 } from 'lucide-react'
-import { useKnowledgeBases, useKBSources, type KnowledgeBase, type KBSource } from '@/hooks/useKnowledgeBases'
+import {
+  useDeleteKBSource,
+  useKnowledgeBases,
+  useKBSources,
+  type KnowledgeBase,
+  type KBSource,
+} from '@/hooks/useKnowledgeBases'
 import { CreateKBDialog } from './CreateKBDialog'
 import { AddSourceDialog } from './AddSourceDialog'
 
@@ -129,7 +135,15 @@ function EmptySelectState() {
 
 // ─── Source Row ────────────────────────────────────────────────────────────────
 
-function SourceRow({ source }: { source: KBSource }) {
+function SourceRow({
+  source,
+  deleting,
+  onDelete,
+}: {
+  source: KBSource
+  deleting?: boolean
+  onDelete: () => void
+}) {
   const Icon = SOURCE_ICONS[source.type]
   const color = SOURCE_COLORS[source.type]
   const bg = SOURCE_BACKGROUNDS[source.type]
@@ -158,6 +172,17 @@ function SourceRow({ source }: { source: KBSource }) {
       <Badge variant="outline" className={cn('h-4 px-1.5 text-[9px] font-semibold uppercase tracking-wide shrink-0', color)}>
         {source.type}
       </Badge>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        disabled={deleting}
+        title="Delete source"
+        onClick={onDelete}
+        className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+      >
+        <Trash2Icon className="size-3.5" />
+      </Button>
     </div>
   )
 }
@@ -256,7 +281,9 @@ function KBDetailPanel({
   onAddSource: () => void
 }) {
   const { sources, chunkCount, loading, refetch } = useKBSources(kb.id, orgId)
+  const deleteSource = useDeleteKBSource()
   const [search, setSearch] = useState('')
+  const [sourceToDelete, setSourceToDelete] = useState<KBSource | null>(null)
 
   const filtered = sources.filter(s => {
     const q = search.toLowerCase()
@@ -269,6 +296,21 @@ function KBDetailPanel({
   const urlCount = sources.filter(s => s.type === 'url').length
   const fileCount = sources.filter(s => s.type === 'file').length
   const textCount = sources.filter(s => s.type === 'text').length
+  const sourceDeleteName =
+    sourceToDelete?.source_title ?? sourceToDelete?.source_url ?? 'this source'
+
+  const handleDeleteSource = async () => {
+    if (!sourceToDelete) return
+
+    await deleteSource.mutateAsync({
+      kbId: kb.id,
+      sourceUrl: sourceToDelete.source_url,
+      sourceTitle: sourceToDelete.source_title,
+      type: sourceToDelete.type,
+    })
+    setSourceToDelete(null)
+    await refetch()
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -363,7 +405,15 @@ function KBDetailPanel({
                 {filtered.length} source{filtered.length !== 1 ? 's' : ''}
               </p>
               {filtered.map((source, i) => (
-                <SourceRow key={i} source={source} />
+                <SourceRow
+                  key={`${source.type}:${source.source_url ?? source.source_title ?? i}`}
+                  source={source}
+                  deleting={deleteSource.isPending}
+                  onDelete={() => {
+                    deleteSource.reset()
+                    setSourceToDelete(source)
+                  }}
+                />
               ))}
             </div>
           )}
@@ -383,6 +433,35 @@ function KBDetailPanel({
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!sourceToDelete} onOpenChange={(open) => !open && setSourceToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Knowledge Source</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{sourceDeleteName}</strong> and remove all indexed chunks from this knowledge base.
+            </AlertDialogDescription>
+            {deleteSource.isError && (
+              <p className="text-xs font-medium text-destructive">
+                {deleteSource.error?.message ?? 'Failed to delete source.'}
+              </p>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSource.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                void handleDeleteSource()
+              }}
+              disabled={deleteSource.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteSource.isPending ? 'Deleting...' : 'Delete Source'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
