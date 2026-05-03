@@ -9,6 +9,11 @@ import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@workspace/ui/components/collapsible'
+import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -19,20 +24,25 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from '@workspace/ui/components/sidebar'
 import {
   BarChart2Icon,
   BookOpenIcon,
   Building2Icon,
+  ChevronRightIcon,
   CodeIcon,
   CreditCardIcon,
   InboxIcon,
   LayoutDashboardIcon,
   Link2Icon,
+  MailIcon,
+  MessageCircleIcon,
   MicIcon,
   PhoneCallIcon,
-  SettingsIcon,
   UsersIcon,
   WorkflowIcon,
   ZapIcon,
@@ -53,6 +63,7 @@ type NavItem = {
   badge?: string
   adminOnly?: boolean
   permission?: TeamPermissionKey
+  children?: NavItem[]
 }
 
 type NavGroup = {
@@ -66,6 +77,22 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboardIcon, exact: true, permission: 'dashboard' },
       { label: 'Inbox', href: '/inbox', icon: InboxIcon, permission: 'inbox' },
+      {
+        label: 'Channels',
+        href: '/settings/channels',
+        icon: MessageCircleIcon,
+        permission: 'channels',
+        activePrefixes: ['/settings/channels', '/email-settings'],
+        children: [
+          { label: 'Email', href: '/email-settings', icon: MailIcon, permission: 'channels' },
+          {
+            label: 'WhatsApp',
+            href: '/settings/channels/whatsapp',
+            icon: MessageCircleIcon,
+            permission: 'channels',
+          },
+        ],
+      },
       { label: 'Contacts', href: '/contacts', icon: UsersIcon, permission: 'contacts' },
       { label: 'Calls', href: '/calls', icon: PhoneCallIcon, permission: 'calls' },
     ],
@@ -98,7 +125,6 @@ const navGroups: NavGroup[] = [
       { label: 'Team', href: '/team', icon: UsersIcon, adminOnly: true },
       { label: 'Billing', href: '/billing', icon: CreditCardIcon, adminOnly: true },
       { label: 'Organizations', href: '/organizations', icon: Building2Icon },
-      { label: 'Settings', href: '/settings', icon: SettingsIcon, activePrefixes: ['/settings'] },
     ],
   },
 ]
@@ -179,6 +205,82 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
     return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'))
   }
 
+  const canSeeItem = (item: NavItem) => {
+    if (item.adminOnly && !isAdmin) return false
+    if (!item.permission) return true
+    return isAdmin || activeOrg.permissions[item.permission] === true
+  }
+
+  const renderNavItem = (item: NavItem) => {
+    const visibleChildren = item.children?.filter(canSeeItem) ?? []
+    const hasChildren = visibleChildren.length > 0
+
+    if (hasChildren) {
+      return (
+        <Collapsible
+          key={item.href}
+          asChild
+          defaultOpen={isItemActive(item)}
+          className="group/collapsible"
+        >
+          <SidebarMenuItem>
+            <CollapsibleTrigger asChild>
+              <SidebarMenuButton
+                isActive={isItemActive(item)}
+                tooltip={item.label}
+                className="h-9 gap-3 rounded-lg px-3 font-medium"
+              >
+                <item.icon className="size-4 shrink-0" />
+                <span className="flex-1 truncate text-[13px]">{item.label}</span>
+                <ChevronRightIcon className="ml-auto size-3.5 shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
+              </SidebarMenuButton>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarMenuSub className="my-1 gap-0.5">
+                {visibleChildren.map((child) => (
+                  <SidebarMenuSubItem key={child.href}>
+                    <SidebarMenuSubButton
+                      asChild
+                      isActive={isItemActive(child)}
+                      className="h-7 text-[12px]"
+                    >
+                      <Link href={child.href}>
+                        <child.icon className="size-3.5 shrink-0" />
+                        <span>{child.label}</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                ))}
+              </SidebarMenuSub>
+            </CollapsibleContent>
+          </SidebarMenuItem>
+        </Collapsible>
+      )
+    }
+
+    return (
+      <SidebarMenuItem key={item.href}>
+        <SidebarMenuButton
+          asChild
+          isActive={isItemActive(item)}
+          tooltip={item.label}
+          className="h-9 gap-3 rounded-lg px-3 font-medium"
+        >
+          <Link href={item.href}>
+            <item.icon className="size-4 shrink-0" />
+            <span className="flex-1 truncate text-[13px]">{item.label}</span>
+            {(item.badge || (item.href === '/inbox' && unreadCount > 0)) && (
+              <SidebarMenuBadge className="h-[18px] min-w-[18px] text-[10px] font-bold tabular-nums">
+                {item.badge ?? (unreadCount > 99 ? '99+' : unreadCount)}
+              </SidebarMenuBadge>
+            )}
+            {item.href === '/usage' && <PlanBadge planId={planId} size="xs" />}
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    )
+  }
+
   return (
     <Sidebar collapsible="icon" variant="sidebar" {...props}>
       <SidebarHeader className="border-b border-sidebar-border px-2 py-2">
@@ -187,11 +289,7 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
 
       <SidebarContent>
         {navGroups.map((group) => {
-          const visibleItems = group.items.filter((item) => {
-            if (item.adminOnly && !isAdmin) return false
-            if (!item.permission) return true
-            return isAdmin || activeOrg.permissions[item.permission] === true
-          })
+          const visibleItems = group.items.filter((item) => canSeeItem(item))
           if (visibleItems.length === 0) return null
           return (
             <SidebarGroup key={group.label} className="py-2">
@@ -200,27 +298,7 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu className="gap-0.5">
-                  {visibleItems.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={isItemActive(item)}
-                        tooltip={item.label}
-                        className="h-9 gap-3 rounded-lg px-3 font-medium"
-                      >
-                        <Link href={item.href}>
-                          <item.icon className="size-4 shrink-0" />
-                          <span className="flex-1 truncate text-[13px]">{item.label}</span>
-                          {(item.badge || (item.href === '/inbox' && unreadCount > 0)) && (
-                            <SidebarMenuBadge className="h-[18px] min-w-[18px] text-[10px] font-bold tabular-nums">
-                              {item.badge ?? (unreadCount > 99 ? '99+' : unreadCount)}
-                            </SidebarMenuBadge>
-                          )}
-                          {item.href === '/usage' && <PlanBadge planId={planId} size="xs" />}
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  {visibleItems.map(renderNavItem)}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

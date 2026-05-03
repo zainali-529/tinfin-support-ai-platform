@@ -136,6 +136,7 @@ const TOOL_NAME_SEARCH_KB = 'searchKnowledgeBase'
 const TOOL_NAME_REQUEST_HUMAN = 'requestHumanAgent'
 const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_TIMEOUT_SECONDS = 10
+const ACTIONS_ENABLED_PLANS = new Set(['pro', 'scale'])
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -430,6 +431,38 @@ async function getOrgOutboundAllowlist(orgId: string): Promise<string[]> {
   return resolveActionOutboundAllowlist(settings)
 }
 
+async function orgAllowsAiActions(orgId: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin()
+
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .select('plan,status')
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Failed to fetch organization subscription: ${error.message}`)
+  }
+
+  let plan = typeof data?.plan === 'string' ? data.plan : null
+  if (!plan) {
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .select('plan')
+      .eq('id', orgId)
+      .maybeSingle()
+
+    if (orgError) {
+      throw new Error(`Failed to fetch organization plan: ${orgError.message}`)
+    }
+
+    plan = typeof org?.plan === 'string' ? org.plan : 'free'
+  }
+
+  const status = typeof data?.status === 'string' ? data.status : 'active'
+  return ACTIONS_ENABLED_PLANS.has(plan) && ['active', 'trialing'].includes(status)
+}
+
 function decodeActionSecrets(rows: Array<{ key_name: unknown; key_value: unknown }>): Record<string, string> {
   const secrets: Record<string, string> = {}
 
@@ -461,6 +494,10 @@ async function fetchActionById(actionId: string): Promise<ActionConfig | null> {
   }
 
   if (!actionRow) return null
+
+  if (!(await orgAllowsAiActions(actionRow.org_id as string))) {
+    return null
+  }
 
   const outboundAllowlist = await getOrgOutboundAllowlist(actionRow.org_id as string)
 
@@ -507,6 +544,10 @@ async function fetchActionById(actionId: string): Promise<ActionConfig | null> {
 
 export async function getOrgActions(orgId: string): Promise<ActionConfig[]> {
   const supabase = getSupabaseAdmin()
+  if (!(await orgAllowsAiActions(orgId))) {
+    return []
+  }
+
   const outboundAllowlist = await getOrgOutboundAllowlist(orgId)
 
   const { data: actionRows, error: actionError } = await supabase

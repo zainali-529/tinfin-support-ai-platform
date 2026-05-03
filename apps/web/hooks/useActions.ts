@@ -69,23 +69,27 @@ export interface PendingApproval {
   log?: Record<string, unknown>
 }
 
-export function useActions() {
+export function useActions(options?: { enabled?: boolean }) {
   const utils = trpc.useUtils()
+  const enabled = options?.enabled ?? true
 
   const actionsQuery = trpc.actions.getActions.useQuery(undefined, {
+    enabled,
     staleTime: 20_000,
   })
 
   const statsQuery = trpc.actions.getActionStats.useQuery(undefined, {
+    enabled,
     staleTime: 20_000,
   })
 
   const logsQuery = trpc.actions.getActionLogs.useQuery(
     { limit: 50, offset: 0 },
-    { staleTime: 20_000 }
+    { enabled, staleTime: 20_000 }
   )
 
   const pendingApprovalsQuery = trpc.actions.getPendingApprovals.useQuery(undefined, {
+    enabled,
     staleTime: 10_000,
     refetchInterval: 15_000,
   })

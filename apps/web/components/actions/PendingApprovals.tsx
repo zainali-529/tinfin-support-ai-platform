@@ -22,6 +22,7 @@ interface PendingApprovalsProps {
   rejectingLogId?: string | null
   title?: string
   emptyMessage?: string
+  disabled?: boolean
   onApprove: (logId: string) => Promise<void> | void
   onReject: (logId: string) => Promise<void> | void
 }
@@ -46,6 +47,7 @@ export function PendingApprovals({
   rejectingLogId,
   title = 'Action Approvals',
   emptyMessage = 'No approvals are pending right now.',
+  disabled = false,
   onApprove,
   onReject,
 }: PendingApprovalsProps) {
@@ -99,7 +101,7 @@ export function PendingApprovals({
                   <Button
                     size="sm"
                     onClick={() => onApprove(item.logId)}
-                    disabled={busy}
+                    disabled={busy || disabled}
                   >
                     {approving ? 'Approving...' : 'Approve & Execute'}
                   </Button>
@@ -107,7 +109,7 @@ export function PendingApprovals({
                     size="sm"
                     variant="outline"
                     onClick={() => onReject(item.logId)}
-                    disabled={busy}
+                    disabled={busy || disabled}
                   >
                     {rejecting ? 'Rejecting...' : 'Reject'}
                   </Button>

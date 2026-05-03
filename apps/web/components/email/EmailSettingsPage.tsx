@@ -297,10 +297,10 @@ export function EmailSettingsPage() {
           <LockIcon className="size-4 text-amber-600" />
           <AlertDescription className="flex flex-col gap-2 text-xs text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              Preview mode on Free plan: email settings are visible for review, but editing and saving are locked.
+              Preview mode: email settings are visible on Free and Starter, but editing and saving require Pro.
             </span>
             <Button size="sm" className="h-7" asChild data-free-allow="true">
-              <Link href="/billing">Upgrade to Starter</Link>
+              <Link href="/billing">Upgrade to Pro</Link>
             </Button>
           </AlertDescription>
         </Alert>
@@ -751,13 +751,13 @@ export function EmailSettingsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Upgrade Required for Email Configuration</AlertDialogTitle>
             <AlertDialogDescription>
-              You're currently in preview mode on the Free plan. Upgrade to Starter to configure and save email channel settings.
+              You're currently in preview mode. Upgrade to Pro to configure and save email channel settings.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Maybe Later</AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Link href="/billing">Upgrade to Starter</Link>
+              <Link href="/billing">Upgrade to Pro</Link>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

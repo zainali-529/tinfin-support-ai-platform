@@ -262,7 +262,6 @@ export function CreateOrgDialog({
 }
 
 export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
-  const router = useRouter()
   const { isMobile } = useSidebar()
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
 
@@ -272,7 +271,7 @@ export function OrgSwitcher({ initialOrg }: OrgSwitcherProps) {
 
   const switchOrg = trpc.orgMembership.switchOrg.useMutation({
     onSuccess: () => {
-      router.refresh()
+      window.location.reload()
     },
   })
 

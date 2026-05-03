@@ -109,7 +109,7 @@ export function WhatsAppSetupPage() {
           <LockIcon className="size-4 text-amber-700 dark:text-amber-300" />
           <AlertDescription className="flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
             <span>
-              WhatsApp channel setup is available on Starter, Pro, and Scale plans.
+              WhatsApp channel setup is available on Pro and Scale plans.
             </span>
             <Button size="sm" className="h-7" asChild>
               <Link href="/billing">Upgrade</Link>
@@ -361,7 +361,7 @@ export function WhatsAppSetupPage() {
                   Webhook Configuration
                 </p>
                 <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
-                  In values ko Meta dashboard mein paste karo.
+                  Paste these values in the Meta dashboard.
                 </p>
 
                 <div className="space-y-1.5">

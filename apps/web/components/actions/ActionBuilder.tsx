@@ -149,6 +149,7 @@ interface ActionBuilderProps {
   onOpenChange: (open: boolean) => void
   initialAction?: ActionConfig | null
   loading?: boolean
+  readOnly?: boolean
   onSave: (payload: ActionBuilderPayload) => Promise<void> | void
   onTest?: (payload: ActionBuilderPayload) => void
 }
@@ -158,6 +159,7 @@ export function ActionBuilder({
   onOpenChange,
   initialAction,
   loading = false,
+  readOnly = false,
   onSave,
   onTest,
 }: ActionBuilderProps) {
@@ -245,6 +247,12 @@ export function ActionBuilder({
         </DialogHeader>
 
         <div className="space-y-6 py-2">
+          {readOnly && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+              Preview mode: you can explore this configuration, but saving and testing require the Pro plan.
+            </div>
+          )}
+
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Basic Info</h3>
             <div className="grid gap-3 md:grid-cols-2">
@@ -744,7 +752,7 @@ export function ActionBuilder({
               type="button"
               variant="outline"
               onClick={() => onTest?.(payload)}
-              disabled={!onTest || !canSave}
+              disabled={readOnly || !onTest || !canSave}
             >
               Test Action
             </Button>
@@ -760,7 +768,7 @@ export function ActionBuilder({
               </Button>
               <Button
                 type="button"
-                disabled={!canSave || loading}
+                disabled={readOnly || !canSave || loading}
                 onClick={async () => {
                   setAttemptedSave(true)
                   if (!canSave) return

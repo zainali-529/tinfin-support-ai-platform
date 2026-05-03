@@ -272,8 +272,8 @@ export function VoiceSettingsPanel() {
   const { data: knowledgeBases } = trpc.knowledge.getKnowledgeBases.useQuery({})
   const utils = trpc.useUtils()
   const { previewStates, playPreview } = useVoicePreview()
-  const { planId } = usePlan()
-  const isReadOnly = planId === 'free'
+  const { canUse } = usePlan()
+  const isReadOnly = !canUse('voiceCalls')
 
   const saveKey   = trpc.vapi.saveOrgVapiKey.useMutation({ onSuccess: () => utils.vapi.hasCustomVapiKey.invalidate() })
   const removeKey = trpc.vapi.removeOrgVapiKey.useMutation({ onSuccess: () => utils.vapi.hasCustomVapiKey.invalidate() })
@@ -402,7 +402,7 @@ export function VoiceSettingsPanel() {
         <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
           <LockIcon className="size-4 text-amber-600" />
           <AlertDescription className="flex flex-col gap-2 text-xs text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
-            <span>Preview mode on Free plan — editing is locked.</span>
+            <span>Preview mode on Free and Starter plans — editing is locked.</span>
             <Button size="sm" className="h-7" asChild data-free-allow="true">
               <Link href="/billing">Upgrade to Pro</Link>
             </Button>

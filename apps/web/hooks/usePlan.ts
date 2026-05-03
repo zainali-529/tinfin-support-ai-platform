@@ -17,6 +17,7 @@ export type FeatureKey =
   | 'chatWidget'
   | 'aiResponses'
   | 'knowledgeBase'
+  | 'aiActions'
   | 'emailChannel'
   | 'whatsappChannel'
   | 'widgetCustomization'
@@ -57,11 +58,14 @@ export function usePlan() {
     }
 
     // Backward-compatible fallback when API responds with an older planDetails shape.
+    if (feature === 'aiActions') {
+      return sub.plan === 'pro' || sub.plan === 'scale'
+    }
     if (feature === 'emailChannel') {
-      return (sub.plan ?? 'free') !== 'free'
+      return sub.plan === 'pro' || sub.plan === 'scale'
     }
     if (feature === 'whatsappChannel') {
-      return (sub.plan ?? 'free') !== 'free'
+      return sub.plan === 'pro' || sub.plan === 'scale'
     }
 
     return false

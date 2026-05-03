@@ -252,6 +252,7 @@ export function UsagePage() {
                 },
                 { label: 'Email channel', value: canUse('emailChannel') ? 'Included' : 'Preview only' },
                 { label: 'WhatsApp channel', value: canUse('whatsappChannel') ? 'Included' : 'Preview only' },
+                { label: 'AI Actions', value: canUse('aiActions') ? 'Included' : 'Pro only' },
                 { label: 'Team members', value: `${limits?.teamMembers ?? 1}` },
                 { label: 'Knowledge bases', value: `${limits?.knowledgeBases ?? 1}` },
                 { label: 'KB chunks', value: limits?.kbChunks?.toLocaleString() ?? '100' },
@@ -278,8 +279,6 @@ export function UsagePage() {
                 <p className="text-sm font-semibold">Unlock more with Starter</p>
                 <ul className="text-xs text-muted-foreground space-y-1.5">
                   {[
-                    'Email channel',
-                    'WhatsApp channel',
                     '2 team members',
                     '300 chats/month',
                     'Widget customization',
@@ -301,9 +300,12 @@ export function UsagePage() {
           {isStarterPlan && (
             <Card className="border-primary/20 bg-primary/5">
               <CardContent className="pt-4 space-y-3">
-                <p className="text-sm font-semibold">Pro for voice + analytics</p>
+                <p className="text-sm font-semibold">Pro for channels + automation</p>
                 <ul className="text-xs text-muted-foreground space-y-1.5">
                   {[
+                    'Email channel',
+                    'WhatsApp channel',
+                    'AI Actions',
                     '100 voice minutes',
                     'Analytics',
                     'Custom branding',

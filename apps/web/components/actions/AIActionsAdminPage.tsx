@@ -5,7 +5,8 @@ import { formatDistanceToNow } from 'date-fns'
 import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@workspace/ui/components/card'
-import { Trash2Icon, PlusIcon, PencilIcon, FlaskConicalIcon, BotIcon } from 'lucide-react'
+import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import { Trash2Icon, PlusIcon, PencilIcon, FlaskConicalIcon, BotIcon, LockIcon } from 'lucide-react'
 import {
   ActionBuilder,
   type ActionBuilderPayload,
@@ -27,6 +28,7 @@ import {
   type ActionStat,
   type PendingApproval,
 } from '@/hooks/useActions'
+import { usePlan } from '@/hooks/usePlan'
 
 type CategoryFilter = 'all' | ActionCategory
 
@@ -72,6 +74,10 @@ function statusTone(status: string): string {
 }
 
 export function AIActionsAdminPage() {
+  const { canUse, isLoading: planLoading } = usePlan()
+  const canUseActions = canUse('aiActions')
+  const actionsEnabled = !planLoading
+  const isPreviewMode = !planLoading && !canUseActions
   const {
     actions,
     actionStats,
@@ -84,7 +90,7 @@ export function AIActionsAdminPage() {
     testAction,
     approveAction,
     rejectAction,
-  } = useActions()
+  } = useActions({ enabled: actionsEnabled })
 
   const [filter, setFilter] = useState<CategoryFilter>('all')
   const [builderOpen, setBuilderOpen] = useState(false)
@@ -196,6 +202,11 @@ export function AIActionsAdminPage() {
   }
 
   const handleSave = async (payload: ActionBuilderPayload) => {
+    if (isPreviewMode) {
+      setError('AI Actions are in preview mode on this plan. Upgrade to Pro to save and run actions.')
+      return
+    }
+
     setError(null)
     try {
       if (editingActionId) {
@@ -217,6 +228,10 @@ export function AIActionsAdminPage() {
   const runTest = async (
     parameters: Record<string, unknown>
   ): Promise<ActionTestResult> => {
+    if (isPreviewMode) {
+      throw new Error('AI Actions are in preview mode on this plan. Upgrade to Pro to run tests.')
+    }
+
     if (!testTarget || !testTarget.id || testTarget.id === '__template__') {
       throw new Error('Save the action first, then run a test.')
     }
@@ -235,6 +250,11 @@ export function AIActionsAdminPage() {
   }
 
   const handleApprove = async (logId: string) => {
+    if (isPreviewMode) {
+      setError('AI Actions are in preview mode on this plan. Upgrade to Pro to approve executions.')
+      return
+    }
+
     setApprovingLogId(logId)
     try {
       await approveAction.mutateAsync({ logId })
@@ -272,9 +292,18 @@ export function AIActionsAdminPage() {
         </div>
         <Button onClick={openCreate} className="gap-1.5">
           <PlusIcon className="size-4" />
-          New Action
+          {isPreviewMode ? 'Preview Builder' : 'New Action'}
         </Button>
       </div>
+
+      {isPreviewMode && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-900/20">
+          <LockIcon className="size-4 text-amber-700 dark:text-amber-300" />
+          <AlertDescription className="text-sm text-amber-800 dark:text-amber-200">
+            AI Actions are in preview mode on Free and Starter. You can explore templates and existing setup, but saving, testing, deleting, and approvals require Pro.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="shadow-none">
@@ -412,6 +441,7 @@ export function AIActionsAdminPage() {
                         variant="outline"
                         onClick={() => openTest(action)}
                         className="gap-1.5"
+                        disabled={isPreviewMode}
                       >
                         <FlaskConicalIcon className="size-3.5" />
                         Test
@@ -429,6 +459,7 @@ export function AIActionsAdminPage() {
                         size="sm"
                         variant="outline"
                         className="gap-1.5 text-destructive hover:text-destructive"
+                        disabled={isPreviewMode}
                         onClick={async () => {
                           if (!confirm(`Delete action "${action.displayName}"?`)) {
                             return
@@ -486,9 +517,10 @@ export function AIActionsAdminPage() {
             rejectingLogId={rejectingLogId}
             onApprove={handleApprove}
             onReject={handleReject}
+            disabled={isPreviewMode}
           />
 
-          <ActionTemplates onImport={importTemplate} />
+          <ActionTemplates onImport={importTemplate} importLabel={isPreviewMode ? 'Preview' : 'Import'} />
         </div>
       </div>
 
@@ -504,6 +536,7 @@ export function AIActionsAdminPage() {
         initialAction={currentBuilderAction}
         loading={createAction.isPending || updateAction.isPending}
         onSave={handleSave}
+        readOnly={isPreviewMode}
         onTest={() => {
           if (editingActionId) {
             const existing = actions.find((action) => action.id === editingActionId)

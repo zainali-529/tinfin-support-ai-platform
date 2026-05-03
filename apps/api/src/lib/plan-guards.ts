@@ -23,6 +23,7 @@ const FEATURE_NAMES: Record<string, string> = {
   chatWidget: 'Chat Widget',
   aiResponses: 'AI Responses',
   knowledgeBase: 'Knowledge Base',
+  aiActions: 'AI Actions',
   emailChannel: 'Email Channel',
   whatsappChannel: 'WhatsApp Channel',
   widgetCustomization: 'Widget Customization',
@@ -42,8 +43,9 @@ const LIMIT_NAMES: Record<string, string> = {
 }
 
 const REQUIRED_PLAN: Record<string, 'starter' | 'pro' | 'scale'> = {
-  emailChannel: 'starter',
-  whatsappChannel: 'starter',
+  aiActions: 'pro',
+  emailChannel: 'pro',
+  whatsappChannel: 'pro',
   widgetCustomization: 'starter',
   voiceCalls: 'pro',
   teamMembers: 'starter',

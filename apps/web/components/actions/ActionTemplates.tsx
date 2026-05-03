@@ -23,6 +23,7 @@ interface TemplateGroup {
 
 interface ActionTemplatesProps {
   onImport: (payload: ActionBuilderPayload) => void
+  importLabel?: string
 }
 
 const TEMPLATE_GROUPS: TemplateGroup[] = [
@@ -445,7 +446,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
   },
 ]
 
-export function ActionTemplates({ onImport }: ActionTemplatesProps) {
+export function ActionTemplates({ onImport, importLabel = 'Import' }: ActionTemplatesProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -480,7 +481,7 @@ export function ActionTemplates({ onImport }: ActionTemplatesProps) {
                     className="shrink-0"
                     onClick={() => onImport(item.payload)}
                   >
-                    Import
+                    {importLabel}
                   </Button>
                 </div>
               ))}

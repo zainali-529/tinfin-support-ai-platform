@@ -15,6 +15,7 @@ import {
   requireAdminFromContext,
   requirePermissionFromContext,
 } from '../lib/org-permissions'
+import { requireFeature } from '../lib/plan-guards'
 import { protectedProcedure, router } from '../trpc/trpc'
 
 const ACTION_NAME_REGEX = /^[a-z][a-z0-9_]*$/
@@ -223,6 +224,16 @@ function ensureAdmin(ctx: { userRole: string; userPermissions: any }): void {
   requireAdminFromContext(ctx, 'Admin access is required for AI Actions.')
 }
 
+async function ensureActionsAdmin(ctx: {
+  userRole: string
+  userPermissions: any
+  supabase: any
+  userOrgId: string
+}): Promise<void> {
+  ensureAdmin(ctx)
+  await requireFeature(ctx.supabase, ctx.userOrgId, 'aiActions')
+}
+
 export const actionsRouter = router({
   getActions: protectedProcedure.query(async ({ ctx }) => {
     ensureAdmin(ctx)
@@ -349,7 +360,7 @@ export const actionsRouter = router({
   createAction: protectedProcedure
     .input(actionMutationSchema)
     .mutation(async ({ ctx, input }) => {
-      ensureAdmin(ctx)
+      await ensureActionsAdmin(ctx)
 
       const orgId = ctx.userOrgId
 
@@ -418,7 +429,7 @@ export const actionsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      ensureAdmin(ctx)
+      await ensureActionsAdmin(ctx)
 
       if (input.data.urlTemplate) {
         const outboundAllowlist = await getOrgOutboundAllowlist(
@@ -497,7 +508,7 @@ export const actionsRouter = router({
   deleteAction: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      ensureAdmin(ctx)
+      await ensureActionsAdmin(ctx)
 
       const { error } = await ctx.supabase
         .from('ai_actions')
@@ -524,7 +535,7 @@ export const actionsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      ensureAdmin(ctx)
+      await ensureActionsAdmin(ctx)
 
       const action = await loadActionWithSecretsForOrg(
         ctx.supabase,
@@ -581,7 +592,7 @@ export const actionsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      ensureAdmin(ctx)
+      await ensureActionsAdmin(ctx)
 
       const { error } = await ctx.supabase
         .from('ai_action_secrets')
@@ -607,7 +618,7 @@ export const actionsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      ensureAdmin(ctx)
+      await ensureActionsAdmin(ctx)
 
       const action = await loadActionWithSecretsForOrg(
         ctx.supabase,
@@ -748,6 +759,7 @@ export const actionsRouter = router({
         'inbox',
         'Inbox access is required to approve actions.'
       )
+      await requireFeature(ctx.supabase, ctx.userOrgId, 'aiActions')
 
       const outcome = await executeApprovedAction(input.logId, ctx.user.id)
 
