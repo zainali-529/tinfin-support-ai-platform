@@ -234,6 +234,34 @@ export const subscriptions = pgTable(
   })
 )
 
+export const billingAddons = pgTable(
+  'billing_addons',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    addonId: text('addon_id').notNull(),
+    status: text('status').default('pending').notNull(),
+    quantity: integer('quantity').default(1).notNull(),
+    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    stripeCustomerId: text('stripe_customer_id'),
+    amountCents: integer('amount_cents').notNull(),
+    currency: text('currency').default('usd').notNull(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    metadata: jsonb('metadata').default({}).notNull(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgPeriodIndex: index('idx_billing_addons_org_period').on(table.orgId, table.periodStart, table.periodEnd),
+    orgStatusIndex: index('idx_billing_addons_org_status').on(table.orgId, table.status),
+    checkoutSessionUnique: uniqueIndex('billing_addons_checkout_session_unique').on(table.stripeCheckoutSessionId),
+  })
+)
+
 export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),

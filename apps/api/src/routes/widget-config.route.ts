@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import { createClient } from '@supabase/supabase-js'
 import cors from 'cors'
+import { canUseVoiceNow } from '../lib/billing-limits'
 
 export const widgetConfigRoute: Router = Router()
 
@@ -198,10 +199,16 @@ widgetConfigRoute.get('/:orgId', async (req: Request, res: Response) => {
     const s = asRecord(data?.settings)
     const vapiSettings = asRecord(vapiData?.settings)
 
+    const voiceCapacity = await canUseVoiceNow(supabase, orgId).catch((error) => {
+      console.warn('[widget-config] Voice billing check failed:', error instanceof Error ? error.message : error)
+      return { allowed: false }
+    })
+
     const voiceEnabled = !!(
       vapiData?.is_active &&
       vapiData?.vapi_assistant_id &&
-      process.env.VAPI_PUBLIC_KEY
+      process.env.VAPI_PUBLIC_KEY &&
+      voiceCapacity.allowed
     )
 
     return res.json({

@@ -224,7 +224,7 @@ export function PlanLimitAlert({ feature, current, limit, unit }: PlanLimitAlert
           {' '}
         </span>
         <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] shrink-0" asChild>
-          <Link href="/billing">Upgrade</Link>
+          <Link href="/billing">Manage usage</Link>
         </Button>
       </AlertDescription>
     </Alert>

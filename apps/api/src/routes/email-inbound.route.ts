@@ -24,6 +24,7 @@ import {
 import { queryRAG } from '@workspace/ai'
 import { planAllows } from '../lib/plans'
 import { getOrgPlanId } from '../lib/subscriptions'
+import { canStartConversation } from '../lib/billing-limits'
 import { routePendingConversation } from '../services/inbox-ops.service'
 
 export const emailInboundRoute: Router = Router()
@@ -111,7 +112,7 @@ async function resolveConversation(
   supabase: SupabaseClient,
   orgId: string,
   parsed: ParsedInboundEmail
-): Promise<{ conversationId: string; isNew: boolean }> {
+): Promise<{ conversationId: string | null; isNew: boolean; blockedReason?: string }> {
   // 1. Match by In-Reply-To
   if (parsed.inReplyTo) {
     const { data } = await supabase
@@ -147,6 +148,15 @@ async function resolveConversation(
   }
 
   // 3. Create new conversation
+  const capacity = await canStartConversation(supabase, orgId)
+  if (!capacity.allowed) {
+    return {
+      conversationId: null,
+      isNew: false,
+      blockedReason: capacity.reason,
+    }
+  }
+
   const contactId = await upsertContact(supabase, orgId, parsed)
 
   const { data: newConv, error } = await supabase
@@ -429,7 +439,11 @@ async function processInboundEmail(
     }
   }
 
-  const { conversationId, isNew } = await resolveConversation(supabase, account.org_id, parsed)
+  const { conversationId, isNew, blockedReason } = await resolveConversation(supabase, account.org_id, parsed)
+  if (!conversationId) {
+    console.warn(`[email-inbound/${provider}] Conversation blocked for org=${account.org_id}: ${blockedReason ?? 'unknown'}`)
+    return
+  }
   await storeInboundEmail(supabase, account.org_id, conversationId, parsed)
 
   console.log(`[email-inbound/${provider}] org=${account.org_id} conv=${conversationId} isNew=${isNew} from=${parsed.fromEmail}`)

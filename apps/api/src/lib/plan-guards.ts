@@ -11,12 +11,14 @@
  */
 
 import { TRPCError } from '@trpc/server'
-import { getPlan, planAllows, withinLimit, type Plan } from './plans'
+import { getPlan, planAllows, type Plan } from './plans'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getOrgPlanId } from './subscriptions'
+import { getOrgSubscription } from './subscriptions'
+import { assertBillingWritable, requireEffectiveLimit } from './billing-limits'
 
 async function getOrgPlan(supabase: SupabaseClient, orgId: string): Promise<string> {
-  return getOrgPlanId(supabase, orgId)
+  const sub = await getOrgSubscription(supabase, orgId)
+  return sub.isBillingRestricted ? 'free' : sub.planId
 }
 
 const FEATURE_NAMES: Record<string, string> = {
@@ -69,7 +71,12 @@ export async function requireFeature(
   orgId: string,
   feature: keyof Plan['features']
 ): Promise<void> {
-  const planId = await getOrgPlan(supabase, orgId)
+  const orgSub = await getOrgSubscription(supabase, orgId)
+  if (orgSub.isBillingRestricted) {
+    assertBillingWritable(orgSub)
+  }
+
+  const planId = orgSub.planId
   if (!planAllows(planId, feature)) {
     const requiredPlan = REQUIRED_PLAN[feature as string] ?? 'starter'
     const featureName = FEATURE_NAMES[feature as string] ?? feature
@@ -90,14 +97,31 @@ export async function requireLimit(
   limitKey: keyof Plan['limits'],
   currentCount: number
 ): Promise<void> {
-  const planId = await getOrgPlan(supabase, orgId)
-  if (!withinLimit(planId, limitKey, currentCount)) {
-    const plan = getPlan(planId)
-    const maxVal = plan.limits[limitKey]
-    const name = LIMIT_NAMES[limitKey as string] ?? limitKey
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: `You've reached the ${maxVal} ${name} limit on your ${plan.name} plan. Upgrade at /billing to add more.`,
-    })
+  try {
+    await requireEffectiveLimit(supabase, orgId, limitKey, currentCount)
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      if (error.message.toLowerCase().includes('restricted billing mode')) {
+        throw error
+      }
+
+      const planId = await getOrgPlan(supabase, orgId)
+      const plan = getPlan(planId)
+      const maxVal = plan.limits[limitKey]
+      const name = LIMIT_NAMES[limitKey as string] ?? limitKey
+
+      if (error.code === 'FORBIDDEN') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `You've reached your ${name} limit for this billing period. Buy an add-on at /billing or upgrade your plan.`,
+        })
+      }
+
+      throw new TRPCError({
+        code: error.code,
+        message: error.message || `You've reached the ${maxVal} ${name} limit on your ${plan.name} plan.`,
+      })
+    }
+    throw error
   }
 }

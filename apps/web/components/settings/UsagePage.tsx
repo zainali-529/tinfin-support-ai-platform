@@ -20,6 +20,7 @@ import {
   CalendarIcon,
   ArrowRightIcon,
   CheckIcon,
+  PackagePlusIcon,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
@@ -41,7 +42,18 @@ function UsageSkeleton() {
 }
 
 export function UsagePage() {
-  const { planId, planName, periodStart, currentPeriodEnd, isLoading, usage, limits, canUse } = usePlan()
+  const {
+    planId,
+    planName,
+    periodStart,
+    currentPeriodEnd,
+    isLoading,
+    usage,
+    limits,
+    addOnLimits,
+    activeAddOns,
+    canUse,
+  } = usePlan()
   const utils = trpc.useUtils()
 
   const isFreePlan = planId === 'free'
@@ -256,6 +268,10 @@ export function UsagePage() {
                 { label: 'Team members', value: `${limits?.teamMembers ?? 1}` },
                 { label: 'Knowledge bases', value: `${limits?.knowledgeBases ?? 1}` },
                 { label: 'KB chunks', value: limits?.kbChunks?.toLocaleString() ?? '100' },
+                {
+                  label: 'Add-ons active',
+                  value: activeAddOns.length > 0 ? `${activeAddOns.length}` : 'None',
+                },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between text-xs">
                   <span className="text-muted-foreground">{label}</span>
@@ -272,6 +288,39 @@ export function UsagePage() {
               )}
             </CardContent>
           </Card>
+
+          {(activeAddOns.length > 0 || Object.values(addOnLimits ?? {}).some((value) => value > 0)) && (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <PackagePlusIcon className="size-4 text-primary" />
+                  Add-ons This Period
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0">
+                {activeAddOns.length > 0 ? (
+                  activeAddOns.map((addOn) => (
+                    <div key={addOn.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background/70 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold">{addOn.name}</p>
+                        <p className="text-[11px] text-muted-foreground">Added {addOn.totalUnits.toLocaleString()}</p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        +{addOn.totalUnits.toLocaleString()}
+                      </Badge>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground">No paid add-ons are active yet.</p>
+                )}
+                <Button size="sm" variant="outline" className="w-full gap-1.5" asChild>
+                  <Link href="/billing">
+                    Manage add-ons <ArrowRightIcon className="size-3" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {isFreePlan && (
             <Card className="border-primary/20 bg-primary/5">
@@ -306,11 +355,11 @@ export function UsagePage() {
                     'Email channel',
                     'WhatsApp channel',
                     'AI Actions',
-                    '100 voice minutes',
+                    '60 voice minutes',
                     'Analytics',
                     'Custom branding',
                     '5 team members',
-                    '1,000 chats/month',
+                    '1,500 chats/month',
                   ].map((f) => (
                     <li key={f} className="flex items-center gap-1.5">
                       <CheckIcon className="size-3.5 text-primary" />
@@ -332,8 +381,8 @@ export function UsagePage() {
                 <ul className="text-xs text-muted-foreground space-y-1.5">
                   {[
                     '20 team members',
-                    'Unlimited chats',
-                    '500 voice minutes',
+                    '6,000 chats',
+                    '250 voice minutes',
                     'Dedicated per-org billing controls',
                     'Priority support',
                   ].map((f) => (

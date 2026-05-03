@@ -34,6 +34,8 @@ export type LimitKey =
   | 'knowledgeBases'
   | 'kbChunks'
 
+export type BillingAccessMode = 'active' | 'grace' | 'restricted'
+
 export function usePlan() {
   const { data: sub, isLoading: subLoading } = trpc.billing.getSubscription.useQuery(undefined, {
     staleTime: 60_000,
@@ -107,12 +109,18 @@ export function usePlan() {
     planName: sub?.planDetails?.name ?? 'Free',
     planDetails: sub?.planDetails ?? null,
     status: sub?.status ?? 'active',
+    accessMode: (sub?.accessMode ?? 'active') as BillingAccessMode,
     isActive: sub?.isActive ?? true,
+    isBillingRestricted: sub?.isBillingRestricted ?? false,
+    graceEndsAt: sub?.graceEndsAt ?? null,
     cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: sub?.currentPeriodEnd ?? null,
     canManageBilling: sub?.canManageBilling ?? false,
     usage: usageData?.usage ?? null,
     limits: usageData?.limits ?? null,
+    baseLimits: usageData?.baseLimits ?? null,
+    addOnLimits: usageData?.addOnLimits ?? null,
+    activeAddOns: usageData?.activeAddOns ?? [],
     periodStart: usageData?.periodStart ?? null,
     isLoading: subLoading || usageLoading,
     canUse,

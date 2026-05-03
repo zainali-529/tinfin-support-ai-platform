@@ -36,6 +36,13 @@
       "when": 1777968000000,
       "tag": "0005_sla_backlog_semantics",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778054400000,
+      "tag": "0006_billing_addons",
+      "breakpoints": true
     }
   ]
 }

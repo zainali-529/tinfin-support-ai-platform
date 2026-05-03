@@ -6,26 +6,15 @@
 
 import { router, protectedProcedure } from '../trpc/trpc'
 import { getOrgSubscription } from '../lib/subscriptions'
-
-function getBillingPeriodStart(currentPeriodEnd: string | null): Date {
-  if (currentPeriodEnd) {
-    const end = new Date(currentPeriodEnd)
-    const start = new Date(end)
-    start.setMonth(start.getMonth() - 1)
-    return start
-  }
-
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
-}
+import { getBillingLimitSummary, publicLimits } from '../lib/billing-limits'
 
 export const usageRouter = router({
   getUsage: protectedProcedure.query(async ({ ctx }) => {
     const orgId = ctx.userOrgId
     const orgSub = await getOrgSubscription(ctx.supabase, orgId)
     const plan = orgSub.plan
-
-    const periodStart = getBillingPeriodStart(orgSub.currentPeriodEnd ?? null)
+    const billingSummary = await getBillingLimitSummary(ctx.supabase, orgId, orgSub)
+    const periodStart = billingSummary.periodStart
     const periodStartIso = periodStart.toISOString()
 
     const [
@@ -76,6 +65,9 @@ export const usageRouter = router({
       planName: plan.name,
       periodStart: periodStartIso,
       periodEnd: orgSub.currentPeriodEnd ?? null,
+      accessMode: orgSub.accessMode,
+      isBillingRestricted: orgSub.isBillingRestricted,
+      graceEndsAt: orgSub.graceEndsAt,
       usage: {
         conversations: conversationsCount,
         voiceMinutes,
@@ -83,13 +75,10 @@ export const usageRouter = router({
         knowledgeBases: kbResult.count ?? 0,
         kbChunks: chunksResult.count ?? 0,
       },
-      limits: {
-        conversations: plan.limits.conversationsPerMonth,
-        voiceMinutes: plan.limits.voiceMinutesPerMonth,
-        teamMembers: plan.limits.teamMembers,
-        knowledgeBases: plan.limits.knowledgeBases,
-        kbChunks: plan.limits.kbChunks,
-      },
+      baseLimits: publicLimits(billingSummary.baseLimits),
+      addOnLimits: publicLimits(billingSummary.addOnLimits),
+      limits: publicLimits(billingSummary.effectiveLimits),
+      activeAddOns: billingSummary.activeAddOns,
     }
   }),
 

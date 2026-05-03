@@ -13,7 +13,7 @@ import {
   handleConfirmedAction,
   executeApprovedAction,
 } from '@workspace/ai'
-import { getOrgSubscription } from '../lib/subscriptions'
+import { canStartConversation } from '../lib/billing-limits'
 import { routePendingConversation } from '../services/inbox-ops.service'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -71,17 +71,6 @@ function send(socket: TinfinSocket, data: unknown) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(data))
   }
-}
-
-function getBillingPeriodStart(currentPeriodEnd: string | null): Date {
-  if (currentPeriodEnd) {
-    const end = new Date(currentPeriodEnd)
-    const start = new Date(end)
-    start.setMonth(start.getMonth() - 1)
-    return start
-  }
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
 }
 
 function broadcastToAgents(orgId: string, data: unknown) {
@@ -673,14 +662,10 @@ async function getOrCreateConversation(params: { orgId: string; visitorId: strin
     contactId = newContact?.id ?? null
   }
 
-  const orgSub = await getOrgSubscription(supabase, params.orgId)
-  const periodStart = getBillingPeriodStart(orgSub.currentPeriodEnd ?? null)
-  const { count: convCount } = await supabase.from('conversations').select('id', { count: 'exact', head: true })
-    .eq('org_id', params.orgId).gte('started_at', periodStart.toISOString())
-
-  const plan = orgSub.plan
-  const limit = plan.limits.conversationsPerMonth
-  if (limit !== -1 && (convCount ?? 0) >= limit) throw new Error('CHAT_LIMIT_REACHED')
+  const capacity = await canStartConversation(supabase, params.orgId)
+  if (!capacity.allowed) {
+    throw new Error(capacity.reason === 'billing_restricted' ? 'BILLING_RESTRICTED' : 'CHAT_LIMIT_REACHED')
+  }
 
   const { data: newConv } = await supabase.from('conversations')
     .insert({ org_id: params.orgId, contact_id: contactId, status: 'bot', channel: 'chat' })
@@ -806,7 +791,11 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
       send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: result.isNew })
     } catch (error) {
       if (error instanceof Error && error.message === 'CHAT_LIMIT_REACHED') {
-        send(socket, { type: 'error', message: 'Chat limit reached for this workspace. Please try again next billing period.' })
+        send(socket, { type: 'error', message: 'Chat limit reached for this workspace. Buy a conversation add-on or try again next billing period.' })
+        return
+      }
+      if (error instanceof Error && error.message === 'BILLING_RESTRICTED') {
+        send(socket, { type: 'error', message: 'This workspace is in billing restricted mode. Please contact the site owner.' })
         return
       }
       send(socket, { type: 'error', message: 'Unable to start a new conversation right now.' })

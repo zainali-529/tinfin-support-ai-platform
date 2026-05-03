@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { PLANS } from '../lib/plans'
+import { checkoutDiscountParams, trialDaysForPlan } from '../lib/billing-pricing'
 import { getEffectiveTeamPermissions } from '@workspace/types'
 
 function slugify(name: string): string {
@@ -443,18 +444,22 @@ export const orgMembershipRouter = router({
         owner_user_id: userId,
         plan_id: input.planId,
       }
+      const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = { metadata }
+      const trialDays = trialDaysForPlan(input.planId)
+      if (trialDays) {
+        subscriptionData.trial_period_days = trialDays
+      }
 
       const session = await stripe.checkout.sessions.create({
         customer: customer.id,
         mode: 'subscription',
         payment_method_types: ['card'],
+        ...checkoutDiscountParams({ type: 'plan', planId: input.planId }),
         line_items: [{ price: targetPlan.stripePriceId, quantity: 1 }],
         success_url: input.successUrl ?? `${webUrl}/dashboard?orgCreated=true`,
         cancel_url: input.cancelUrl ?? `${webUrl}/dashboard?orgCreateCancelled=true`,
         metadata,
-        subscription_data: {
-          metadata,
-        },
+        subscription_data: subscriptionData,
       })
 
       return {

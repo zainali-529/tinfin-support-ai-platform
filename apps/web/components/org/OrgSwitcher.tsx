@@ -53,16 +53,45 @@ interface OrgSwitcherProps {
 
 type PlanId = 'free' | 'starter' | 'pro' | 'scale'
 
+type BillingDiscountSummary = {
+  couponId: string
+  label: string
+  percentOff: number | null
+  amountOffCents: number | null
+  duration: string | null
+}
+
+type BillingPriceSummary = {
+  subtotalCents: number
+  discountCents: number
+  totalCents: number
+  dueNowCents: number
+  trialDays: number | null
+  discount: BillingDiscountSummary | null
+}
+
+function formatMoney(cents: number): string {
+  const amount = cents / 100
+  return amount % 1 === 0 ? `$${amount.toFixed(0)}` : `$${amount.toFixed(2)}`
+}
+
 function PlanOptionCard(props: {
   id: PlanId
   name: string
   description: string
   price: number
+  priceCents?: number
+  pricing?: BillingPriceSummary | null
   selected: boolean
   disabled?: boolean
   onSelect: (id: PlanId) => void
 }) {
   const isPaid = props.price > 0
+  const pricing = props.pricing ?? null
+  const hasDiscount = Boolean(pricing && pricing.discountCents > 0)
+  const recurringCents = pricing?.totalCents ?? Math.round(props.price * 100)
+  const dueNowCents = pricing?.dueNowCents ?? recurringCents
+
   return (
     <button
       type="button"
@@ -80,9 +109,34 @@ function PlanOptionCard(props: {
           <p className="mt-0.5 text-xs text-muted-foreground">{props.description}</p>
         </div>
         <Badge variant={isPaid ? 'default' : 'outline'} className="shrink-0">
-          {isPaid ? `$${props.price}/mo` : 'Free'}
+          {isPaid ? `${formatMoney(recurringCents)}/mo` : 'Free'}
         </Badge>
       </div>
+      {isPaid && (
+        <div className="mt-3 rounded-lg border bg-background/70 px-2.5 py-2 text-[11px]">
+          {hasDiscount && (
+            <div className="mb-1 flex items-center justify-between gap-3 text-emerald-700 dark:text-emerald-300">
+              <span>{pricing!.discount?.label ?? 'Discount'} applied</span>
+              <span>-{formatMoney(pricing!.discountCents)}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Due today</span>
+            <span className="font-semibold">{formatMoney(dueNowCents)}</span>
+          </div>
+          {pricing?.trialDays ? (
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">After {pricing.trialDays} day trial</span>
+              <span className="font-semibold">{formatMoney(recurringCents)}/mo</span>
+            </div>
+          ) : hasDiscount ? (
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">List price</span>
+              <span className="line-through">{formatMoney(pricing!.subtotalCents)}/mo</span>
+            </div>
+          ) : null}
+        </div>
+      )}
       {props.disabled && (
         <p className="mt-2 text-[11px] text-muted-foreground">
           Free is only available for your first owned organization.
@@ -162,6 +216,8 @@ export function CreateOrgDialog({
     name: string
     description: string
     price: number
+    priceCents?: number
+    pricing?: BillingPriceSummary | null
   }>
   const displayPlans = resolvedPlans.length > 0
     ? resolvedPlans
@@ -213,6 +269,8 @@ export function CreateOrgDialog({
                   name={plan.name}
                   description={plan.description}
                   price={plan.price}
+                  priceCents={plan.priceCents}
+                  pricing={plan.pricing ?? null}
                   selected={planId === plan.id}
                   disabled={plan.id === 'free' && !freeAllowed}
                   onSelect={(id) => {

@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { queryRAG } from "@workspace/ai"
 import { planAllows } from "../lib/plans"
 import { getOrgPlanId } from "../lib/subscriptions"
+import { canStartConversation } from "../lib/billing-limits"
 import { routePendingConversation } from "../services/inbox-ops.service"
 import {
   parseWhatsAppWebhook,
@@ -161,7 +162,7 @@ async function resolveConversation(
   supabase: SupabaseClient,
   orgId: string,
   contactId: string
-): Promise<{ conversationId: string; isNew: boolean }> {
+): Promise<{ conversationId: string | null; isNew: boolean; blockedReason?: string }> {
   const { data: existing } = await supabase
     .from("conversations")
     .select("id")
@@ -176,6 +177,15 @@ async function resolveConversation(
   const row = existing as ConversationRow | null
   if (row?.id) {
     return { conversationId: row.id, isNew: false }
+  }
+
+  const capacity = await canStartConversation(supabase, orgId)
+  if (!capacity.allowed) {
+    return {
+      conversationId: null,
+      isNew: false,
+      blockedReason: capacity.reason,
+    }
   }
 
   const { data: created, error } = await supabase
@@ -315,11 +325,17 @@ async function processInboundMessage(params: {
   }
 
   const contactId = await upsertContact(supabase, account.org_id, parsed)
-  const { conversationId, isNew } = await resolveConversation(
+  const { conversationId, isNew, blockedReason } = await resolveConversation(
     supabase,
     account.org_id,
     contactId
   )
+  if (!conversationId) {
+    console.warn(
+      `[whatsapp-webhook] Conversation blocked for org=${account.org_id}: ${blockedReason ?? "unknown"}`
+    )
+    return
+  }
 
   const { data: messageData, error: messageError } = await supabase
     .from("messages")

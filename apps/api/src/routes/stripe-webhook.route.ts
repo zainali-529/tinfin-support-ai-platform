@@ -170,6 +170,43 @@ async function resolveOrgIdFromSubscription(stripe: Stripe, sub: Stripe.Subscrip
   return customer.metadata?.org_id ?? null
 }
 
+async function activateBillingAddOn(
+  supabase: SupabaseClient,
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  const orgId = session.metadata?.org_id
+  const addOnRowId = session.metadata?.billing_addon_id
+
+  if (!orgId || !addOnRowId) {
+    console.warn('[stripe-webhook] Missing add-on checkout metadata')
+    return
+  }
+
+  const paymentIntentId =
+    typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null
+
+  const { error } = await supabase
+    .from('billing_addons')
+    .update({
+      status: 'active',
+      stripe_payment_intent_id: paymentIntentId,
+      stripe_customer_id: typeof session.customer === 'string' ? session.customer : null,
+      activated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', addOnRowId)
+    .eq('org_id', orgId)
+
+  if (error) {
+    console.error('[stripe-webhook] Failed to activate add-on:', error.message)
+    return
+  }
+
+  console.log(`[stripe-webhook] addon_purchase.completed: org=${orgId} addon=${session.metadata?.addon_id}`)
+}
+
 stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
   const stripe = getStripe()
   const supabase = getSupabase()
@@ -196,6 +233,11 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
+        if (session.mode === 'payment' && session.metadata?.action === 'addon_purchase') {
+          await activateBillingAddOn(supabase, session)
+          break
+        }
+
         if (session.mode !== 'subscription') break
 
         const orgId = session.metadata?.org_id
@@ -235,7 +277,7 @@ stripeWebhookRoute.post('/', async (req: Request, res: Response) => {
           stripe_sub_id: subId,
           stripe_customer_id: customerId,
           plan: planId,
-          status: 'active',
+          status: sub.status,
           current_period_end: periodEnd,
           cancel_at_period_end: false,
         })

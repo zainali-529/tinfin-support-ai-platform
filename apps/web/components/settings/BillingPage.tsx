@@ -16,7 +16,9 @@ import {
   MailIcon,
   MessageCircleIcon,
   MessageSquareIcon,
+  PackagePlusIcon,
   PhoneCallIcon,
+  PlusCircleIcon,
   ReceiptIcon,
   ShieldCheckIcon,
   SparklesIcon,
@@ -29,6 +31,7 @@ import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { Badge } from '@workspace/ui/components/badge'
 import { Button } from '@workspace/ui/components/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@workspace/ui/components/card'
+import { Input } from '@workspace/ui/components/input'
 import { Separator } from '@workspace/ui/components/separator'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Spinner } from '@workspace/ui/components/spinner'
@@ -44,8 +47,12 @@ type PlanCardData = {
   name: string
   description: string
   price: number
+  priceCents?: number
   limits: Record<string, number>
   features: Record<string, boolean | undefined>
+  trialDays?: number | null
+  promotionCodesEnabled?: boolean
+  pricing?: BillingPriceSummary | null
 }
 
 type Invoice = {
@@ -59,6 +66,57 @@ type Invoice = {
   periodEnd: string
   pdfUrl: string | null
   hostedUrl: string | null
+}
+
+type BillingAddOnId =
+  | 'conversations_1000'
+  | 'voice_100'
+  | 'team_seat_1'
+  | 'knowledge_base_1'
+  | 'kb_chunks_5000'
+
+type BillingAddOn = {
+  id: BillingAddOnId
+  name: string
+  description: string
+  price: number
+  priceCents: number
+  unitAmount: number
+  unitLabel: string
+  minUnits: number
+  defaultUnits: number
+  maxUnits: number
+  limitKey: string
+  requiresFeature: string | null
+  pricing: BillingPriceSummary | null
+}
+
+type ActiveBillingAddOn = {
+  id: string
+  addOnId: string
+  name: string
+  quantity: number
+  totalUnits: number
+  unitAmount: number
+  periodEnd: string
+  status: string
+}
+
+type BillingDiscountSummary = {
+  couponId: string
+  label: string
+  percentOff: number | null
+  amountOffCents: number | null
+  duration: string | null
+}
+
+type BillingPriceSummary = {
+  subtotalCents: number
+  discountCents: number
+  totalCents: number
+  dueNowCents: number
+  trialDays: number | null
+  discount: BillingDiscountSummary | null
 }
 
 const PLAN_ORDER: PlanId[] = ['free', 'starter', 'pro', 'scale']
@@ -77,6 +135,30 @@ function isPaidPlan(planId: string): planId is Exclude<PlanId, 'free'> {
 function formatLimit(value: number, suffix = ''): string {
   if (value === -1) return 'Unlimited'
   return `${value.toLocaleString()}${suffix}`
+}
+
+function formatMoney(cents: number): string {
+  const amount = cents / 100
+  return amount % 1 === 0 ? `$${amount.toFixed(0)}` : `$${amount.toFixed(2)}`
+}
+
+function calculateDiscountCents(subtotalCents: number, discount: BillingDiscountSummary | null | undefined): number {
+  if (!discount || subtotalCents <= 0) return 0
+  if (typeof discount.percentOff === 'number') {
+    return Math.min(subtotalCents, Math.round((subtotalCents * discount.percentOff) / 100))
+  }
+  if (typeof discount.amountOffCents === 'number') {
+    return Math.min(subtotalCents, discount.amountOffCents)
+  }
+  return 0
+}
+
+function calculateCustomUnitAmountCents(params: {
+  priceCents: number
+  baseUnits: number
+  requestedUnits: number
+}): number {
+  return Math.max(1, Math.ceil((params.priceCents * params.requestedUnits) / params.baseUnits))
 }
 
 function boolFeature(plan: PlanCardData, key: string): boolean {
@@ -117,6 +199,11 @@ function PlanCard({
   const kbChunksLimit = plan.limits.kbChunks ?? 100
   const knowledgeBasesLimit = plan.limits.knowledgeBases ?? 1
   const voiceMinutesLimit = plan.limits.voiceMinutesPerMonth ?? 0
+  const planPricing = plan.pricing
+  const hasPlanDiscount = Boolean(planPricing && planPricing.discountCents > 0)
+  const recurringCents = planPricing?.totalCents ?? Math.round(plan.price * 100)
+  const dueNowCents = planPricing?.dueNowCents ?? recurringCents
+  const trialDays = planPricing?.trialDays ?? plan.trialDays ?? null
 
   const actionLabel = boolFeature(plan, 'aiActions')
     ? 'AI Actions and API tools'
@@ -137,6 +224,11 @@ function PlanCard({
             <h3 className="text-base font-semibold tracking-tight">{plan.name}</h3>
             {isCurrent && <Badge className="h-5 px-2 text-[10px]">Current</Badge>}
             {isPro && !isCurrent && <Badge variant="outline" className="h-5 px-2 text-[10px]">Recommended</Badge>}
+            {Boolean(plan.trialDays) && !isCurrent && (
+              <Badge variant="outline" className="h-5 px-2 text-[10px]">
+                {plan.trialDays}d trial
+              </Badge>
+            )}
           </div>
           <p className="mt-1 min-h-8 text-xs leading-4 text-muted-foreground">{plan.description}</p>
         </div>
@@ -144,8 +236,43 @@ function PlanCard({
       </div>
 
       <div className="mb-4">
-        <span className="text-3xl font-semibold tracking-tight">${plan.price}</span>
+        {hasPlanDiscount && (
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-sm text-muted-foreground line-through">{formatMoney(planPricing!.subtotalCents)}</span>
+            <Badge variant="outline" className="border-emerald-300 text-[10px] text-emerald-700">
+              Save {formatMoney(planPricing!.discountCents)}
+            </Badge>
+          </div>
+        )}
+        <span className="text-3xl font-semibold tracking-tight">{formatMoney(recurringCents)}</span>
         {plan.price > 0 && <span className="ml-1 text-sm text-muted-foreground">/month</span>}
+        {plan.price > 0 && hasPlanDiscount && (
+          <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-300">
+            {planPricing!.discount?.label ?? 'Discount'} applied automatically
+          </p>
+        )}
+        {plan.price > 0 && !hasPlanDiscount && plan.promotionCodesEnabled && (
+          <p className="mt-1 text-[11px] text-muted-foreground">Optional promo code at checkout</p>
+        )}
+        {plan.price > 0 && (
+          <div className="mt-3 rounded-xl border bg-background/70 px-3 py-2 text-[11px]">
+            <div className="flex justify-between gap-3">
+              <span className="text-muted-foreground">Due today</span>
+              <span className="font-semibold">{formatMoney(dueNowCents)}</span>
+            </div>
+            {trialDays ? (
+              <div className="mt-1 flex justify-between gap-3">
+                <span className="text-muted-foreground">After {trialDays} day trial</span>
+                <span className="font-semibold">{formatMoney(recurringCents)}/mo</span>
+              </div>
+            ) : hasPlanDiscount ? (
+              <div className="mt-1 flex justify-between gap-3">
+                <span className="text-muted-foreground">List price</span>
+                <span className="line-through">{formatMoney(planPricing!.subtotalCents)}/mo</span>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <ul className="flex-1 space-y-1.5 text-xs">
@@ -243,6 +370,150 @@ function InvoiceRow({ inv }: { inv: Invoice }) {
   )
 }
 
+function AddOnCard({
+  addOn,
+  activeQuantity,
+  canManageBilling,
+  canPurchase,
+  disabledReason,
+  isLoading,
+  onBuy,
+}: {
+  addOn: BillingAddOn
+  activeQuantity: number
+  canManageBilling: boolean
+  canPurchase: boolean
+  disabledReason: string | null
+  isLoading: boolean
+  onBuy: (requestedUnits: number) => void
+}) {
+  const [requestedUnits, setRequestedUnits] = useState(addOn.defaultUnits ?? addOn.unitAmount)
+  const checkoutUnits = requestedUnits
+  const subtotalCents = calculateCustomUnitAmountCents({
+    priceCents: addOn.priceCents,
+    baseUnits: addOn.unitAmount,
+    requestedUnits,
+  })
+  const discountCents = calculateDiscountCents(subtotalCents, addOn.pricing?.discount)
+  const checkoutTotalCents = Math.max(0, subtotalCents - discountCents)
+
+  function updateRequestedUnits(nextValue: number) {
+    if (!Number.isFinite(nextValue)) {
+      setRequestedUnits(addOn.defaultUnits ?? addOn.unitAmount)
+      return
+    }
+
+    setRequestedUnits(Math.min(addOn.maxUnits, Math.max(addOn.minUnits, Math.trunc(nextValue))))
+  }
+
+  return (
+    <div className="flex min-h-[280px] flex-col rounded-2xl border bg-card p-4 transition-colors hover:border-primary/35">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-tight">{addOn.name}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{addOn.description}</p>
+        </div>
+        <PackagePlusIcon className="size-4 shrink-0 text-primary" />
+      </div>
+
+      <div className="mb-3 rounded-xl border bg-muted/25 px-3 py-2">
+        <p className="text-xs text-muted-foreground">Base rate</p>
+        <p className="text-sm font-semibold">
+          {formatMoney(addOn.priceCents)} / {addOn.unitAmount.toLocaleString()} {addOn.unitLabel}
+        </p>
+      </div>
+
+      <div className="mb-3 rounded-xl border bg-background px-3 py-2">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <label className="text-xs font-medium text-muted-foreground" htmlFor={`addon-quantity-${addOn.id}`}>
+            Custom {addOn.unitLabel}
+          </label>
+          <span className="text-[11px] text-muted-foreground">
+            Min {addOn.minUnits.toLocaleString()} / Max {addOn.maxUnits.toLocaleString()}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            disabled={requestedUnits <= addOn.minUnits || isLoading}
+            onClick={() => updateRequestedUnits(requestedUnits - 1)}
+          >
+            -
+          </Button>
+          <Input
+            id={`addon-quantity-${addOn.id}`}
+            type="number"
+            min={addOn.minUnits}
+            max={addOn.maxUnits}
+            value={requestedUnits}
+            onChange={(event) => updateRequestedUnits(Number(event.target.value))}
+            className="h-8 text-center text-sm font-semibold"
+          />
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            disabled={requestedUnits >= addOn.maxUnits || isLoading}
+            onClick={() => updateRequestedUnits(requestedUnits + 1)}
+          >
+            +
+          </Button>
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[11px]">
+          <span className="text-muted-foreground">You are adding</span>
+          <span className="font-semibold">+{checkoutUnits.toLocaleString()} {addOn.unitLabel}</span>
+        </div>
+      </div>
+
+      {activeQuantity > 0 ? (
+        <Badge variant="outline" className="mb-3 w-fit border-emerald-300 text-[10px] text-emerald-700">
+          Active this period: +{activeQuantity.toLocaleString()} {addOn.unitLabel}
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="mb-3 w-fit text-[10px]">
+          Current billing period
+        </Badge>
+      )}
+
+      <div className="mt-auto">
+        <Button
+          size="sm"
+          disabled={!canManageBilling || !canPurchase || isLoading}
+          onClick={() => onBuy(requestedUnits)}
+          className="w-full gap-1.5"
+          title={disabledReason ?? undefined}
+        >
+          {isLoading ? <Spinner className="size-3.5" /> : <PlusCircleIcon className="size-3.5" />}
+          Pay {formatMoney(checkoutTotalCents)}
+        </Button>
+      </div>
+      <div className="mt-3 rounded-xl border bg-muted/20 px-3 py-2 text-[11px]">
+        <div className="flex justify-between gap-3">
+          <span className="text-muted-foreground">Subtotal</span>
+          <span className={discountCents > 0 ? 'line-through' : 'font-semibold'}>{formatMoney(subtotalCents)}</span>
+        </div>
+        {discountCents > 0 && (
+          <>
+            <div className="mt-1 flex justify-between gap-3 text-emerald-700 dark:text-emerald-300">
+              <span>{addOn.pricing?.discount?.label ?? 'Discount'}</span>
+              <span>-{formatMoney(discountCents)}</span>
+            </div>
+            <div className="mt-1 flex justify-between gap-3">
+              <span className="text-muted-foreground">Due today</span>
+              <span className="font-semibold">{formatMoney(checkoutTotalCents)}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {!canManageBilling && <p className="mt-2 text-[11px] text-muted-foreground">Only organization admins can buy add-ons.</p>}
+      {canManageBilling && disabledReason && <p className="mt-2 text-[11px] text-muted-foreground">{disabledReason}</p>}
+    </div>
+  )
+}
+
 function BillingInner() {
   const searchParams = useSearchParams()
   const {
@@ -254,24 +525,41 @@ function BillingInner() {
     status,
     usage,
     limits,
+    activeAddOns,
+    accessMode,
+    isBillingRestricted,
+    graceEndsAt,
     isLoading,
     canManageBilling,
   } = usePlan()
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
+  const [addOnLoading, setAddOnLoading] = useState<string | null>(null)
 
   const { data: plans = [], isLoading: plansLoading } = trpc.billing.getPlans.useQuery()
+  const { data: addOnData, isLoading: addOnsLoading } = trpc.billing.getAddOns.useQuery(undefined, {
+    enabled: canManageBilling,
+    staleTime: 30_000,
+  })
   const { data: invoices = [], isLoading: invoicesLoading } = trpc.billing.getInvoices.useQuery(undefined, {
     enabled: canManageBilling,
     staleTime: 60_000,
   })
 
   const orderedPlans = [...plans].sort((a, b) => PLAN_ORDER.indexOf(a.id as PlanId) - PLAN_ORDER.indexOf(b.id as PlanId))
+  const billingAddOns = addOnData?.addOns ?? []
+  const visibleActiveAddOns = (addOnData?.activeAddOns ?? activeAddOns) as ActiveBillingAddOn[]
+  const features = (planDetails?.features ?? {}) as Record<string, boolean | undefined>
 
   const createCheckout = trpc.billing.createCheckout.useMutation({
     onSuccess: (data) => { window.location.href = data.url },
     onError: (err) => alert(err.message),
     onSettled: () => setCheckoutLoading(null),
+  })
+  const createAddOnCheckout = trpc.billing.createAddOnCheckout.useMutation({
+    onSuccess: (data) => { window.location.href = data.url },
+    onError: (err) => alert(err.message),
+    onSettled: () => setAddOnLoading(null),
   })
   const createPortal = trpc.billing.createPortal.useMutation({
     onSuccess: (data) => { window.location.href = data.url },
@@ -281,6 +569,8 @@ function BillingInner() {
 
   const success = searchParams.get('success') === 'true'
   const cancelled = searchParams.get('cancelled') === 'true'
+  const addOnSuccess = searchParams.get('addon') === 'success'
+  const addOnCancelled = searchParams.get('addon') === 'cancelled'
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
@@ -304,12 +594,40 @@ function BillingInner() {
           <AlertDescription className="text-sm">Checkout was cancelled. Your plan has not changed.</AlertDescription>
         </Alert>
       )}
+      {addOnSuccess && (
+        <Alert className="border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20">
+          <CheckCircleIcon className="size-4 text-emerald-600" />
+          <AlertDescription className="text-sm text-emerald-800 dark:text-emerald-200">Add-on purchased. It will apply to this billing period after Stripe confirms payment.</AlertDescription>
+        </Alert>
+      )}
+      {addOnCancelled && (
+        <Alert>
+          <AlertCircleIcon className="size-4" />
+          <AlertDescription className="text-sm">Add-on checkout was cancelled. No usage pack was added.</AlertDescription>
+        </Alert>
+      )}
+      {isBillingRestricted && (
+        <Alert className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20">
+          <AlertCircleIcon className="size-4 text-red-600" />
+          <AlertDescription className="text-sm text-red-800 dark:text-red-200">
+            Billing is restricted. Update payment details in Stripe Portal before using paid features or buying add-ons.
+          </AlertDescription>
+        </Alert>
+      )}
+      {accessMode === 'grace' && graceEndsAt && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20">
+          <AlertCircleIcon className="size-4 text-amber-600" />
+          <AlertDescription className="text-sm text-amber-800 dark:text-amber-200">
+            Payment needs attention. You are in grace mode until {format(new Date(graceEndsAt), 'MMMM d, yyyy')}.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">Available Plans</p>
-            <p className="text-xs text-muted-foreground">Starter keeps the core chat experience lean. Pro unlocks email, WhatsApp, voice, analytics, and AI Actions.</p>
+            <p className="text-xs text-muted-foreground">Starter keeps the core chat experience lean. Pro unlocks email, WhatsApp, voice, analytics, and AI Actions. Discounts and trials apply inside Stripe Checkout.</p>
           </div>
           <PlanBadge planId={planId} />
         </div>
@@ -413,6 +731,76 @@ function BillingInner() {
         </Card>
       </div>
 
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <PackagePlusIcon className="size-4 text-primary" />
+              Usage Add-ons
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Add any custom amount for the current billing period when a workspace needs extra capacity before renewal.
+            </p>
+          </div>
+          {visibleActiveAddOns.length > 0 && (
+            <Badge variant="outline" className="text-[10px]">
+              {visibleActiveAddOns.length} active
+            </Badge>
+          )}
+        </div>
+        {isLoading || addOnsLoading ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[210px] rounded-2xl" />)}
+          </div>
+        ) : !canManageBilling ? (
+          <Card className="shadow-none">
+            <CardContent className="flex items-center justify-between gap-4 py-5">
+              <div>
+                <p className="text-sm font-semibold">Admin access required</p>
+                <p className="text-xs text-muted-foreground">Ask an organization admin to buy extra usage packs.</p>
+              </div>
+              <ShieldCheckIcon className="size-5 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        ) : billingAddOns.length === 0 ? (
+          <Card className="shadow-none">
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">No add-ons are available yet.</CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {billingAddOns.map((addOn) => {
+              const activeQuantity = visibleActiveAddOns
+                .filter((active) => active.addOnId === addOn.id)
+                .reduce((sum, active) => sum + active.totalUnits, 0)
+              const missingFeature = addOn.requiresFeature && !features[addOn.requiresFeature]
+              const disabledReason = isBillingRestricted
+                ? 'Update billing before buying add-ons.'
+                : planId === 'free'
+                  ? 'Add-ons require an active paid plan.'
+                  : missingFeature
+                    ? 'This add-on requires a plan that includes the related feature.'
+                    : null
+
+              return (
+                <AddOnCard
+                  key={addOn.id}
+                  addOn={addOn}
+                  activeQuantity={activeQuantity}
+                  canManageBilling={canManageBilling}
+                  canPurchase={!disabledReason}
+                  disabledReason={disabledReason}
+                  isLoading={addOnLoading === addOn.id}
+                  onBuy={(requestedUnits) => {
+                    setAddOnLoading(addOn.id)
+                    createAddOnCheckout.mutate({ addOnId: addOn.id, units: requestedUnits })
+                  }}
+                />
+              )
+            })}
+          </div>
+        )}
+      </section>
+
       <Card className="shadow-none">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><ReceiptIcon className="size-4" /> Invoice History</CardTitle>
@@ -455,10 +843,10 @@ function BillingInner() {
             </div>
             {[
               { label: 'Team members', icon: UsersIcon, free: '1', starter: '2', pro: '5', scale: '20' },
-              { label: 'Chats / month', icon: MessageSquareIcon, free: '50', starter: '300', pro: '1,000', scale: 'Unlimited' },
+              { label: 'Chats / month', icon: MessageSquareIcon, free: '50', starter: '300', pro: '1,500', scale: '6,000' },
               { label: 'Knowledge bases', icon: BotIcon, free: '1', starter: '3', pro: '5', scale: '20' },
               { label: 'KB chunks', icon: SparklesIcon, free: '100', starter: '750', pro: '2,000', scale: '20,000' },
-              { label: 'Voice min / month', icon: PhoneCallIcon, free: '0', starter: '0', pro: '100', scale: '500' },
+              { label: 'Voice min / month', icon: PhoneCallIcon, free: '0', starter: '0', pro: '60', scale: '250' },
               { label: 'Chat widget', icon: MessageCircleIcon, free: <Tick yes />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Widget customization', icon: SparklesIcon, free: <Tick yes={false} />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Email channel', icon: MailIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
