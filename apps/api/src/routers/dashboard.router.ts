@@ -4,6 +4,7 @@ import { getPlan } from '../lib/plans'
 import { getOrgSubscription } from '../lib/subscriptions'
 import { protectedProcedure, router } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
+import { deriveInboxSla } from '../lib/inbox-metrics'
 
 type DashboardPeriod = 'today' | '7d' | '30d'
 
@@ -121,6 +122,13 @@ export const dashboardRouter = router({
         currentAgentMessagesResult,
         prevAiMessagesResult,
         prevAgentMessagesResult,
+        activeConversationsDetailResult,
+        currentCallsResult,
+        activeCallsResult,
+        knowledgeBaseResult,
+        activeAiActionsResult,
+        currentActionLogsResult,
+        currentSuccessfulActionLogsResult,
       ] = await Promise.all([
         ctx.supabase
           .from('conversations')
@@ -207,6 +215,52 @@ export const dashboardRouter = router({
           .eq('role', 'agent')
           .gte('created_at', prevStartIso)
           .lt('created_at', currentStartIso),
+
+        ctx.supabase
+          .from('conversations')
+          .select('id,status,queue_state,channel,assigned_to,started_at,queue_entered_at,resolved_at,first_response_due_at,next_response_due_at,resolution_due_at,first_response_at,last_customer_message_at,last_agent_reply_at')
+          .eq('org_id', orgId)
+          .in('status', ['bot', 'pending', 'open'])
+          .limit(1000),
+
+        ctx.supabase
+          .from('calls')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .gte('created_at', currentStartIso)
+          .lt('created_at', currentEndIso),
+
+        ctx.supabase
+          .from('calls')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .in('status', ['created', 'queued', 'ringing', 'in-progress', 'active', 'started']),
+
+        ctx.supabase
+          .from('knowledge_bases')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId),
+
+        ctx.supabase
+          .from('ai_actions')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .eq('is_active', true),
+
+        ctx.supabase
+          .from('ai_action_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .gte('created_at', currentStartIso)
+          .lt('created_at', currentEndIso),
+
+        ctx.supabase
+          .from('ai_action_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .eq('status', 'success')
+          .gte('created_at', currentStartIso)
+          .lt('created_at', currentEndIso),
       ])
 
       const queryErrors = [
@@ -222,6 +276,13 @@ export const dashboardRouter = router({
         currentAgentMessagesResult.error,
         prevAiMessagesResult.error,
         prevAgentMessagesResult.error,
+        activeConversationsDetailResult.error,
+        currentCallsResult.error,
+        activeCallsResult.error,
+        knowledgeBaseResult.error,
+        activeAiActionsResult.error,
+        currentActionLogsResult.error,
+        currentSuccessfulActionLogsResult.error,
       ].filter(Boolean)
 
       if (queryErrors.length > 0) {
@@ -243,6 +304,12 @@ export const dashboardRouter = router({
       const currentAgentMessages = toCount(currentAgentMessagesResult)
       const prevAiMessages = toCount(prevAiMessagesResult)
       const prevAgentMessages = toCount(prevAgentMessagesResult)
+      const currentCalls = toCount(currentCallsResult)
+      const activeCalls = toCount(activeCallsResult)
+      const knowledgeBaseCount = toCount(knowledgeBaseResult)
+      const activeAiActions = toCount(activeAiActionsResult)
+      const currentActionLogs = toCount(currentActionLogsResult)
+      const currentSuccessfulActionLogs = toCount(currentSuccessfulActionLogsResult)
 
       const currentHandledTotal = currentAiMessages + currentAgentMessages
       const prevHandledTotal = prevAiMessages + prevAgentMessages
@@ -259,6 +326,65 @@ export const dashboardRouter = router({
         currentConversations > 0
           ? Math.round((currentResolved / currentConversations) * 100)
           : 0
+      const actionSuccessRate =
+        currentActionLogs > 0
+          ? Math.round((currentSuccessfulActionLogs / currentActionLogs) * 100)
+          : 0
+
+      const activeConversationRows =
+        (activeConversationsDetailResult.data as Array<{
+          id: string
+          status: string
+          queue_state: string | null
+          channel: string | null
+          assigned_to: string | null
+          started_at: string | null
+          queue_entered_at: string | null
+          resolved_at: string | null
+          first_response_due_at: string | null
+          next_response_due_at: string | null
+          resolution_due_at: string | null
+          first_response_at: string | null
+          last_customer_message_at: string | null
+          last_agent_reply_at: string | null
+        }> | null) ?? []
+
+      const now = new Date()
+      const queueBreakdown = {
+        bot: 0,
+        pending: 0,
+        open: 0,
+        unassigned: 0,
+        assigned: 0,
+        slaAtRisk: 0,
+        slaBreached: 0,
+      }
+      const channelBreakdown = {
+        chat: 0,
+        email: 0,
+        whatsapp: 0,
+        voice: 0,
+      }
+
+      for (const row of activeConversationRows) {
+        if (row.status === 'bot') queueBreakdown.bot += 1
+        if (row.status === 'pending') queueBreakdown.pending += 1
+        if (row.status === 'open') queueBreakdown.open += 1
+        if (row.assigned_to) queueBreakdown.assigned += 1
+        else queueBreakdown.unassigned += 1
+
+        const channel = row.channel === 'email' || row.channel === 'whatsapp' || row.channel === 'voice'
+          ? row.channel
+          : 'chat'
+        channelBreakdown[channel] += 1
+
+        const sla = deriveInboxSla(row, now.getTime())
+        if (sla.slaState === 'breached' && sla.slaIsLive) {
+          queueBreakdown.slaBreached += 1
+        } else if (sla.slaState === 'at_risk' && sla.slaIsLive) {
+          queueBreakdown.slaAtRisk += 1
+        }
+      }
 
       return {
         period,
@@ -272,7 +398,23 @@ export const dashboardRouter = router({
           aiMessagesInPeriod: currentAiMessages,
           agentMessagesInPeriod: currentAgentMessages,
           resolutionRate: clampPercent(resolutionRate),
+          unassignedConversations: queueBreakdown.unassigned,
+          assignedConversations: queueBreakdown.assigned,
+          botConversations: queueBreakdown.bot,
+          slaAtRiskConversations: queueBreakdown.slaAtRisk,
+          slaBreachedConversations: queueBreakdown.slaBreached,
+          activeCalls,
+          callsInPeriod: currentCalls,
+          knowledgeBaseCount,
+          activeAiActions,
+          aiActionExecutionsInPeriod: currentActionLogs,
+          aiActionSuccessRate: clampPercent(actionSuccessRate),
         },
+        queue: {
+          totalActive: activeConversationRows.length,
+          ...queueBreakdown,
+        },
+        channels: channelBreakdown,
         trends: {
           newContactsChangePct: percentChange(currentContacts, prevContacts),
           resolvedChangePct: percentChange(currentResolved, prevResolved),

@@ -49,6 +49,7 @@ export type ConversationQueueState =
   | 'resolved'
 export type ConversationBacklogState = 'fresh' | 'watch' | 'stale' | 'critical'
 export type ConversationSlaState = 'on_track' | 'at_risk' | 'breached' | 'met'
+export type ConversationSlaStage = 'first_response' | 'next_response' | 'resolution'
 export type ConversationChannel =
   | 'chat'
   | 'email'
@@ -90,6 +91,8 @@ export interface Conversation {
   sla_target_at?: string | null
   sla_state?: ConversationSlaState | null
   sla_remaining_seconds?: number | null
+  sla_stage?: ConversationSlaStage | null
+  sla_is_live?: boolean | null
   meta?: Record<string, unknown> | null
   /** Joined contact record */
   contacts: Contact | null

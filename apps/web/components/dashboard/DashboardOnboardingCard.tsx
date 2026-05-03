@@ -25,7 +25,7 @@ export function DashboardOnboardingCard({
   isLoading,
 }: DashboardOnboardingCardProps) {
   return (
-    <Card>
+    <Card className="shadow-none">
       <CardHeader>
         <CardTitle className="text-base">Setup Progress</CardTitle>
         <CardDescription className="text-xs">

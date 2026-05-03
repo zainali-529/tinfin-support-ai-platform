@@ -51,14 +51,14 @@ export function DashboardActivityFeed({
   isLoading,
 }: DashboardActivityFeedProps) {
   return (
-    <Card>
+    <Card className="h-full shadow-none">
       <CardHeader>
         <CardTitle className="text-base">Activity Feed</CardTitle>
         <CardDescription className="text-xs">
           Recent support events in your org
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2.5">
         {isLoading &&
           Array.from({ length: 6 }).map((_, index) => (
             <div key={index} className="rounded-lg border p-3">
@@ -79,7 +79,7 @@ export function DashboardActivityFeed({
         {!isLoading &&
           items.map((item) => {
             const content = (
-              <div className="rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/40">
+              <div className="rounded-xl border px-3 py-3 transition-colors hover:bg-muted/40">
                 <div className="flex items-start gap-2.5">
                   <div className="mt-0.5 rounded-md bg-muted p-1.5 text-muted-foreground">
                     <ActivityIcon type={item.type} />

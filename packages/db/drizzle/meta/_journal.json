@@ -29,6 +29,13 @@
       "when": 1777881600000,
       "tag": "0004_widget_customization_advanced",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777968000000,
+      "tag": "0005_sla_backlog_semantics",
+      "breakpoints": true
     }
   ]
 }

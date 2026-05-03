@@ -17,6 +17,33 @@ export interface DashboardOverview {
     aiMessagesInPeriod: number
     agentMessagesInPeriod: number
     resolutionRate: number
+    unassignedConversations: number
+    assignedConversations: number
+    botConversations: number
+    slaAtRiskConversations: number
+    slaBreachedConversations: number
+    activeCalls: number
+    callsInPeriod: number
+    knowledgeBaseCount: number
+    activeAiActions: number
+    aiActionExecutionsInPeriod: number
+    aiActionSuccessRate: number
+  }
+  queue: {
+    totalActive: number
+    bot: number
+    pending: number
+    open: number
+    unassigned: number
+    assigned: number
+    slaAtRisk: number
+    slaBreached: number
+  }
+  channels: {
+    chat: number
+    email: number
+    whatsapp: number
+    voice: number
   }
   trends: {
     newContactsChangePct: number | null
@@ -83,6 +110,33 @@ const EMPTY_OVERVIEW: DashboardOverview = {
     aiMessagesInPeriod: 0,
     agentMessagesInPeriod: 0,
     resolutionRate: 0,
+    unassignedConversations: 0,
+    assignedConversations: 0,
+    botConversations: 0,
+    slaAtRiskConversations: 0,
+    slaBreachedConversations: 0,
+    activeCalls: 0,
+    callsInPeriod: 0,
+    knowledgeBaseCount: 0,
+    activeAiActions: 0,
+    aiActionExecutionsInPeriod: 0,
+    aiActionSuccessRate: 0,
+  },
+  queue: {
+    totalActive: 0,
+    bot: 0,
+    pending: 0,
+    open: 0,
+    unassigned: 0,
+    assigned: 0,
+    slaAtRisk: 0,
+    slaBreached: 0,
+  },
+  channels: {
+    chat: 0,
+    email: 0,
+    whatsapp: 0,
+    voice: 0,
   },
   trends: {
     newContactsChangePct: null,

@@ -105,12 +105,12 @@ function slaClass(slaState: string | null): string {
 }
 
 function normalizeQueueState(conversation: Conversation): string {
-  const queueState = conversation.queue_state
-  if (queueState) return queueState
   if (conversation.status === 'resolved' || conversation.status === 'closed') return 'resolved'
+  if (conversation.status === 'bot') return 'bot'
+  if (conversation.queue_state) return conversation.queue_state
   if (conversation.status === 'pending') return conversation.assigned_to ? 'assigned' : 'queued'
   if (conversation.status === 'open') return 'in_progress'
-  return 'bot'
+  return 'queued'
 }
 
 function fallbackBacklogState(backlogMinutes: number | null): string | null {
@@ -123,18 +123,90 @@ function fallbackBacklogState(backlogMinutes: number | null): string | null {
 
 function formatDurationCompact(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds))
-  const hours = Math.floor(safe / 3600)
+  const days = Math.floor(safe / 86400)
+  const hours = Math.floor((safe % 86400) / 3600)
   const minutes = Math.floor((safe % 3600) / 60)
 
+  if (days > 0) return `${days}d ${hours}h`
   if (hours > 0) return `${hours}h ${minutes}m`
   if (minutes > 0) return `${minutes}m`
   return `${safe}s`
+}
+
+function formatBacklogLabel(queueState: string, backlogMinutes: number): string {
+  const duration = formatDurationCompact(backlogMinutes * 60)
+  if (queueState === 'queued') return `Queued ${duration}`
+  if (queueState === 'assigned') return `Assigned ${duration}`
+  if (queueState === 'in_progress') return `Waiting ${duration}`
+  return `${duration} backlog`
 }
 
 function toMs(value: string | null | undefined): number | null {
   if (!value) return null
   const ms = new Date(value).getTime()
   return Number.isFinite(ms) ? ms : null
+}
+
+function isWaitingOnAgent(conversation: Conversation): boolean {
+  const customerMs = toMs(conversation.last_customer_message_at)
+  const agentMs = toMs(conversation.last_agent_reply_at)
+  return customerMs !== null && (agentMs === null || customerMs > agentMs)
+}
+
+function shouldShowBacklog(conversation: Conversation, queueState: string): boolean {
+  if (queueState === 'queued' || queueState === 'assigned') return true
+  if (queueState === 'in_progress') return isWaitingOnAgent(conversation)
+  return false
+}
+
+function resolveBacklogStart(conversation: Conversation, queueState: string): string | null | undefined {
+  if (queueState === 'in_progress') {
+    return conversation.last_customer_message_at ?? conversation.queue_entered_at ?? conversation.started_at
+  }
+
+  return conversation.queue_entered_at ?? conversation.last_customer_message_at ?? conversation.started_at
+}
+
+function formatSlaLabel(conversation: Conversation, targetMs: number | null, nowMs: number): string | null {
+  const state = conversation.sla_state
+  if (!state) return null
+
+  const isTerminal = conversation.status === 'resolved' || conversation.status === 'closed'
+  if (state === 'met' || (isTerminal && state !== 'breached')) return 'SLA met'
+
+  const remainingSeconds =
+    conversation.sla_remaining_seconds ??
+    (targetMs === null ? null : Math.floor((targetMs - nowMs) / 1000))
+
+  if (state === 'breached') {
+    const duration = remainingSeconds === null ? null : formatDurationCompact(Math.abs(remainingSeconds))
+    const isLive = conversation.sla_is_live === true && !isTerminal
+    if (!duration) return isLive ? 'SLA overdue' : 'SLA missed'
+    return isLive ? `SLA overdue ${duration}` : `SLA missed ${duration}`
+  }
+
+  if (remainingSeconds === null) return null
+  return `SLA ${formatDurationCompact(remainingSeconds)} left`
+}
+
+function fallbackSlaState(remainingSeconds: number): string {
+  if (remainingSeconds <= 0) return 'breached'
+  if (remainingSeconds <= 300) return 'at_risk'
+  return 'on_track'
+}
+
+function deriveFallbackSla(conversation: Conversation, targetMs: number | null, nowMs: number) {
+  if (conversation.sla_state) return null
+  if (targetMs === null) return null
+
+  const remainingSeconds = Math.floor((targetMs - nowMs) / 1000)
+  return {
+    state: fallbackSlaState(remainingSeconds),
+    label:
+      remainingSeconds <= 0
+        ? `SLA overdue ${formatDurationCompact(Math.abs(remainingSeconds))}`
+        : `SLA ${formatDurationCompact(remainingSeconds)} left`,
+  }
 }
 
 function toLabel(value: string): string {
@@ -165,19 +237,20 @@ export function ConversationListItem({
   const showQueueBadge = toLabel(queueState).toLowerCase() !== conversation.status.toLowerCase()
 
   const backlog = useMemo(() => {
-    const queueEnteredMs = toMs(conversation.queue_entered_at ?? conversation.started_at)
+    if (!shouldShowBacklog(conversation, queueState)) return null
+
+    const backlogStartMs = toMs(resolveBacklogStart(conversation, queueState))
     const backlogMinutes =
       conversation.backlog_minutes ??
-      (queueEnteredMs === null ? null : Math.max(0, Math.floor((nowMs - queueEnteredMs) / 60000)))
+      (backlogStartMs === null ? null : Math.max(0, Math.floor((nowMs - backlogStartMs) / 60000)))
     const backlogState = conversation.backlog_state ?? fallbackBacklogState(backlogMinutes)
 
     if (backlogMinutes === null) return null
     return {
-      minutes: backlogMinutes,
       state: backlogState,
-      label: `${backlogMinutes}m backlog`,
+      label: formatBacklogLabel(queueState, backlogMinutes),
     }
-  }, [conversation.backlog_minutes, conversation.backlog_state, conversation.queue_entered_at, conversation.started_at, nowMs])
+  }, [conversation, conversation.backlog_minutes, conversation.backlog_state, nowMs, queueState])
 
   const sla = useMemo(() => {
     const slaTarget = conversation.sla_target_at
@@ -186,35 +259,17 @@ export function ConversationListItem({
       ?? conversation.resolution_due_at
 
     const targetMs = toMs(slaTarget)
-    if (!targetMs) return null
+    const label = formatSlaLabel(conversation, targetMs, nowMs)
 
-    if (conversation.sla_state === 'met') {
+    if (conversation.sla_state && label) {
       return {
-        state: 'met',
-        label: 'SLA met',
+        state: conversation.sla_state,
+        label,
       }
     }
 
-    const remainingSeconds = Math.floor((targetMs - nowMs) / 1000)
-    if (remainingSeconds <= 0) {
-      return {
-        state: 'breached',
-        label: `SLA breached ${formatDurationCompact(Math.abs(remainingSeconds))}`,
-      }
-    }
-
-    return {
-      state: conversation.sla_state ?? (remainingSeconds <= 300 ? 'at_risk' : 'on_track'),
-      label: `SLA ${formatDurationCompact(remainingSeconds)} left`,
-    }
-  }, [
-    conversation.first_response_due_at,
-    conversation.next_response_due_at,
-    conversation.resolution_due_at,
-    conversation.sla_state,
-    conversation.sla_target_at,
-    nowMs,
-  ])
+    return deriveFallbackSla(conversation, targetMs, nowMs)
+  }, [conversation, nowMs])
 
   return (
     <button

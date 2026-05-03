@@ -178,7 +178,18 @@ function normalizeAction(value: unknown): { name: string | null; displayName: st
 }
 
 function deriveBacklogMinutes(row: ConversationRow, nowMs: number): number | null {
-  const startMs = toMs(row.queue_entered_at) ?? toMs(row.started_at)
+  const status = normalizeStatus(row.status)
+  const queue = normalizeQueueState(status, row.queue_state)
+  if (queue !== 'queued' && queue !== 'assigned' && queue !== 'in_progress') return null
+
+  const lastCustomerMs = toMs(row.last_customer_message_at)
+  const lastAgentMs = toMs(row.last_agent_reply_at)
+  const waitingOnAgent = lastCustomerMs !== null && (lastAgentMs === null || lastCustomerMs > lastAgentMs)
+  if (queue === 'in_progress' && !waitingOnAgent) return null
+
+  const startMs = queue === 'in_progress'
+    ? lastCustomerMs ?? toMs(row.queue_entered_at) ?? toMs(row.started_at)
+    : toMs(row.queue_entered_at) ?? lastCustomerMs ?? toMs(row.started_at)
   if (startMs === null) return null
   return Math.max(0, Math.floor((nowMs - startMs) / 60000))
 }
@@ -510,19 +521,21 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
 
     const queue = normalizeQueueState(status, row.queue_state)
     const minutes = deriveBacklogMinutes(row, nowMs)
-    const backlog = backlogState(minutes)
-    const queueStat = queueStats.get(queue) ?? {
-      state: queue,
-      count: 0,
-      critical: 0,
-      stale: 0,
-      totalBacklogMinutes: 0,
+    if (minutes !== null) {
+      const backlog = backlogState(minutes)
+      const queueStat = queueStats.get(queue) ?? {
+        state: queue,
+        count: 0,
+        critical: 0,
+        stale: 0,
+        totalBacklogMinutes: 0,
+      }
+      queueStat.count += 1
+      queueStat.totalBacklogMinutes += minutes
+      if (backlog === 'critical') queueStat.critical += 1
+      if (backlog === 'stale') queueStat.stale += 1
+      queueStats.set(queue, queueStat)
     }
-    queueStat.count += 1
-    queueStat.totalBacklogMinutes += minutes ?? 0
-    if (backlog === 'critical') queueStat.critical += 1
-    if (backlog === 'stale') queueStat.stale += 1
-    queueStats.set(queue, queueStat)
 
     if ((sla.state === 'breached' || sla.state === 'at_risk') && status !== 'resolved') {
       const contact = normalizeContact(row.contacts)

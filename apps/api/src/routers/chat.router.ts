@@ -3,6 +3,14 @@ import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 import { routePendingConversation } from '../services/inbox-ops.service'
+import {
+  deriveInboxBacklog,
+  deriveInboxSla,
+  normalizeQueueState,
+  type BacklogState,
+  type SlaStage,
+  type SlaState,
+} from '../lib/inbox-metrics'
 
 const statusFilterSchema = z.enum(['all', 'bot', 'open', 'pending', 'resolved'])
 const channelFilterSchema = z.enum(['all', 'chat', 'email', 'whatsapp'])
@@ -15,9 +23,6 @@ const queueFilterSchema = z.enum([
   'waiting_customer',
   'resolved',
 ])
-
-type BacklogState = 'fresh' | 'watch' | 'stale' | 'critical' | null
-type SlaState = 'on_track' | 'at_risk' | 'breached' | 'met' | null
 
 function cleanSearchValue(value: string): string {
   return value.replace(/[,%()]/g, ' ').trim()
@@ -76,93 +81,6 @@ function normalizeLabels(labels: string[]): string[] {
   return output
 }
 
-function toMs(value: string | null | undefined): number | null {
-  if (!value) return null
-  const ms = new Date(value).getTime()
-  return Number.isFinite(ms) ? ms : null
-}
-
-function normalizeQueueState(status: string, queueState: string | null | undefined): string {
-  if (queueState?.trim()) return queueState
-  if (status === 'resolved' || status === 'closed') return 'resolved'
-  if (status === 'bot') return 'bot'
-  if (status === 'open') return 'in_progress'
-  if (status === 'pending') return 'queued'
-  return 'queued'
-}
-
-function backlogStateFromMinutes(value: number | null): BacklogState {
-  if (value === null || Number.isNaN(value)) return null
-  if (value <= 15) return 'fresh'
-  if (value <= 45) return 'watch'
-  if (value <= 120) return 'stale'
-  return 'critical'
-}
-
-function deriveSlaSnapshot(row: {
-  status: string
-  first_response_due_at: string | null
-  next_response_due_at: string | null
-  resolution_due_at: string | null
-  first_response_at: string | null
-  last_customer_message_at: string | null
-  last_agent_reply_at: string | null
-  resolved_at: string | null
-  nowMs: number
-}): {
-  slaState: SlaState
-  slaTargetAt: string | null
-  slaRemainingSeconds: number | null
-} {
-  const nowMs = row.nowMs
-  const status = row.status
-
-  if (status === 'resolved' || status === 'closed') {
-    const resolutionDueMs = toMs(row.resolution_due_at)
-    const resolvedAtMs = toMs(row.resolved_at)
-    if (!resolutionDueMs || !resolvedAtMs) {
-      return { slaState: null, slaTargetAt: row.resolution_due_at ?? null, slaRemainingSeconds: null }
-    }
-
-    return {
-      slaState: resolvedAtMs <= resolutionDueMs ? 'met' : 'breached',
-      slaTargetAt: row.resolution_due_at ?? null,
-      slaRemainingSeconds: Math.floor((resolutionDueMs - resolvedAtMs) / 1000),
-    }
-  }
-
-  if (!row.first_response_at) {
-    const firstDueMs = toMs(row.first_response_due_at)
-    if (!firstDueMs) {
-      return { slaState: null, slaTargetAt: row.first_response_due_at ?? null, slaRemainingSeconds: null }
-    }
-    const remaining = Math.floor((firstDueMs - nowMs) / 1000)
-    return {
-      slaState: remaining <= 0 ? 'breached' : remaining <= 300 ? 'at_risk' : 'on_track',
-      slaTargetAt: row.first_response_due_at ?? null,
-      slaRemainingSeconds: remaining,
-    }
-  }
-
-  const lastCustomerMs = toMs(row.last_customer_message_at)
-  const lastAgentMs = toMs(row.last_agent_reply_at)
-  const waitingOnAgent =
-    lastCustomerMs !== null && (lastAgentMs === null || lastCustomerMs > lastAgentMs)
-  const targetAt = waitingOnAgent ? row.next_response_due_at : row.resolution_due_at
-  const targetMs = toMs(targetAt)
-
-  if (!targetMs) {
-    return { slaState: null, slaTargetAt: targetAt ?? null, slaRemainingSeconds: null }
-  }
-
-  const remaining = Math.floor((targetMs - nowMs) / 1000)
-  return {
-    slaState: remaining <= 0 ? 'breached' : remaining <= 300 ? 'at_risk' : 'on_track',
-    slaTargetAt: targetAt ?? null,
-    slaRemainingSeconds: remaining,
-  }
-}
-
 type ConversationListItem = {
   id: string
   org_id: string
@@ -185,6 +103,8 @@ type ConversationListItem = {
   sla_target_at: string | null
   sla_state: SlaState
   sla_remaining_seconds: number | null
+  sla_stage: SlaStage
+  sla_is_live: boolean
   contacts: {
     id: string
     name: string | null
@@ -471,15 +391,12 @@ export const chatRouter = router({
       const items: ConversationListItem[] = rows.map((row) => {
         const latestMessage = latestMessageByConversation.get(row.id)
         const latestEmail = latestEmailByConversation.get(row.id)
-        const normalizedQueueState = normalizeQueueState(row.status, row.queue_state)
-        const queueEnteredMs = toMs(row.queue_entered_at ?? row.started_at)
-        const backlogMinutes =
-          queueEnteredMs === null
-            ? null
-            : Math.max(0, Math.floor((nowMs - queueEnteredMs) / 60000))
-        const backlogState = backlogStateFromMinutes(backlogMinutes)
-        const sla = deriveSlaSnapshot({
+        const metricRow = {
           status: row.status,
+          queue_state: row.queue_state,
+          assigned_to: row.assigned_to,
+          started_at: row.started_at,
+          queue_entered_at: row.queue_entered_at,
           first_response_due_at: row.first_response_due_at,
           next_response_due_at: row.next_response_due_at,
           resolution_due_at: row.resolution_due_at,
@@ -487,8 +404,10 @@ export const chatRouter = router({
           last_customer_message_at: row.last_customer_message_at,
           last_agent_reply_at: row.last_agent_reply_at,
           resolved_at: row.resolved_at,
-          nowMs,
-        })
+        }
+        const normalizedQueueState = normalizeQueueState(metricRow)
+        const backlog = deriveInboxBacklog(metricRow, nowMs)
+        const sla = deriveInboxSla(metricRow, nowMs)
 
         const assignedAgent = row.assigned_to
           ? assignedAgentById.get(row.assigned_to) ?? null
@@ -513,11 +432,13 @@ export const chatRouter = router({
           last_customer_message_at: row.last_customer_message_at,
           last_agent_reply_at: row.last_agent_reply_at,
           routing_assigned_at: row.routing_assigned_at,
-          backlog_minutes: backlogMinutes,
-          backlog_state: backlogState,
+          backlog_minutes: backlog.backlogMinutes,
+          backlog_state: backlog.backlogState,
           sla_target_at: sla.slaTargetAt,
           sla_state: sla.slaState,
           sla_remaining_seconds: sla.slaRemainingSeconds,
+          sla_stage: sla.slaStage,
+          sla_is_live: sla.slaIsLive,
           contacts: normalizeContact(row.contacts),
           latest_message_content: latestMessage?.content ?? null,
           latest_message_at: latestMessage?.created_at ?? null,
