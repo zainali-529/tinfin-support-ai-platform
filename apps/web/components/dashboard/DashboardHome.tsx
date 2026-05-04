@@ -7,12 +7,9 @@ import { cn } from '@workspace/ui/lib/utils'
 import {
   BarChart3Icon,
   BookOpenIcon,
-  Clock3Icon,
   InboxIcon,
   RefreshCwIcon,
   Settings2Icon,
-  ShieldCheckIcon,
-  SparklesIcon,
 } from 'lucide-react'
 import { useActiveOrg } from '@/components/org/OrgContext'
 import { DashboardActivityFeed } from './DashboardActivityFeed'
@@ -68,97 +65,56 @@ export function DashboardHome() {
     refetchAll,
   } = useDashboard()
 
-  const riskCount = overview.summary.slaAtRiskConversations + overview.summary.slaBreachedConversations
-  const healthLabel = riskCount > 0 ? `${riskCount} SLA items need attention` : 'Operations are steady'
-
   return (
     <div className="flex flex-col gap-5">
-      <Card className="overflow-hidden border bg-card shadow-none">
-        <CardContent className="p-0">
-          <div className="grid gap-0 lg:grid-cols-[1.35fr_0.65fr]">
-            <div className="space-y-6 p-5 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Synced {formatUpdatedAt(overview.updatedAt)}
-                  </div>
-                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                    {greeting()}, {activeOrg.name}
-                  </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    A command center for workload, channels, automation, and launch readiness. Keep an eye on what needs action before customers feel the delay.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-xl border bg-muted/30 p-1">
-                    {PERIOD_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setPeriod(option.value)}
-                        className={cn(
-                          'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                          period === option.value
-                            ? 'bg-background text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={refetchAll}>
-                    <RefreshCwIcon className={cn('size-3.5', isFetching && 'animate-spin')} />
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border bg-muted/20 p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <ShieldCheckIcon className="size-4 text-emerald-500" />
-                    Health
-                  </div>
-                  <p className="mt-2 text-lg font-semibold tracking-tight">{healthLabel}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">SLA and queue pressure summary.</p>
-                </div>
-                <div className="rounded-2xl border bg-muted/20 p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <SparklesIcon className="size-4 text-primary" />
-                    Automation
-                  </div>
-                  <p className="mt-2 text-lg font-semibold tracking-tight">{overview.summary.aiHandledRate}% AI assist</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{overview.summary.activeAiActions} active actions configured.</p>
-                </div>
-                <div className="rounded-2xl border bg-muted/20 p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Clock3Icon className="size-4 text-amber-500" />
-                    Queue
-                  </div>
-                  <p className="mt-2 text-lg font-semibold tracking-tight">{overview.queue.totalActive} active threads</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{overview.queue.unassigned} need ownership.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t bg-muted/20 p-5 lg:border-l lg:border-t-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Quick actions</p>
-              <div className="mt-4 grid gap-2">
-                {QUICK_ACTIONS.map((action) => (
-                  <Button key={action.href} variant="outline" className="h-11 justify-start gap-2 bg-background" asChild>
-                    <Link href={action.href}>
-                      <action.icon className="size-4" />
-                      {action.label}
-                    </Link>
-                  </Button>
-                ))}
-              </div>
-            </div>
+      <section className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+        <div className="min-w-0">
+          <div className="mb-2 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Synced {formatUpdatedAt(overview.updatedAt)}
           </div>
-        </CardContent>
-      </Card>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {greeting()}, {activeOrg.name}
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Monitor workload, channels, automation, and launch readiness from one place.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-xl border bg-muted/30 p-1">
+            {PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setPeriod(option.value)}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                  period === option.value
+                    ? 'bg-background text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={refetchAll}>
+            <RefreshCwIcon className={cn('size-3.5', isFetching && 'animate-spin')} />
+            Refresh
+          </Button>
+          <div className="hidden items-center gap-2 lg:flex">
+            {QUICK_ACTIONS.map((action) => (
+              <Button key={action.href} variant="outline" size="sm" className="gap-1.5 bg-background" asChild>
+                <Link href={action.href}>
+                  <action.icon className="size-3.5" />
+                  {action.label}
+                </Link>
+              </Button>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {errorMessage && (
         <Card className="border-destructive/30 shadow-none">
@@ -185,7 +141,12 @@ export function DashboardHome() {
         </div>
       </div>
 
-      <DashboardOnboardingCard onboarding={onboarding} isLoading={isLoading} />
+      <DashboardOnboardingCard
+        onboarding={onboarding}
+        isLoading={isLoading}
+        isVerifying={isFetching}
+        onVerify={refetchAll}
+      />
     </div>
   )
 }

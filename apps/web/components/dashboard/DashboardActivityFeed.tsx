@@ -51,24 +51,26 @@ export function DashboardActivityFeed({
   isLoading,
 }: DashboardActivityFeedProps) {
   return (
-    <Card className="h-full shadow-none">
-      <CardHeader>
+    <Card className="h-full overflow-hidden shadow-none">
+      <CardHeader className="border-b bg-muted/10 pb-3">
         <CardTitle className="text-base">Activity Feed</CardTitle>
         <CardDescription className="text-xs">
           Recent support events in your org
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2.5">
+      <CardContent className="p-0">
         {isLoading &&
-          Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="rounded-lg border p-3">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="mt-2 h-3 w-full" />
-            </div>
-          ))}
+          <div className="space-y-2.5 p-4">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="rounded-lg border p-3">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="mt-2 h-3 w-full" />
+              </div>
+            ))}
+          </div>}
 
         {!isLoading && items.length === 0 && (
-          <div className="rounded-lg border border-dashed px-4 py-8 text-center">
+          <div className="m-4 rounded-lg border border-dashed px-4 py-8 text-center">
             <p className="text-sm font-medium">No activity yet</p>
             <p className="mt-1 text-xs text-muted-foreground">
               New messages and conversation updates will appear here.
@@ -76,10 +78,11 @@ export function DashboardActivityFeed({
           </div>
         )}
 
-        {!isLoading &&
-          items.map((item) => {
+        {!isLoading && items.length > 0 && (
+          <div className="max-h-[420px] space-y-2 overflow-y-auto p-4">
+            {items.map((item) => {
             const content = (
-              <div className="rounded-xl border px-3 py-3 transition-colors hover:bg-muted/40">
+              <div className="rounded-xl border px-3 py-2.5 transition-colors hover:bg-muted/40">
                 <div className="flex items-start gap-2.5">
                   <div className="mt-0.5 rounded-md bg-muted p-1.5 text-muted-foreground">
                     <ActivityIcon type={item.type} />
@@ -108,7 +111,9 @@ export function DashboardActivityFeed({
             }
 
             return <div key={item.id}>{content}</div>
-          })}
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

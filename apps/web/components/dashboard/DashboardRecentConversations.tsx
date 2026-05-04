@@ -49,8 +49,8 @@ export function DashboardRecentConversations({
   isLoading,
 }: DashboardRecentConversationsProps) {
   return (
-    <Card className="h-full shadow-none">
-      <CardHeader className="flex-row items-center justify-between">
+    <Card className="h-full overflow-hidden shadow-none">
+      <CardHeader className="flex-row items-center justify-between border-b bg-muted/10 pb-3">
         <div>
           <CardTitle className="text-base">Recent Conversations</CardTitle>
           <CardDescription className="text-xs">
@@ -64,18 +64,20 @@ export function DashboardRecentConversations({
           </Link>
         </Button>
       </CardHeader>
-      <CardContent className="space-y-2.5">
+      <CardContent className="p-0">
         {isLoading &&
-          Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="rounded-lg border p-3">
-              <Skeleton className="h-4 w-36" />
-              <Skeleton className="mt-2 h-3 w-full" />
-              <Skeleton className="mt-2 h-3 w-24" />
-            </div>
-          ))}
+          <div className="space-y-2.5 p-4">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="rounded-lg border p-3">
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="mt-2 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-24" />
+              </div>
+            ))}
+          </div>}
 
         {!isLoading && conversations.length === 0 && (
-          <div className="rounded-lg border border-dashed px-4 py-8 text-center">
+          <div className="m-4 rounded-lg border border-dashed px-4 py-8 text-center">
             <p className="text-sm font-medium">No conversations yet</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Install your widget or connect channels to start receiving support
@@ -84,12 +86,13 @@ export function DashboardRecentConversations({
           </div>
         )}
 
-        {!isLoading &&
-          conversations.map((conversation) => (
+        {!isLoading && conversations.length > 0 && (
+          <div className="max-h-[420px] space-y-2 overflow-y-auto p-4">
+            {conversations.map((conversation) => (
             <Link
               key={conversation.id}
               href={conversation.href}
-              className="block rounded-xl border px-3 py-3 transition-colors hover:bg-muted/40"
+              className="block rounded-xl border px-3 py-2.5 transition-colors hover:bg-muted/40"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -119,7 +122,9 @@ export function DashboardRecentConversations({
                 )}
               </div>
             </Link>
-          ))}
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

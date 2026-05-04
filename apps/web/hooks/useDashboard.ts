@@ -76,11 +76,17 @@ export interface DashboardActivityItem {
 
 export interface DashboardOnboardingStep {
   key: string
+  category: string
   title: string
   description: string
   href: string
+  ctaLabel: string
+  docsHref: string
+  verifyLabel: string
   completed: boolean
   locked: boolean
+  status: 'complete' | 'ready' | 'todo' | 'locked'
+  statusDetail: string
 }
 
 export interface DashboardOnboarding {

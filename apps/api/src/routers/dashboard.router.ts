@@ -99,6 +99,20 @@ function previewText(content: string | null | undefined): string {
   return `${clean.slice(0, 117)}...`
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function hasArrayItems(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0
+}
+
+function cleanText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 export const dashboardRouter = router({
   getHomeOverview: protectedProcedure
     .input(periodSchema)
@@ -685,21 +699,35 @@ export const dashboardRouter = router({
     const [
       subscriptionResult,
       widgetResult,
-      knowledgeResult,
+      knowledgeBaseResult,
+      knowledgeChunkResult,
       emailResult,
       whatsappResult,
       conversationResult,
+      chatConversationResult,
+      userMessageResult,
+      assistantMessageResult,
       handledResult,
+      teamMemberResult,
+      pendingInviteResult,
+      slaPolicyResult,
+      activeAiActionsResult,
     ] = await Promise.all([
       getOrgSubscription(ctx.supabase, ctx.userOrgId),
 
       ctx.supabase
         .from('widget_configs')
+        .select('id,company_name,welcome_message,logo_url,primary_color,settings')
+        .eq('org_id', ctx.userOrgId)
+        .maybeSingle(),
+
+      ctx.supabase
+        .from('knowledge_bases')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', ctx.userOrgId),
 
       ctx.supabase
-        .from('knowledge_bases')
+        .from('kb_chunks')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', ctx.userOrgId),
 
@@ -721,19 +749,67 @@ export const dashboardRouter = router({
         .eq('org_id', ctx.userOrgId),
 
       ctx.supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId)
+        .eq('channel', 'chat'),
+
+      ctx.supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId)
+        .eq('role', 'user'),
+
+      ctx.supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId)
+        .eq('role', 'assistant'),
+
+      ctx.supabase
         .from('messages')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', ctx.userOrgId)
         .eq('role', 'agent'),
+
+      ctx.supabase
+        .from('user_organizations')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId),
+
+      ctx.supabase
+        .from('org_invitations')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId)
+        .eq('status', 'pending'),
+
+      ctx.supabase
+        .from('inbox_sla_policies')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId),
+
+      ctx.supabase
+        .from('ai_actions')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', ctx.userOrgId)
+        .eq('is_active', true),
     ])
 
     const queryErrors = [
       widgetResult.error,
-      knowledgeResult.error,
+      knowledgeBaseResult.error,
+      knowledgeChunkResult.error,
       emailResult.error,
       whatsappResult.error,
       conversationResult.error,
+      chatConversationResult.error,
+      userMessageResult.error,
+      assistantMessageResult.error,
       handledResult.error,
+      teamMemberResult.error,
+      pendingInviteResult.error,
+      slaPolicyResult.error,
+      activeAiActionsResult.error,
     ].filter(Boolean)
 
     if (queryErrors.length > 0) {
@@ -746,57 +822,250 @@ export const dashboardRouter = router({
     const planId = subscriptionResult.planId || 'free'
     const plan = getPlan(planId)
     const canManageWidget = ctx.userPermissions.widget === true
+    const canManageKnowledge = ctx.userPermissions.knowledge === true
     const canManageChannels = ctx.userPermissions.channels === true
+    const canManageInbox = ctx.userPermissions.inbox === true
+    const canInviteTeam = ctx.userRole === 'admin'
+    const canManageActions = ctx.userRole === 'admin'
 
-    const hasWidget = toCount(widgetResult) > 0
-    const hasKnowledgeBase = toCount(knowledgeResult) > 0
-    const hasEmailConnected = Boolean((emailResult.data as { id: string } | null)?.id)
+    const widgetData = widgetResult.data as {
+      id?: string
+      company_name?: string | null
+      welcome_message?: string | null
+      logo_url?: string | null
+      primary_color?: string | null
+      settings?: unknown
+    } | null
+    const widgetSettings = asRecord(widgetData?.settings)
+    const hasWidgetRow = Boolean(widgetData?.id)
+    const hasWidgetProfile = Boolean(
+      widgetData?.id &&
+        (
+          cleanText(widgetData.company_name).length > 0 ||
+          cleanText(widgetData.logo_url).length > 0 ||
+          cleanText(widgetSettings.botName).length > 0 ||
+          cleanText(widgetSettings.responseTimeText).length > 0 ||
+          hasArrayItems(widgetSettings.suggestions) ||
+          hasArrayItems(widgetSettings.helpItems) ||
+          cleanText(widgetData.welcome_message) !== '' && cleanText(widgetData.welcome_message) !== 'Hi! How can we help?'
+        )
+    )
+    const hasKnowledgeBase = toCount(knowledgeBaseResult) > 0
+    const hasKnowledgeSource = toCount(knowledgeChunkResult) > 0
+    const hasEmailConnected = Boolean((emailResult.data as { id: string; is_active?: boolean } | null)?.id && (emailResult.data as { is_active?: boolean } | null)?.is_active !== false)
     const hasWhatsAppConnected = Boolean(
-      (whatsappResult.data as { id: string } | null)?.id
+      (whatsappResult.data as { id: string; is_active?: boolean } | null)?.id &&
+        (whatsappResult.data as { is_active?: boolean } | null)?.is_active !== false
     )
     const hasAnyConversation = toCount(conversationResult) > 0
+    const hasChatConversation = toCount(chatConversationResult) > 0
+    const hasUserMessage = toCount(userMessageResult) > 0
+    const hasAssistantMessage = toCount(assistantMessageResult) > 0
     const hasHandledConversation = toCount(handledResult) > 0
+    const hasTeamMemberOrInvite =
+      toCount(teamMemberResult) > 1 || toCount(pendingInviteResult) > 0
+    const hasSlaPolicy = toCount(slaPolicyResult) > 0
+    const hasActiveAiAction = toCount(activeAiActionsResult) > 0
+
+    const stepStatus = (completed: boolean, locked: boolean, ready: boolean) => {
+      if (completed) return 'complete'
+      if (locked) return 'locked'
+      if (ready) return 'ready'
+      return 'todo'
+    }
 
     const steps = [
       {
-        key: 'widget',
-        title: 'Install chat widget',
-        description: 'Enable your website widget to start receiving messages.',
-        href: '/widget',
-        completed: hasWidget,
-        locked: !canManageWidget,
+        key: 'organization',
+        title: 'Create organization',
+        description: 'Your active workspace is created and ready for setup.',
+        href: '/organizations',
+        ctaLabel: 'Manage org',
+        docsHref: '/docs/getting-started/workspace-setup',
+        verifyLabel: 'Verify org',
+        category: 'Workspace',
+        completed: true,
+        locked: false,
+        status: 'complete',
+        statusDetail: 'Active organization found.',
       },
       {
-        key: 'knowledge',
-        title: 'Add knowledge base',
-        description: 'Upload docs so AI can answer with your product context.',
+        key: 'widget_profile',
+        title: 'Add widget profile',
+        description: 'Set company name, assistant identity, welcome copy, theme, suggestions, or help content.',
+        href: '/widget',
+        ctaLabel: hasWidgetRow ? 'Customize' : 'Create profile',
+        docsHref: '/docs/widget/customization',
+        verifyLabel: 'Check profile',
+        category: 'Widget',
+        completed: hasWidgetProfile,
+        locked: !canManageWidget,
+        status: stepStatus(hasWidgetProfile, !canManageWidget, hasWidgetRow),
+        statusDetail: hasWidgetProfile
+          ? 'Widget profile has custom branding or content.'
+          : hasWidgetRow
+            ? 'Default widget exists. Customize it before launch.'
+            : 'Create the widget profile first.',
+      },
+      {
+        key: 'install_widget',
+        title: 'Install widget',
+        description: 'Place the script on a staging or production website and confirm the widget can load.',
+        href: '/embedding',
+        ctaLabel: 'Get script',
+        docsHref: '/docs/widget/install',
+        verifyLabel: 'Check install',
+        category: 'Widget',
+        completed: hasChatConversation,
+        locked: !canManageWidget,
+        status: stepStatus(hasChatConversation, !canManageWidget, hasWidgetProfile),
+        statusDetail: hasChatConversation
+          ? 'A chat conversation has reached this workspace.'
+          : hasWidgetProfile
+            ? 'Install the embed script, then send a test message.'
+            : 'Complete the widget profile before installing.',
+      },
+      {
+        key: 'knowledge_source',
+        title: 'Add first knowledge source',
+        description: 'Add a text note, URL, or document so AI has approved context.',
         href: '/knowledge',
-        completed: hasKnowledgeBase,
-        locked: false,
+        ctaLabel: hasKnowledgeBase ? 'Add source' : 'Create KB',
+        docsHref: '/docs/ai/knowledge-base',
+        verifyLabel: 'Check source',
+        category: 'AI',
+        completed: hasKnowledgeSource,
+        locked: !canManageKnowledge,
+        status: stepStatus(hasKnowledgeSource, !canManageKnowledge, hasKnowledgeBase),
+        statusDetail: hasKnowledgeSource
+          ? `${toCount(knowledgeChunkResult)} knowledge chunks indexed.`
+          : hasKnowledgeBase
+            ? 'Knowledge base exists. Add at least one source.'
+            : 'Create a knowledge base and add a source.',
+      },
+      {
+        key: 'test_ai_answer',
+        title: 'Test AI answer',
+        description: 'Ask a source-backed question from the widget and confirm the assistant replies correctly.',
+        href: '/widget',
+        ctaLabel: 'Open widget',
+        docsHref: '/docs/ai/response-quality',
+        verifyLabel: 'Check reply',
+        category: 'AI',
+        completed: hasKnowledgeSource && hasAssistantMessage,
+        locked: !canManageWidget,
+        status: stepStatus(hasKnowledgeSource && hasAssistantMessage, !canManageWidget, hasKnowledgeSource),
+        statusDetail: hasKnowledgeSource && hasAssistantMessage
+          ? 'At least one AI reply exists after knowledge setup.'
+          : hasKnowledgeSource
+            ? 'Ask a real test question from the widget.'
+            : 'Add a knowledge source before testing AI.',
       },
       {
         key: 'email',
         title: 'Connect email channel',
         description: 'Allow customers to contact you through support email.',
-        href: '/settings/channels',
+        href: plan.features.emailChannel && canManageChannels ? '/email-settings' : '/billing',
+        ctaLabel: plan.features.emailChannel ? 'Connect email' : 'View plans',
+        docsHref: '/docs/channels/email',
+        verifyLabel: 'Check email',
+        category: 'Channels',
         completed: hasEmailConnected,
         locked: !canManageChannels || !plan.features.emailChannel,
+        status: stepStatus(hasEmailConnected, !canManageChannels || !plan.features.emailChannel, true),
+        statusDetail: hasEmailConnected
+          ? 'Email account is active.'
+          : !plan.features.emailChannel
+            ? 'Email is available on Pro and Scale.'
+            : 'Connect an active email account.',
       },
       {
         key: 'whatsapp',
         title: 'Connect WhatsApp channel',
         description: 'Enable WhatsApp support in your unified inbox.',
-        href: '/settings/channels/whatsapp',
+        href: plan.features.whatsappChannel && canManageChannels ? '/settings/channels/whatsapp' : '/billing',
+        ctaLabel: plan.features.whatsappChannel ? 'Connect WhatsApp' : 'View plans',
+        docsHref: '/docs/channels/whatsapp',
+        verifyLabel: 'Check WhatsApp',
+        category: 'Channels',
         completed: hasWhatsAppConnected,
         locked: !canManageChannels || !plan.features.whatsappChannel,
+        status: stepStatus(hasWhatsAppConnected, !canManageChannels || !plan.features.whatsappChannel, true),
+        statusDetail: hasWhatsAppConnected
+          ? 'WhatsApp account is active.'
+          : !plan.features.whatsappChannel
+            ? 'WhatsApp is available on Pro and Scale.'
+            : 'Connect an active WhatsApp account.',
       },
       {
-        key: 'first_conversation',
-        title: 'Handle first conversation',
-        description: 'Reply as an agent and close your first support thread.',
+        key: 'team_member',
+        title: 'Invite team member',
+        description: 'Invite at least one teammate or keep a pending invite ready.',
+        href: '/team',
+        ctaLabel: 'Invite team',
+        docsHref: '/docs/admin/team-permissions',
+        verifyLabel: 'Check team',
+        category: 'Team',
+        completed: hasTeamMemberOrInvite,
+        locked: !canInviteTeam || !plan.features.teamMembers,
+        status: stepStatus(hasTeamMemberOrInvite, !canInviteTeam || !plan.features.teamMembers, true),
+        statusDetail: hasTeamMemberOrInvite
+          ? 'Team member or pending invite found.'
+          : !plan.features.teamMembers
+            ? 'Team seats are available on paid plans.'
+            : 'Invite one teammate before launch.',
+      },
+      {
+        key: 'sla',
+        title: 'Configure SLA',
+        description: 'Create SLA targets so backlog, risk, and breached conversations are measurable.',
         href: '/inbox',
-        completed: hasHandledConversation,
+        ctaLabel: 'Open inbox',
+        docsHref: '/docs/inbox/sla-backlog',
+        verifyLabel: 'Check SLA',
+        category: 'Operations',
+        completed: hasSlaPolicy,
+        locked: !canManageInbox,
+        status: stepStatus(hasSlaPolicy, !canManageInbox, true),
+        statusDetail: hasSlaPolicy
+          ? `${toCount(slaPolicyResult)} SLA policy row found.`
+          : 'Create or seed the default SLA policy before launch.',
+      },
+      {
+        key: 'ai_action',
+        title: 'Create first AI action',
+        description: 'Add one safe read action, such as order lookup or account status.',
+        href: '/ai-actions',
+        ctaLabel: 'Create action',
+        docsHref: '/docs/ai/actions-v1',
+        verifyLabel: 'Check action',
+        category: 'Automation',
+        completed: hasActiveAiAction,
+        locked: !canManageActions,
+        status: stepStatus(hasActiveAiAction, !canManageActions, hasKnowledgeSource),
+        statusDetail: hasActiveAiAction
+          ? 'Active AI action found.'
+          : hasKnowledgeSource
+            ? 'Create a read-only test action first.'
+            : 'Add knowledge first, then create a safe action.',
+      },
+      {
+        key: 'test_conversation',
+        title: 'Send test conversation',
+        description: 'Send a visitor message, confirm realtime inbox delivery, and reply as an agent.',
+        href: hasAnyConversation ? '/inbox' : '/widget',
+        ctaLabel: hasAnyConversation ? 'Open test' : 'Start test',
+        docsHref: '/docs/widget/testing',
+        verifyLabel: 'Check test',
+        category: 'QA',
+        completed: hasUserMessage && hasHandledConversation,
         locked: false,
+        status: stepStatus(hasUserMessage && hasHandledConversation, false, hasWidgetProfile),
+        statusDetail: hasUserMessage && hasHandledConversation
+          ? 'Visitor message and agent reply found.'
+          : hasUserMessage
+            ? 'Visitor message found. Reply once from the inbox.'
+            : 'Send a widget test message to verify realtime flow.',
       },
     ]
 
