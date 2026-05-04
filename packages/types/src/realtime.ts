@@ -68,6 +68,14 @@ export interface RealtimeConversationSnapshot {
   assigned_agent_email?: string | null
 }
 
+export interface RealtimeAiSource {
+  title?: string | null
+  url?: string | null
+  similarity?: number | null
+  sourceType?: string | null
+  pinned?: boolean
+}
+
 export type AgentRealtimeEvent =
   | {
       type: 'conversation:new'
@@ -111,6 +119,9 @@ export type AgentRealtimeEvent =
       channel?: string | null
       content?: string
       confidence?: number
+      sources?: RealtimeAiSource[]
+      answerType?: string
+      tokensUsed?: number
       handoff?: boolean
       requiresConfirmation?: boolean
       actionLog?: Record<string, unknown> | null

@@ -382,6 +382,9 @@ async function triggerAIAutoReply(
           channel: 'email',
           source: 'auto_reply',
           type: ragResult.type,
+          confidence: ragResult.confidence,
+          sources: ragResult.sources,
+          tokensUsed: ragResult.tokensUsed,
           resendId: sendResult.resendId,
         },
       })
@@ -414,6 +417,10 @@ async function triggerAIAutoReply(
       conversationId,
       channel: 'email',
       content: ragResult.message,
+      confidence: ragResult.confidence,
+      sources: ragResult.sources,
+      answerType: ragResult.type,
+      tokensUsed: ragResult.tokensUsed,
       createdAt: new Date().toISOString(),
     })
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties, type ComponentType } from 'react'
 import { cn } from '@workspace/ui/lib/utils'
+import { PreviewMessageMarkdown } from './PreviewMessageMarkdown'
 import { ArrowLeftIcon, HelpCircleIcon, InboxIcon, MessageCircleIcon, SendIcon, ZapIcon } from 'lucide-react'
 
 interface WidgetThemeColors {
@@ -267,7 +268,7 @@ export function WidgetPreview({ config }: Props) {
                             : `${Math.max(borderRadius - 7, 10)}px ${Math.max(borderRadius - 7, 10)}px ${Math.max(borderRadius - 7, 10)}px 4px`,
                         }}
                       >
-                        {message.content}
+                        {message.role === 'user' ? message.content : <PreviewMessageMarkdown content={message.content} />}
                       </div>
                     </div>
                   </div>

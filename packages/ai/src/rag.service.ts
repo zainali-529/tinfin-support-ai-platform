@@ -203,7 +203,9 @@ ${hasStrongContext
 3. Never answer questions about topics outside the provided knowledge base.
 4. Always respond in the same language the user is writing in.
 5. Be warm, professional, and human.
-6. Keep responses concise but complete.`.trim()
+6. Keep responses concise but complete.
+7. Format longer answers with clean Markdown: short paragraphs, numbered steps, bullets, and fenced code blocks for commands/code.
+8. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.`.trim()
 }
 
 async function generateContextualResponse(

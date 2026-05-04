@@ -11,6 +11,7 @@ import {
   BackIcon,
 } from './icons'
 import { STYLES } from './styles'
+import { MessageMarkdown } from './MessageMarkdown'
 import type { WidgetConfig, VisitorInfo } from './types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -870,7 +871,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                                 <div
                                   className={`bubble ${isUser ? 'user' : isAgent ? 'agent' : 'bot'}`}
                                 >
-                                  {msg.content}
+                                  {isUser ? msg.content : <MessageMarkdown content={msg.content} />}
                                 </div>
                               )}
 

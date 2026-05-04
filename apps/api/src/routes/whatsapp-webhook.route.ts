@@ -285,6 +285,9 @@ async function triggerAIAutoReply(params: {
           channel: "whatsapp",
           source: "auto_reply",
           type: ragResult.type,
+          confidence: ragResult.confidence,
+          sources: ragResult.sources,
+          tokensUsed: ragResult.tokensUsed,
           waMessageId: outbound.waMessageId,
         },
       })
@@ -310,6 +313,10 @@ async function triggerAIAutoReply(params: {
       conversationId,
       channel: "whatsapp",
       content: ragResult.message,
+      confidence: ragResult.confidence,
+      sources: ragResult.sources,
+      answerType: ragResult.type,
+      tokensUsed: ragResult.tokensUsed,
       createdAt: new Date().toISOString(),
     })
   } catch (err) {

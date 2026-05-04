@@ -70,6 +70,8 @@ function conversationMatchesSavedView(
       return conversation.channel === 'whatsapp'
     case 'ai_handled':
       return conversation.status === 'bot' || conversation.queue_state === 'bot'
+    case 'low_confidence':
+      return false
     case 'actions_failed':
       return false
     case 'all':

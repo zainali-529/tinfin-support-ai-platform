@@ -11,6 +11,7 @@ import {
   InboxIcon,
   MailIcon,
   MessageCircleIcon,
+  ShieldAlertIcon,
   UserCheckIcon,
   UserIcon,
   UserRoundXIcon,
@@ -105,6 +106,13 @@ export const INBOX_SAVED_VIEWS: SavedViewDefinition[] = [
     description: 'Bot mode',
     icon: BotIcon,
     tone: 'info',
+  },
+  {
+    id: 'low_confidence',
+    label: 'Low confidence',
+    description: 'Improve KB',
+    icon: ShieldAlertIcon,
+    tone: 'warning',
   },
   {
     id: 'actions_failed',

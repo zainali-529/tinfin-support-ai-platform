@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@workspace/ui/components/dropdown-menu'
-import { SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
+import { SearchIcon, ShieldAlertIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
 import { useAgentRealtimeListener } from '@/components/realtime/AgentRealtimeProvider'
 import { useActiveOrg } from '@/components/org/OrgContext'
@@ -159,6 +159,10 @@ export function UnifiedInbox() {
   const savedViewCountsQuery = trpc.chat.getSavedViewCounts.useQuery(undefined, {
     staleTime: 15_000,
     refetchInterval: 30_000,
+  })
+  const aiTrustStatsQuery = trpc.chat.getAiTrustStats.useQuery(undefined, {
+    staleTime: 20_000,
+    refetchInterval: 45_000,
   })
   const pendingApprovalsQuery = trpc.actions.getPendingApprovals.useQuery(undefined, {
     staleTime: 10_000,
@@ -292,11 +296,13 @@ export function UnifiedInbox() {
       void refetch()
       void utils.dashboard.getHomeOverview.invalidate()
       void utils.chat.getSavedViewCounts.invalidate()
+      void utils.chat.getAiTrustStats.invalidate()
     }
 
     if (type === 'approval:requested' || type === 'approval:resolved') {
       void pendingApprovalsQuery.refetch()
       void utils.chat.getSavedViewCounts.invalidate()
+      void utils.chat.getAiTrustStats.invalidate()
       void refetch()
     }
   }, [
@@ -305,6 +311,7 @@ export function UnifiedInbox() {
     refetch,
     upsertConversation,
     utils.chat.getConversation,
+    utils.chat.getAiTrustStats,
     utils.chat.getSavedViewCounts,
     utils.dashboard.getHomeOverview,
   ])
@@ -479,16 +486,31 @@ export function UnifiedInbox() {
               {loading && conversations.length === 0 ? 'Loading...' : `${totalCount} conversations`}
             </p>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2 text-[10px]"
-            onClick={() => setApprovalsOpen(true)}
-          >
-            Approvals
-            {pendingApprovalItems.length > 0 ? ` (${pendingApprovalItems.length})` : ''}
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={savedView === 'low_confidence' ? 'default' : 'outline'}
+              className="h-7 gap-1 px-2 text-[10px]"
+              onClick={() => handleSavedViewChange('low_confidence')}
+            >
+              <ShieldAlertIcon className="size-3" />
+              Trust
+              {aiTrustStatsQuery.data?.noVerifiedAnswerCount
+                ? ` (${aiTrustStatsQuery.data.noVerifiedAnswerCount})`
+                : ''}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[10px]"
+              onClick={() => setApprovalsOpen(true)}
+            >
+              Approvals
+              {pendingApprovalItems.length > 0 ? ` (${pendingApprovalItems.length})` : ''}
+            </Button>
+          </div>
         </div>
 
         <div className="border-b px-3 py-2.5">

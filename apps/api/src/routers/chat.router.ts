@@ -103,6 +103,48 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+const LOW_CONFIDENCE_THRESHOLD = 0.45
+const AI_TRUST_MESSAGE_LIMIT = 2500
+
+function asNumberOrNull(value: unknown): number | null {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null
+  return value
+}
+
+function asStringOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function readAiSources(metadata: Record<string, unknown>): unknown[] {
+  return Array.isArray(metadata.sources) ? metadata.sources : []
+}
+
+function readAiAnswerType(metadata: Record<string, unknown>): string | null {
+  return asStringOrNull(metadata.type) ?? asStringOrNull(metadata.answerType)
+}
+
+function isNoVerifiedAnswerMetadata(metadata: Record<string, unknown>): boolean {
+  const answerType = readAiAnswerType(metadata)
+  if (metadata.noVerifiedAnswer === true) return true
+  if (answerType === 'ask_handoff') return true
+
+  const confidence = asNumberOrNull(metadata.confidence)
+  if (confidence === null) return false
+
+  return confidence < LOW_CONFIDENCE_THRESHOLD && readAiSources(metadata).length === 0
+}
+
+function isLowConfidenceAnswerMetadata(metadata: Record<string, unknown>): boolean {
+  const confidence = asNumberOrNull(metadata.confidence)
+
+  if (isNoVerifiedAnswerMetadata(metadata)) return true
+  if (confidence === null) return false
+
+  return confidence < LOW_CONFIDENCE_THRESHOLD
+}
+
 function metadataWithDefinedValues(values: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(values).filter(([, value]) => value !== undefined)
@@ -347,6 +389,8 @@ function filterConversationBySavedView(
       return conversation.channel === 'whatsapp'
     case 'ai_handled':
       return conversation.status === 'bot' || conversation.queue_state === 'bot'
+    case 'low_confidence':
+      return true
     case 'actions_failed':
       return true
     case 'all':
@@ -384,12 +428,43 @@ async function getFailedActionConversationIds(
   )
 }
 
+async function getLowConfidenceConversationIds(
+  supabase: SupabaseQueryClient,
+  orgId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('conversation_id, ai_metadata')
+    .eq('org_id', orgId)
+    .eq('role', 'assistant')
+    .not('ai_metadata', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(AI_TRUST_MESSAGE_LIMIT)
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load low-confidence conversations: ${error.message}`,
+    })
+  }
+
+  return Array.from(
+    new Set(
+      ((data ?? []) as Array<{ conversation_id: string | null; ai_metadata: Record<string, unknown> | null }>)
+        .filter((row) => isLowConfidenceAnswerMetadata(asRecord(row.ai_metadata)))
+        .map((row) => row.conversation_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  )
+}
+
 function applySavedViewQueryFilters(
   query: any,
   params: {
     savedView: InboxSavedViewId
     userId: string
     failedActionConversationIds?: string[]
+    lowConfidenceConversationIds?: string[]
   }
 ) {
   switch (params.savedView) {
@@ -412,6 +487,8 @@ function applySavedViewQueryFilters(
       return query.eq('status', 'bot')
     case 'actions_failed':
       return query.in('id', params.failedActionConversationIds ?? [])
+    case 'low_confidence':
+      return query.in('id', params.lowConfidenceConversationIds ?? [])
     case 'all':
     default:
       return query
@@ -428,8 +505,15 @@ async function countSavedViewConversations(params: {
     params.savedView === 'actions_failed'
       ? await getFailedActionConversationIds(params.supabase, params.orgId)
       : undefined
+  const lowConfidenceConversationIds =
+    params.savedView === 'low_confidence'
+      ? await getLowConfidenceConversationIds(params.supabase, params.orgId)
+      : undefined
 
   if (params.savedView === 'actions_failed' && failedActionConversationIds?.length === 0) {
+    return 0
+  }
+  if (params.savedView === 'low_confidence' && lowConfidenceConversationIds?.length === 0) {
     return 0
   }
 
@@ -442,6 +526,7 @@ async function countSavedViewConversations(params: {
     savedView: params.savedView,
     userId: params.userId,
     failedActionConversationIds,
+    lowConfidenceConversationIds,
   })
 
   if (!isHydratedSavedView(params.savedView)) {
@@ -1068,8 +1153,21 @@ export const chatRouter = router({
         savedView === 'actions_failed'
           ? await getFailedActionConversationIds(ctx.supabase, orgId)
           : undefined
+      const lowConfidenceConversationIds =
+        savedView === 'low_confidence'
+          ? await getLowConfidenceConversationIds(ctx.supabase, orgId)
+          : undefined
 
       if (savedView === 'actions_failed' && failedActionConversationIds?.length === 0) {
+        return {
+          items: [] as ConversationListItem[],
+          totalCount: 0,
+          page,
+          limit,
+          hasMore: false,
+        }
+      }
+      if (savedView === 'low_confidence' && lowConfidenceConversationIds?.length === 0) {
         return {
           items: [] as ConversationListItem[],
           totalCount: 0,
@@ -1088,6 +1186,7 @@ export const chatRouter = router({
         savedView,
         userId: ctx.user.id,
         failedActionConversationIds,
+        lowConfidenceConversationIds,
       })
 
       if (channel !== 'all') {
@@ -1293,6 +1392,50 @@ export const chatRouter = router({
         .order('created_at', { ascending: true })
       return data ?? []
     }),
+
+  getAiTrustStats: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+    const orgId = ctx.userOrgId
+
+    const messagesResult = await ctx.supabase
+      .from('messages')
+      .select('id, conversation_id, ai_metadata, created_at')
+      .eq('org_id', orgId)
+      .eq('role', 'assistant')
+      .not('ai_metadata', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(AI_TRUST_MESSAGE_LIMIT)
+
+    if (messagesResult.error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to load AI trust messages: ${messagesResult.error.message}`,
+      })
+    }
+
+    const trustRows = ((messagesResult.data ?? []) as Array<{
+      id: string
+      conversation_id: string | null
+      ai_metadata: Record<string, unknown> | null
+    }>).map((row) => ({
+      ...row,
+      metadata: asRecord(row.ai_metadata),
+    }))
+
+    const lowConfidenceRows = trustRows.filter((row) => isLowConfidenceAnswerMetadata(row.metadata))
+    const noVerifiedRows = trustRows.filter((row) => isNoVerifiedAnswerMetadata(row.metadata))
+    const lowConfidenceConversationIds = new Set(
+      lowConfidenceRows
+        .map((row) => row.conversation_id)
+        .filter((value): value is string => Boolean(value))
+    )
+
+    return {
+      lowConfidenceAnswerCount: lowConfidenceRows.length,
+      lowConfidenceConversationCount: lowConfidenceConversationIds.size,
+      noVerifiedAnswerCount: noVerifiedRows.length,
+    }
+  }),
 
   getConversationTimeline: protectedProcedure
     .input(z.object({ conversationId: z.string().uuid() }))

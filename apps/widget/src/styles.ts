@@ -1587,6 +1587,66 @@ export const STYLES = `
     border: 1px solid var(--border);
   }
 
+  .md-message {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    flex-direction: column;
+    gap: 7px;
+    word-break: break-word;
+  }
+
+  .md-message p,
+  .md-message h4 {
+    margin: 0;
+  }
+
+  .md-message h4 {
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+
+  .md-message ol,
+  .md-message ul {
+    margin: 0;
+    padding-left: 17px;
+  }
+
+  .md-message li {
+    margin: 3px 0;
+  }
+
+  .md-message code {
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+    padding: 1px 4px;
+  }
+
+  .md-message pre {
+    margin: 2px 0;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+    padding: 9px;
+    white-space: pre;
+  }
+
+  .md-message pre code {
+    background: transparent;
+    padding: 0;
+  }
+
+  .md-message a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
   .suggestions-row {
     align-items: flex-start;
     margin-top: 2px;

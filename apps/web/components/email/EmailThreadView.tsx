@@ -8,7 +8,7 @@
  * Used inside ConversationView when conversation.channel === 'email'.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { useEmailMessages } from '@/hooks/useEmail'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
@@ -17,6 +17,8 @@ import { Button } from '@workspace/ui/components/button'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { cn } from '@workspace/ui/lib/utils'
+import { trpc } from '@/lib/trpc'
+import { AITrustPanel } from '@/components/inbox/AITrustPanel'
 import {
   MailIcon,
   ChevronDownIcon,
@@ -33,6 +35,7 @@ import {
 interface EmailMessage {
   id: string
   conversationId: string
+  messageId: string | null
   externalMessageId: string | null
   inReplyTo: string | null
   referencesHeader: string | null
@@ -53,9 +56,26 @@ interface Props {
   conversationId: string
 }
 
+interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'agent' | 'system'
+  ai_metadata: Record<string, unknown> | null
+}
+
+function safeMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
 // ─── Single Email Item ────────────────────────────────────────────────────────
 
-function EmailItem({ msg }: { msg: EmailMessage }) {
+function EmailItem({
+  msg,
+  aiMetadata,
+}: {
+  msg: EmailMessage
+  aiMetadata: Record<string, unknown> | null
+}) {
   const [expanded, setExpanded] = useState(true)
   const [showHtml, setShowHtml] = useState(true)
 
@@ -176,6 +196,16 @@ function EmailItem({ msg }: { msg: EmailMessage }) {
               </p>
             </div>
           )}
+
+          {!isInbound && msg.messageId && aiMetadata && (
+            <div className="px-4 pb-4">
+              <AITrustPanel
+                messageId={msg.messageId}
+                conversationId={msg.conversationId}
+                metadata={aiMetadata}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -186,6 +216,17 @@ function EmailItem({ msg }: { msg: EmailMessage }) {
 
 export function EmailThreadView({ conversationId }: Props) {
   const { messages, isLoading } = useEmailMessages(conversationId)
+  const chatQuery = trpc.chat.getMessages.useQuery(
+    { conversationId },
+    { enabled: Boolean(conversationId), staleTime: 30_000 }
+  )
+  const chatById = useMemo(() => {
+    const map = new Map<string, ChatMessage>()
+    for (const message of (chatQuery.data ?? []) as ChatMessage[]) {
+      map.set(message.id, message)
+    }
+    return map
+  }, [chatQuery.data])
 
   if (isLoading) {
     return (
@@ -236,9 +277,24 @@ export function EmailThreadView({ conversationId }: Props) {
           </Badge>
         </div>
 
-        {messages.map((msg) => (
-          <EmailItem key={msg.id} msg={msg as EmailMessage} />
-        ))}
+        {messages.map((msg) => {
+          const emailMessage = msg as EmailMessage
+          const linkedChatMessage = emailMessage.messageId
+            ? chatById.get(emailMessage.messageId)
+            : null
+          const aiMetadata =
+            linkedChatMessage?.role === 'assistant'
+              ? safeMetadata(linkedChatMessage.ai_metadata)
+              : null
+
+          return (
+            <EmailItem
+              key={emailMessage.id}
+              msg={emailMessage}
+              aiMetadata={aiMetadata}
+            />
+          )
+        })}
       </div>
     </ScrollArea>
   )

@@ -73,6 +73,68 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function compactRecord(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined)
+  )
+}
+
+function normalizeAiSources(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .slice(0, 8)
+    .map((item) => {
+      const source = asRecord(item)
+      const similarity = typeof source.similarity === 'number' ? source.similarity : undefined
+      return compactRecord({
+        title: typeof source.title === 'string' ? source.title : null,
+        url: typeof source.url === 'string' ? source.url : null,
+        similarity,
+        sourceType: typeof source.sourceType === 'string' ? source.sourceType : null,
+        pinned: source.pinned === true ? true : undefined,
+      })
+    })
+    .filter((source) => Object.keys(source).length > 0)
+}
+
+function buildAiResponseMetadata(
+  result: {
+    type?: string
+    confidence?: number
+    sources?: unknown[]
+    tokensUsed?: number
+    actionLog?: unknown
+  },
+  extras: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const sources = normalizeAiSources(result.sources)
+  const actionLog = extras.actionLog ?? result.actionLog
+  const confidence = typeof result.confidence === 'number' ? result.confidence : undefined
+  const answerType = typeof result.type === 'string' ? result.type : undefined
+  const noVerifiedAnswer =
+    answerType === 'ask_handoff' ||
+    (answerType === 'answer' && sources.length === 0 && !actionLog)
+
+  return compactRecord({
+    type: answerType,
+    confidence,
+    sources,
+    tokensUsed: typeof result.tokensUsed === 'number' ? result.tokensUsed : undefined,
+    ...(noVerifiedAnswer ? { noVerifiedAnswer: true } : {}),
+    ...extras,
+  })
+}
+
+function aiRealtimeFields(metadata: Record<string, unknown>): Record<string, unknown> {
+  return compactRecord({
+    confidence: typeof metadata.confidence === 'number' ? metadata.confidence : undefined,
+    sources: Array.isArray(metadata.sources) ? metadata.sources : undefined,
+    answerType: typeof metadata.type === 'string' ? metadata.type : undefined,
+    tokensUsed: typeof metadata.tokensUsed === 'number' ? metadata.tokensUsed : undefined,
+  })
+}
+
 function isVisitorIdentityDeleted(settings: unknown, visitorId: string): boolean {
   const tombstones = asRecord(settings).visitorIdentityTombstones
   if (!Array.isArray(tombstones)) return false
@@ -964,27 +1026,29 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
         if (ragResult.type === 'ask_handoff') {
           socket.awaitingHandoffConfirm = true
           const createdAt = new Date().toISOString()
+          const aiMetadata = buildAiResponseMetadata(ragResult, {
+            awaitingConfirm: true,
+          })
           send(socket, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
             createdAt,
+            ...aiRealtimeFields(aiMetadata),
           })
           broadcastToAgents(orgId, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
             createdAt,
+            ...aiRealtimeFields(aiMetadata),
           })
           await persistMessage({
             conversationId,
             orgId,
             role: 'assistant',
             content: ragResult.message,
-            aiMetadata: {
-              confidence: ragResult.confidence,
-              awaitingConfirm: true,
-            },
+            aiMetadata,
           })
           return
         }
@@ -992,12 +1056,17 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
         if (ragResult.type === 'action_confirmation') {
           socket.pendingActionLogId = ragResult.actionLog?.logId
           const createdAt = new Date().toISOString()
+          const aiMetadata = buildAiResponseMetadata(ragResult, {
+            actionLog: ragResult.actionLog,
+            pendingActionLogId: ragResult.actionLog?.logId,
+            requiresConfirmation: true,
+          })
           send(socket, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
             createdAt,
-            confidence: ragResult.confidence,
+            ...aiRealtimeFields(aiMetadata),
             requiresConfirmation: true,
             actionLog: ragResult.actionLog,
           })
@@ -1006,7 +1075,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             content: ragResult.message,
             conversationId,
             createdAt,
-            confidence: ragResult.confidence,
+            ...aiRealtimeFields(aiMetadata),
             requiresConfirmation: true,
             actionLog: ragResult.actionLog,
           })
@@ -1015,12 +1084,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             orgId,
             role: 'assistant',
             content: ragResult.message,
-            aiMetadata: {
-              confidence: ragResult.confidence,
-              actionLog: ragResult.actionLog,
-              pendingActionLogId: ragResult.actionLog?.logId,
-              requiresConfirmation: true,
-            },
+            aiMetadata,
           })
           return
         }
@@ -1047,12 +1111,15 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             )
           })
 
+          const aiMetadata = buildAiResponseMetadata(ragResult, {
+            actionLog: ragResult.actionLog,
+          })
           send(socket, {
             type: 'ai:response',
             content: ragResult.message,
             conversationId,
             createdAt,
-            confidence: ragResult.confidence,
+            ...aiRealtimeFields(aiMetadata),
             actionLog: ragResult.actionLog,
           })
           broadcastToAgents(orgId, {
@@ -1060,7 +1127,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             content: ragResult.message,
             conversationId,
             createdAt,
-            confidence: ragResult.confidence,
+            ...aiRealtimeFields(aiMetadata),
             actionLog: ragResult.actionLog,
           })
           await persistMessage({
@@ -1068,21 +1135,21 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             orgId,
             role: 'assistant',
             content: ragResult.message,
-            aiMetadata: {
-              confidence: ragResult.confidence,
-              actionLog: ragResult.actionLog,
-            },
+            aiMetadata,
           })
           return
         }
 
         const createdAt = new Date().toISOString()
+        const aiMetadata = buildAiResponseMetadata(ragResult, {
+          actionLog: ragResult.actionLog,
+        })
         send(socket, {
           type: 'ai:response',
           content: ragResult.message,
           conversationId,
           createdAt,
-          confidence: ragResult.confidence,
+          ...aiRealtimeFields(aiMetadata),
           actionLog: ragResult.actionLog,
         })
         broadcastToAgents(orgId, {
@@ -1090,7 +1157,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
           content: ragResult.message,
           conversationId,
           createdAt,
-          confidence: ragResult.confidence,
+          ...aiRealtimeFields(aiMetadata),
           actionLog: ragResult.actionLog,
         })
         await persistMessage({
@@ -1098,10 +1165,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
           orgId,
           role: 'assistant',
           content: ragResult.message,
-          aiMetadata: {
-            confidence: ragResult.confidence,
-            actionLog: ragResult.actionLog,
-          },
+          aiMetadata,
         })
       } catch (err) {
         console.error('[ws] RAG error:', err)

@@ -64,10 +64,21 @@ export interface Attachment {
 }
 
 export interface AIMetadata {
+  type?: string
   model?: string
   confidence?: number
-  sources?: string[]
+  sources?: Array<
+    | string
+    | {
+        title?: string | null
+        url?: string | null
+        similarity?: number | null
+        sourceType?: string | null
+        pinned?: boolean
+      }
+  >
   tokensUsed?: number
+  noVerifiedAnswer?: boolean
   shouldHandoff?: boolean
 }
 

@@ -64,6 +64,20 @@
       "when": 1778313600000,
       "tag": "0009_internal_note_edit_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778400000000,
+      "tag": "0010_ai_answer_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778486400000,
+      "tag": "0011_remove_ai_answer_feedback",
+      "breakpoints": true
     }
   ]
 }

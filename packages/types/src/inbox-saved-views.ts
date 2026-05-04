@@ -9,6 +9,7 @@ export const INBOX_SAVED_VIEW_IDS = [
   'email_only',
   'whatsapp_only',
   'ai_handled',
+  'low_confidence',
   'actions_failed',
 ] as const
 

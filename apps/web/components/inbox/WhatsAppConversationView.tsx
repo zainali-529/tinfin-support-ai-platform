@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { cn } from '@workspace/ui/lib/utils'
 import { trpc } from '@/lib/trpc'
 import { useWhatsAppMessages, useWhatsAppReply } from '@/hooks/useWhatsApp'
+import { AITrustPanel } from './AITrustPanel'
 import type { Conversation } from '@/types/database'
 import {
   CheckCircleIcon,
@@ -55,6 +56,8 @@ type RenderedMessage = {
     actionName: string | null
     status: string | null
   } | null
+  chatMessageId?: string | null
+  aiMetadata?: Record<string, unknown> | null
 }
 
 interface Props {
@@ -144,11 +147,13 @@ function isHttpUrl(value: string | null): value is string {
 
 function MessageBubble({
   message,
+  conversationId,
   resolvingActionKey,
   onApprove,
   onReject,
 }: {
   message: RenderedMessage
+  conversationId: string
   resolvingActionKey: string | null
   onApprove: (logId: string) => void
   onReject: (logId: string) => void
@@ -274,6 +279,14 @@ function MessageBubble({
           </div>
         )}
 
+        {isAssistant && message.chatMessageId && message.aiMetadata && (
+          <AITrustPanel
+            messageId={message.chatMessageId}
+            conversationId={conversationId}
+            metadata={message.aiMetadata}
+          />
+        )}
+
         <span className="mt-1 block text-[10px] text-muted-foreground">
           {formatDistanceToNow(new Date(message.createdAt), {
             addSuffix: true,
@@ -361,6 +374,8 @@ export function WhatsAppConversationView({
         createdAt: wa.createdAt,
         waMessage: wa,
         actionLog: linkedActionLog,
+        chatMessageId: linked?.id ?? null,
+        aiMetadata: linked ? safeMetadata(linked.ai_metadata) : null,
       })
     }
 
@@ -398,6 +413,8 @@ export function WhatsAppConversationView({
           text: chat.content,
           createdAt: chat.created_at,
           actionLog: readActionLogMetadata(chat.ai_metadata),
+          chatMessageId: chat.id,
+          aiMetadata: safeMetadata(chat.ai_metadata),
         })
       }
     }
@@ -550,6 +567,7 @@ export function WhatsAppConversationView({
               <MessageBubble
                 key={message.id}
                 message={message}
+                conversationId={conversation.id}
                 resolvingActionKey={resolvingActionKey}
                 onApprove={handleApprove}
                 onReject={handleReject}

@@ -46,6 +46,8 @@ import {
 } from '@/components/realtime/AgentRealtimeProvider'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
+import { AITrustPanel } from './AITrustPanel'
+import { MessageMarkdown } from './MessageMarkdown'
 import type { AgentRealtimeEvent } from '@workspace/types'
 import type { Conversation, Attachment } from '@/types/database'
 
@@ -398,9 +400,18 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
           ? (record.actionLog as Record<string, unknown>)
           : null
       const aiMetadata =
-        actionLog || typeof record.confidence === 'number'
+        actionLog ||
+        typeof record.confidence === 'number' ||
+        Array.isArray(record.sources) ||
+        typeof record.answerType === 'string' ||
+        typeof record.tokensUsed === 'number'
           ? {
               ...(typeof record.confidence === 'number' ? { confidence: record.confidence } : {}),
+              ...(Array.isArray(record.sources) ? { sources: record.sources } : {}),
+              ...(typeof record.answerType === 'string' ? { type: record.answerType } : {}),
+              ...(typeof record.tokensUsed === 'number' ? { tokensUsed: record.tokensUsed } : {}),
+              ...(record.handoff === true ? { handoff: true } : {}),
+              ...(record.requiresConfirmation === true ? { requiresConfirmation: true } : {}),
               ...(actionLog ? { actionLog } : {}),
             }
           : null
@@ -1148,7 +1159,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
             messages.map((msg, idx) => {
               const isUser = msg.role === 'user'
               const isAgentMsg = msg.role === 'agent'
-              const isOutbound = isUser || isAgentMsg
+              const isOutbound = isUser
               const prevMsg = messages[idx - 1]
               const showTimeDivider = !prevMsg ||
                 new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 300_000
@@ -1199,10 +1210,14 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                         <div className={cn(
                           'rounded-2xl px-4 py-2.5 text-sm leading-relaxed break-words',
                           isUser ? 'rounded-br-sm bg-primary text-primary-foreground'
-                            : isAgentMsg ? 'rounded-br-sm bg-emerald-600 text-white'
+                            : isAgentMsg ? 'rounded-bl-sm bg-emerald-600 text-white'
                             : 'rounded-bl-sm bg-muted/80 text-foreground ring-1 ring-border/50'
                         )}>
-                          {msg.content}
+                          {isUser ? (
+                            msg.content
+                          ) : (
+                            <MessageMarkdown content={msg.content} inverted={isAgentMsg} />
+                          )}
                         </div>
                       )}
 
@@ -1260,6 +1275,14 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
                               : 'Reject'}
                           </Button>
                         </div>
+                      )}
+
+                      {msg.role === 'assistant' && (
+                        <AITrustPanel
+                          messageId={msg.id}
+                          conversationId={conversation.id}
+                          metadata={messageMetadata}
+                        />
                       )}
 
                       <span className="px-0.5 text-[10px] tabular-nums text-muted-foreground/50">

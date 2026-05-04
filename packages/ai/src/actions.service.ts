@@ -1000,7 +1000,9 @@ ${actionSummary}
 5. If you cannot help, use requestHumanAgent.
 6. Never fabricate data. Use tools for real information.
 7. Respond in the same language as the customer.
-8. Put the direct answer first. Use bullets only when they make the answer easier to scan.`
+8. Put the direct answer first. Use bullets only when they make the answer easier to scan.
+9. Format longer answers with clean Markdown: short paragraphs, numbered steps, bullets, and fenced code blocks for commands/code.
+10. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.`
 }
 
 async function callOpenAIWithTools(input: {
@@ -1118,10 +1120,18 @@ export async function queryWithActions(
 
       sources = ragResult.sources
 
+      if (ragResult.type === 'handoff' || ragResult.type === 'ask_handoff') {
+        return finish({
+          type: ragResult.type,
+          message: ragResult.message,
+          confidence: ragResult.confidence,
+          sources,
+          tokensUsed: (ragResult.tokensUsed ?? 0) + totalTokens,
+        })
+      }
+
       const kbText =
-        ragResult.type === 'handoff' || ragResult.type === 'ask_handoff'
-          ? '__HANDOFF__'
-          : ragResult.message
+        ragResult.message
 
       toolMessages.push({
         role: 'tool',
