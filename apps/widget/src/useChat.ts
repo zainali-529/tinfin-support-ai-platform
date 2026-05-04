@@ -3,6 +3,7 @@ import type { Message, StoredChat, VisitorInfo, WidgetConversation, Conversation
 
 const WS_URL = (import.meta as any).env?.VITE_API_WS_URL || 'ws://localhost:3003'
 const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
+const VISITOR_TYPING_IDLE_MS = 2500
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -108,6 +109,23 @@ export function useChat(orgId: string) {
   const [identityResetVersion, setIdentityResetVersion] = useState(0)
 
   const wsRef = useRef<WebSocket | null>(null)
+  const visitorTypingRef = useRef(false)
+  const visitorTypingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearVisitorTypingTimer = useCallback(() => {
+    if (!visitorTypingStopTimerRef.current) return
+    clearTimeout(visitorTypingStopTimerRef.current)
+    visitorTypingStopTimerRef.current = null
+  }, [])
+
+  const emitVisitorTypingState = useCallback((isTyping: boolean) => {
+    if (visitorTypingRef.current === isTyping) return
+
+    visitorTypingRef.current = isTyping
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: isTyping ? 'typing:start' : 'typing:stop' }))
+    }
+  }, [])
 
   useEffect(() => {
     const status = conversations.find(item => item.id === activeConversationId)?.status
@@ -468,9 +486,11 @@ export function useChat(orgId: string) {
     return () => {
       dead = true
       clearTimeout(reconnectTimer)
+      clearVisitorTypingTimer()
+      visitorTypingRef.current = false
       ws?.close()
     }
-  }, [orgId, addMessage, persist, requestInbox, setConversationList, setConversationMessages, updateConversation])
+  }, [orgId, addMessage, clearVisitorTypingTimer, persist, requestInbox, setConversationList, setConversationMessages, updateConversation])
 
   // ── Send text message ─────────────────────────────────────────────────────
 
@@ -552,10 +572,19 @@ export function useChat(orgId: string) {
   }, [orgId])
 
   const sendTyping = useCallback((isTyping: boolean) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: isTyping ? 'typing:start' : 'typing:stop' }))
+    clearVisitorTypingTimer()
+
+    if (isTyping) {
+      emitVisitorTypingState(true)
+      visitorTypingStopTimerRef.current = setTimeout(() => {
+        visitorTypingStopTimerRef.current = null
+        emitVisitorTypingState(false)
+      }, VISITOR_TYPING_IDLE_MS)
+      return
     }
-  }, [])
+
+    emitVisitorTypingState(false)
+  }, [clearVisitorTypingTimer, emitVisitorTypingState])
 
   const startNewChat = useCallback(() => {
     activeConversationIdRef.current = null

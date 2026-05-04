@@ -496,8 +496,9 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setPendingFiles([])
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
     sendMessage(text, uploadedAttachments)
+    sendTyping(false)
     setTab('chat')
-  }, [activeConversation?.status, activeConversationId, input, pendingFiles, sendMessage])
+  }, [activeConversation?.status, activeConversationId, input, pendingFiles, sendMessage, sendTyping])
 
   const handleQuickReply = useCallback((message: string) => {
     const text = message.trim()
@@ -506,8 +507,9 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setInput('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
     sendMessage(text)
+    sendTyping(false)
     setTab('chat')
-  }, [activeConversation?.status, activeConversationId, sendMessage])
+  }, [activeConversation?.status, activeConversationId, sendMessage, sendTyping])
 
   const handleStartChat = useCallback(() => {
     startNewChat()

@@ -438,10 +438,13 @@ export function ConversationTimelinePanel({
     if (!eventBelongsToConversation(event, conversationId)) return
 
     const item = buildSocketTimelineItem(event)
-    if (item) {
-      pushRealtimeItem(item)
+    if (!item) return
+
+    pushRealtimeItem(item)
+
+    if (event.type === 'timeline:updated') {
+      scheduleTimelineSync()
     }
-    scheduleTimelineSync()
   }, [conversationId, pushRealtimeItem, scheduleTimelineSync]))
 
   const items = mergeTimelineItems((timelineQuery.data ?? []) as TimelineItem[], realtimeItems)

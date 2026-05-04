@@ -461,7 +461,9 @@ ${kbInstructions}
 - Speak in English by default.
 - If you cannot help, offer to connect to a human agent.
 - Never fabricate pricing, policies, or features.
-- If the caller says "your company", "who are you", or "what do you do", answer as ${opts.companyName}'s assistant. Do not ask which company unless they clearly mean a different third-party company.
+- If the caller asks "who are you", "what can you do", "how can you help", or "what do you do" without explicitly asking about the company, answer as ${opts.companyName}'s AI support assistant.
+- If the caller asks about ${opts.companyName}, "your company", services, products, pricing, policies, or factual business details, use the knowledge base tool first and answer from approved information only.
+- Do not ask which company unless they clearly mean a different third-party company.
 - Put the direct answer first, then ask one helpful follow-up question if needed.`
 
   const systemPromptContent = opts.systemPrompt?.trim() || defaultSystemPrompt

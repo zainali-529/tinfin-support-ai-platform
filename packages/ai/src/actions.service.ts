@@ -1027,8 +1027,9 @@ ${actionSummary}
 8. Put the direct answer first. Use bullets only when they make the answer easier to scan.
 9. Format longer answers with clean Markdown: short paragraphs, numbered steps, bullets, and fenced code blocks for commands/code.
 10. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.
-11. When the customer asks about "your company", "your services", "who are you", or "what do you do", treat that as the current organization and searchKnowledgeBase first. Do not ask "which company?" unless they clearly mean an unrelated third-party company.
-12. For factual questions, use searchKnowledgeBase before answering. If no verified answer is available, do not answer from general model knowledge.`
+11. When the customer asks "who are you", "what can you do", "how can you help", or "what do you do" without explicitly asking about the company/services/products, answer as the AI support assistant for the current organization. Do not turn that into a company service catalog.
+12. When the customer asks about "your company", "your services", "your products", company overview, pricing, policies, or factual business details, use searchKnowledgeBase first. Do not ask "which company?" unless they clearly mean an unrelated third-party company.
+13. For factual questions, use searchKnowledgeBase before answering. If no verified answer is available, do not answer from general model knowledge.`
 }
 
 function isCasualInput(query: string): boolean {

@@ -38,6 +38,14 @@ export interface RAGResult {
   }
 }
 
+type RAGIntent =
+  | 'empty'
+  | 'human_handoff'
+  | 'assistant_identity'
+  | 'assistant_capability'
+  | 'organization_profile'
+  | 'knowledge_query'
+
 interface MatchedChunk {
   id: string
   kb_id?: string | null
@@ -72,23 +80,65 @@ const CONFIRM_YES_PATTERNS = [
   /^(yes|yeah|yep|yup|sure|ok|okay|please|please\s?do|go\s?ahead)\b/i,
 ]
 
-const ORG_IDENTITY_PATTERNS = [
-  /\b(your|our|company|organization|organisation|business|brand|team|services|service|product|products)\b/i,
-  /\b(who\s+are\s+you|what\s+do\s+you\s+do|tell\s+me\s+about\s+(your|the)\s+company|about\s+your\s+company)\b/i,
+const ASSISTANT_IDENTITY_PATTERNS = [
+  /\bwho\s+are\s+you\b/i,
+  /\bwhat\s+are\s+you\b/i,
+  /\bare\s+you\s+(an?\s+)?(ai|bot|assistant|agent)\b/i,
+  /\byour\s+(name|role|job)\b/i,
+]
+
+const ASSISTANT_CAPABILITY_PATTERNS = [
+  /\bwhat\s+can\s+you\s+do(\s+for\s+me)?\b/i,
+  /\bhow\s+can\s+you\s+help(\s+me)?\b/i,
+  /\bwhat\s+do\s+you\s+help\s+with\b/i,
+  /\bwhat\s+do\s+you\s+do\b/i,
+  /\bhow\s+should\s+i\s+use\s+you\b/i,
+]
+
+const ORG_PROFILE_PATTERNS = [
+  /\b(tell|show|explain|describe|introduce)\s+(me\s+)?(about\s+)?(your|our|the|this)\s+(company|organization|organisation|business|brand|team)\b/i,
+  /\b(about|overview|intro|introduction|profile)\s+(of\s+)?(your|our|the|this)\s+(company|organization|organisation|business|brand)\b/i,
+  /\bwhat\s+(does|do)\s+(your|our|the|this)\s+(company|organization|organisation|business|brand)\s+do\b/i,
+  /\b(your|our|the|this)\s+(company|organization|organisation|business|brand)\s+(overview|intro|introduction|profile|services|service|products|product)\b/i,
+  /\b(company|organization|organisation|business|brand)\s+(overview|intro|introduction|profile|services|service|products|product)\b/i,
+  /\bwhat\s+(services|service|products|product)\s+(do|does)\s+(you|your\s+company|your\s+organization|your\s+organisation|your\s+business|your\s+brand|your\s+team)\s+(offer|provide|have|sell)\b/i,
+  /\b(your|our)\s+(services|service|products|product)\b/i,
 ]
 
 function isExplicitHumanRequest(query: string): boolean {
   return HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(query.trim()))
 }
 
-function isOrganizationIdentityQuery(query: string): boolean {
+function isAssistantIdentityQuery(query: string): boolean {
   const trimmed = query.trim()
   if (!trimmed) return false
-  return ORG_IDENTITY_PATTERNS.some((pattern) => pattern.test(trimmed))
+  return ASSISTANT_IDENTITY_PATTERNS.some((pattern) => pattern.test(trimmed))
 }
 
-function buildRetrievalQuery(query: string, orgDisplayName: string | null): string {
-  if (!isOrganizationIdentityQuery(query)) return query
+function isAssistantCapabilityQuery(query: string): boolean {
+  const trimmed = query.trim()
+  if (!trimmed) return false
+  return ASSISTANT_CAPABILITY_PATTERNS.some((pattern) => pattern.test(trimmed))
+}
+
+function isOrganizationProfileQuery(query: string): boolean {
+  const trimmed = query.trim()
+  if (!trimmed) return false
+  return ORG_PROFILE_PATTERNS.some((pattern) => pattern.test(trimmed))
+}
+
+function classifyRagIntent(query: string): RAGIntent {
+  const trimmed = query.trim()
+  if (!trimmed) return 'empty'
+  if (isExplicitHumanRequest(trimmed)) return 'human_handoff'
+  if (isAssistantIdentityQuery(trimmed)) return 'assistant_identity'
+  if (isAssistantCapabilityQuery(trimmed)) return 'assistant_capability'
+  if (isOrganizationProfileQuery(trimmed)) return 'organization_profile'
+  return 'knowledge_query'
+}
+
+function buildRetrievalQuery(query: string, orgDisplayName: string | null, intent: RAGIntent): string {
+  if (intent !== 'organization_profile') return query
 
   const orgHint = orgDisplayName ? `Current organization/company name: ${orgDisplayName}.` : 'Current organization/company.'
   return [
@@ -120,6 +170,42 @@ async function getOrgDisplayName(orgId: string): Promise<string | null> {
   const widgetName = typeof widgetResult.data?.company_name === 'string' ? widgetResult.data.company_name.trim() : ''
   const orgName = typeof orgResult.data?.name === 'string' ? orgResult.data.name.trim() : ''
   return widgetName || orgName || null
+}
+
+async function getKnowledgeTopicHints(orgId: string, limit = 6): Promise<string[]> {
+  const supabase = getSupabaseAdmin()
+  const { data, error } = await supabase
+    .from('kb_sources')
+    .select('source_title, source_url, source_type')
+    .eq('org_id', orgId)
+    .eq('status', 'indexed')
+    .gt('chunk_count', 0)
+    .order('last_indexed_at', { ascending: false, nullsFirst: false })
+    .limit(limit)
+
+  if (error) {
+    console.warn('[rag] topic hint lookup failed:', error.message)
+    return []
+  }
+
+  const seen = new Set<string>()
+  const topics: string[] = []
+
+  for (const row of data ?? []) {
+    const title = typeof row.source_title === 'string' ? row.source_title.trim() : ''
+    const url = typeof row.source_url === 'string' ? row.source_url.trim() : ''
+    const sourceType = typeof row.source_type === 'string' ? row.source_type.trim() : ''
+    const candidate = title || url || sourceType
+    if (!candidate) continue
+
+    const key = candidate.toLowerCase()
+    if (seen.has(key)) continue
+
+    seen.add(key)
+    topics.push(candidate)
+  }
+
+  return topics
 }
 
 async function searchSimilarChunks(
@@ -217,7 +303,7 @@ function buildMasterPrompt(
   topicsHint: string,
   hasStrongContext: boolean,
   orgDisplayName: string | null,
-  orgIdentityQuery: boolean
+  intent: RAGIntent
 ): string {
   const kbSection = context
     ? `## Knowledge Base Context\n${context}`
@@ -225,9 +311,9 @@ function buildMasterPrompt(
   const organizationLine = orgDisplayName
     ? `You represent the current organization: ${orgDisplayName}.`
     : 'You represent the current organization that owns this support workspace.'
-  const identityGuidance = orgIdentityQuery
+  const identityGuidance = intent === 'organization_profile'
     ? 'The user is asking about this organization/company/services. Interpret "your company", "your services", "you", or "we" as the current organization, not as a third-party company.'
-    : 'If the user says "your company", "your services", "you", or "we", interpret that as the current organization unless they clearly mention a third-party company.'
+    : 'You are the AI support assistant for this organization. Do not become the company itself; use company information as context while speaking as an assistant.'
 
   return `You are a professional, intelligent, and warm customer support assistant.
 ${organizationLine}
@@ -242,8 +328,8 @@ ${topicsHint ? `## Topics You Have Knowledge On\n${topicsHint}\n` : ''}
 **For greetings, pleasantries, or "how are you" type messages:**
 Respond naturally and warmly. Briefly introduce what you can help with based on the topics above. Keep it natural and inviting.
 
-**For questions about your capabilities ("what can you do", "what do you help with"):**
-Explain specifically what topics and information you have available, derived from the knowledge base above.
+**For questions about you or your capabilities ("who are you", "what can you do", "how can you help"):**
+Answer as the AI support assistant, not as the company itself. Briefly explain how you can help the customer with verified company information, support questions, and human handoff. Do not list the full company service catalog unless the user specifically asks for company services/products.
 
 **For domain-specific questions answerable from the knowledge base:**
 Answer accurately and professionally using ONLY the knowledge base context provided. Never fabricate facts, prices, features, policies, integrations, or company information not present in the context. Match the user's language.
@@ -262,7 +348,7 @@ ${hasStrongContext
 6. Keep responses concise but complete.
 7. Format longer answers with clean Markdown: short paragraphs, numbered steps, bullets, and fenced code blocks for commands/code.
 8. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.
-9. Do not ask "which company?" for identity or services questions unless the user clearly asks about an unrelated third-party company and the knowledge base has no matching context.`.trim()
+9. Do not ask "which company?" for company/about/services questions unless the user clearly asks about an unrelated third-party company and the knowledge base has no matching context.`.trim()
 }
 
 async function generateContextualResponse(
@@ -319,11 +405,55 @@ Avoid sounding like a fixed template. Keep it to 1-2 sentences.`,
   }
 }
 
-function withDebug(result: RAGResult, query: string, rewrittenQuery = query): RAGResult {
+async function generateAssistantMetaResponse(
+  client: ReturnType<typeof createOpenAIClient>,
+  query: string,
+  orgDisplayName: string | null,
+  orgId: string,
+  intent: Extract<RAGIntent, 'assistant_identity' | 'assistant_capability'>
+): Promise<{ text: string; tokens: number }> {
+  const topics = await getKnowledgeTopicHints(orgId)
+  const organizationLine = orgDisplayName
+    ? `You are the AI support assistant for ${orgDisplayName}.`
+    : 'You are the AI support assistant for this organization.'
+  const topicLine = topics.length > 0
+    ? `Available approved topic hints: ${topics.slice(0, 5).join(', ')}.`
+    : 'No approved topic titles are available, so speak generally about support assistance without naming specific company facts.'
+  const intentLine = intent === 'assistant_identity'
+    ? 'The customer is asking who you are.'
+    : 'The customer is asking what you can do or how you can help.'
+
+  try {
+    return await generateContextualResponse(
+      client,
+      `You are a professional, warm customer support AI agent.
+${organizationLine}
+${intentLine}
+${topicLine}
+
+Respond as the assistant, not as the company itself.
+Do not provide a full company or service catalog unless the customer specifically asks about the company/services/products.
+Do not mention internal terms like "knowledge base", "RAG", "chunks", or "sources".
+You may say you can answer questions using approved company information, help the customer find the right details, and connect them with a human agent when needed.
+Use the available topic hints only as broad examples, not as a long list.
+Keep it natural, not like a fixed template. Use 2-4 short sentences and end with a helpful question.`,
+      query,
+      180,
+      0.6
+    )
+  } catch {
+    return {
+      text: `I'm the AI support assistant${orgDisplayName ? ` for ${orgDisplayName}` : ''}. I can help with questions using approved company information, guide you to the right details, and connect you with a human agent when needed. What would you like help with?`,
+      tokens: 0,
+    }
+  }
+}
+
+function withDebug(result: RAGResult, query: string, rewrittenQuery = query, intent: RAGIntent = result.type as RAGIntent): RAGResult {
   return {
     ...result,
     debug: {
-      intent: result.type,
+      intent,
       rewrittenQuery,
       guidanceCount: 0,
       usedPinnedCompanyContext: false,
@@ -344,8 +474,9 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   const trimmedQuery = query.trim()
   const client = createOpenAIClient(openaiApiKey)
   const orgDisplayName = await getOrgDisplayName(orgId)
+  const intent = classifyRagIntent(trimmedQuery)
 
-  if (!trimmedQuery) {
+  if (intent === 'empty') {
     const { text, tokens } = await generateContextualResponse(
       client,
       'The user just opened the chat. Greet them warmly as a support assistant and ask how you can help. Keep it to 1-2 sentences.',
@@ -360,10 +491,10 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
       confidence: 1,
       sources: [],
       tokensUsed: tokens,
-    }, trimmedQuery)
+    }, trimmedQuery, trimmedQuery, intent)
   }
 
-  if (isExplicitHumanRequest(trimmedQuery)) {
+  if (intent === 'human_handoff') {
     const { text, tokens } = await generateContextualResponse(
       client,
       'The user wants to speak to a human agent. Respond warmly and professionally, confirming you are connecting them now. Be reassuring and brief: 1-2 sentences.',
@@ -378,11 +509,28 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
       confidence: 1,
       sources: [],
       tokensUsed: tokens,
-    }, trimmedQuery)
+    }, trimmedQuery, trimmedQuery, intent)
   }
 
-  const orgIdentityQuery = isOrganizationIdentityQuery(trimmedQuery)
-  const retrievalQuery = buildRetrievalQuery(trimmedQuery, orgDisplayName)
+  if (intent === 'assistant_identity' || intent === 'assistant_capability') {
+    const { text, tokens } = await generateAssistantMetaResponse(
+      client,
+      trimmedQuery,
+      orgDisplayName,
+      orgId,
+      intent
+    )
+
+    return withDebug({
+      type: 'casual',
+      message: text,
+      confidence: 1,
+      sources: [],
+      tokensUsed: tokens,
+    }, trimmedQuery, trimmedQuery, intent)
+  }
+
+  const retrievalQuery = buildRetrievalQuery(trimmedQuery, orgDisplayName, intent)
   const queryEmbedding = await generateEmbedding(retrievalQuery, openaiApiKey)
   const matchedChunks = await searchSimilarChunks(queryEmbedding, orgId, threshold, maxChunks, kbId)
   const confidence = calculateConfidence(matchedChunks)
@@ -404,7 +552,7 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
       confidence,
       sources,
       tokensUsed: noAnswer.tokens,
-    }, trimmedQuery, retrievalQuery)
+    }, trimmedQuery, retrievalQuery, intent)
   }
 
   const systemPrompt = buildMasterPrompt(
@@ -412,7 +560,7 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     deriveTopicsHint(matchedChunks),
     hasStrongContext,
     orgDisplayName,
-    orgIdentityQuery
+    intent
   )
 
   const mainCompletion = await client.chat.completions.create({
@@ -436,7 +584,7 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
       confidence,
       sources,
       tokensUsed: tokensUsed + noAnswer.tokens,
-    }, trimmedQuery, retrievalQuery)
+    }, trimmedQuery, retrievalQuery, intent)
   }
 
   return withDebug({
@@ -445,5 +593,5 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     confidence,
     sources,
     tokensUsed,
-  }, trimmedQuery, retrievalQuery)
+  }, trimmedQuery, retrievalQuery, intent)
 }
