@@ -376,6 +376,15 @@ export const emailRouter = router({
 
       if (emailMsgError) console.error('[email.sendReply] email_messages insert error:', emailMsgError.message)
 
+      emitAgentRealtimeEvent(orgId, {
+        type: 'agent:message',
+        conversationId: input.conversationId,
+        channel: 'email',
+        agentId: ctx.user.id,
+        content: input.content,
+        createdAt: new Date().toISOString(),
+      })
+
       if (conv.status === 'pending' || conv.status === 'bot') {
         await ctx.supabase
           .from('conversations')

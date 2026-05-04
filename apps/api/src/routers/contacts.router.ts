@@ -16,6 +16,7 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
+import { safeRecordConversationTimelineEvent } from '../services/conversation-timeline.service'
 
 const VISITOR_TOMBSTONE_LIMIT = 500
 const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
@@ -448,6 +449,32 @@ export const contactsRouter = router({
       if (error) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to update contact: ${error.message}` })
       }
+
+      const { data: conversations } = await ctx.supabase
+        .from('conversations')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('contact_id', input.id)
+        .order('started_at', { ascending: false })
+        .limit(80)
+
+      await Promise.all(
+        (conversations ?? []).map((conversation: { id: string }) =>
+          safeRecordConversationTimelineEvent({
+            supabase: ctx.supabase,
+            orgId,
+            conversationId: conversation.id,
+            eventType: 'contact_updated',
+            title: 'Contact updated',
+            body: 'Contact profile details were changed.',
+            actorUserId: ctx.user.id,
+            metadata: {
+              contactId: input.id,
+              changedFields: Object.keys(payload),
+            },
+          })
+        )
+      )
 
       return data
     }),

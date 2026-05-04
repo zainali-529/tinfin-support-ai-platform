@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notifyConversationAssigned } from './notifications.service'
 import { emitAgentRealtimeEvent } from './realtime-events.service'
+import { safeRecordConversationTimelineEvent } from './conversation-timeline.service'
 
 type AnySupabase = SupabaseClient<any, 'public', any>
 
@@ -271,6 +272,19 @@ export async function routePendingConversation(params: {
       createdAt: new Date().toISOString(),
     })
 
+    await safeRecordConversationTimelineEvent({
+      supabase,
+      orgId,
+      conversationId,
+      eventType: 'assignment_changed',
+      title: 'Conversation queued',
+      body: 'No eligible agents were available.',
+      metadata: {
+        reason,
+        candidateCount: allCandidates.length,
+      },
+    })
+
     return {
       assignedTo: null,
       strategy: 'round_robin_load_aware',
@@ -341,6 +355,22 @@ export async function routePendingConversation(params: {
     queueState: 'assigned',
     reason,
     createdAt: nowIso,
+  })
+
+  await safeRecordConversationTimelineEvent({
+    supabase,
+    orgId,
+    conversationId,
+    eventType: 'assignment_changed',
+    title: 'Conversation assigned',
+    body: 'Routing engine assigned this conversation.',
+    actorUserId: assignedTo,
+    metadata: {
+      reason,
+      strategy: 'round_robin_load_aware',
+      candidateCount: preferredPool.length,
+      onlineCandidateCount: allCandidates.filter((candidate) => candidate.isOnline).length,
+    },
   })
 
   try {

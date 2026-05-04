@@ -471,6 +471,15 @@ export const whatsappRouter = router({
         })
       }
 
+      emitAgentRealtimeEvent(ctx.userOrgId, {
+        type: "agent:message",
+        conversationId: conversation.id,
+        channel: "whatsapp",
+        agentId: ctx.user.id,
+        content: input.content,
+        createdAt: new Date().toISOString(),
+      })
+
       if (conversation.status === "bot" || conversation.status === "pending") {
         await ctx.supabase
           .from("conversations")

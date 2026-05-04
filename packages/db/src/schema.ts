@@ -181,6 +181,67 @@ export const messages = pgTable('messages', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+export const conversationInternalNotes = pgTable(
+  'conversation_internal_notes',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    conversationId: uuid('conversation_id')
+      .references(() => conversations.id, { onDelete: 'cascade' })
+      .notNull(),
+    authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+    body: text('body').notNull(),
+    metadata: jsonb('metadata').default({}).notNull(),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedByUserId: uuid('deleted_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    conversationCreatedIndex: index('idx_conversation_internal_notes_conversation_created').on(
+      table.orgId,
+      table.conversationId,
+      table.createdAt
+    ),
+    authorIndex: index('idx_conversation_internal_notes_author').on(
+      table.orgId,
+      table.authorUserId,
+      table.createdAt
+    ),
+  })
+)
+
+export const conversationTimelineEvents = pgTable(
+  'conversation_timeline_events',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    conversationId: uuid('conversation_id')
+      .references(() => conversations.id, { onDelete: 'cascade' })
+      .notNull(),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    noteId: uuid('note_id').references(() => conversationInternalNotes.id, { onDelete: 'set null' }),
+    eventType: text('event_type').notNull(),
+    title: text('title').notNull(),
+    body: text('body'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    conversationCreatedIndex: index('idx_conversation_timeline_conversation_created').on(
+      table.orgId,
+      table.conversationId,
+      table.createdAt
+    ),
+    typeCreatedIndex: index('idx_conversation_timeline_type_created').on(
+      table.orgId,
+      table.eventType,
+      table.createdAt
+    ),
+  })
+)
+
 export const notifications = pgTable(
   'notifications',
   {

@@ -15,11 +15,65 @@ export type ConversationQueueState =
   | 'waiting_customer'
   | 'resolved'
 
+export interface RealtimeTimelineItem {
+  id: string
+  kind: 'note' | 'event'
+  eventType: string
+  title: string
+  body?: string | null
+  actorUserId?: string | null
+  actorName?: string | null
+  actorEmail?: string | null
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface RealtimeConversationSnapshot {
+  id: string
+  org_id: string
+  contact_id: string | null
+  status: RealtimeConversationStatus
+  channel: string
+  assigned_to: string | null
+  started_at: string
+  queue_state?: ConversationQueueState | null
+  queue_entered_at?: string | null
+  resolved_at?: string | null
+  first_response_due_at?: string | null
+  next_response_due_at?: string | null
+  resolution_due_at?: string | null
+  first_response_at?: string | null
+  last_customer_message_at?: string | null
+  last_agent_reply_at?: string | null
+  routing_assigned_at?: string | null
+  ai_context?: Record<string, unknown> | null
+  backlog_minutes?: number | null
+  backlog_state?: string | null
+  sla_target_at?: string | null
+  sla_state?: string | null
+  sla_remaining_seconds?: number | null
+  sla_stage?: string | null
+  sla_is_live?: boolean | null
+  contacts?: {
+    id: string
+    name: string | null
+    email: string | null
+    phone: string | null
+  } | null
+  latest_message_content?: string | null
+  latest_message_at?: string | null
+  latest_email_subject?: string | null
+  latest_email_at?: string | null
+  assigned_agent_name?: string | null
+  assigned_agent_email?: string | null
+}
+
 export type AgentRealtimeEvent =
   | {
       type: 'conversation:new'
       conversationId: string
       channel?: string | null
+      conversation?: RealtimeConversationSnapshot | null
       createdAt?: string
     }
   | {
@@ -35,6 +89,7 @@ export type AgentRealtimeEvent =
   | {
       type: 'visitor:message'
       conversationId: string
+      channel?: string | null
       visitorId?: string | null
       content?: string
       attachments?: RealtimeAttachment[]
@@ -43,6 +98,7 @@ export type AgentRealtimeEvent =
   | {
       type: 'agent:message'
       conversationId: string
+      channel?: string | null
       agentId?: string | null
       content?: string
       attachments?: RealtimeAttachment[]
@@ -52,6 +108,7 @@ export type AgentRealtimeEvent =
   | {
       type: 'ai:response'
       conversationId: string
+      channel?: string | null
       content?: string
       confidence?: number
       handoff?: boolean
@@ -99,6 +156,13 @@ export type AgentRealtimeEvent =
       type: 'contact:updated'
       conversationId?: string | null
       contact?: Record<string, unknown> | null
+      createdAt?: string
+    }
+  | {
+      type: 'timeline:updated'
+      conversationId: string
+      eventType?: string | null
+      timelineItem?: RealtimeTimelineItem | null
       createdAt?: string
     }
   | {

@@ -50,6 +50,20 @@
       "when": 1778140800000,
       "tag": "0007_notification_system",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778227200000,
+      "tag": "0008_internal_notes_timeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778313600000,
+      "tag": "0009_internal_note_edit_delete",
+      "breakpoints": true
     }
   ]
 }

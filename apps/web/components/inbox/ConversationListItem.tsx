@@ -133,8 +133,8 @@ function formatDurationCompact(totalSeconds: number): string {
   return `${safe}s`
 }
 
-function formatBacklogLabel(queueState: string, backlogMinutes: number): string {
-  const duration = formatDurationCompact(backlogMinutes * 60)
+function formatBacklogLabel(queueState: string, backlogSeconds: number): string {
+  const duration = formatDurationCompact(backlogSeconds)
   if (queueState === 'queued') return `Queued ${duration}`
   if (queueState === 'assigned') return `Assigned ${duration}`
   if (queueState === 'in_progress') return `Waiting ${duration}`
@@ -174,9 +174,12 @@ function formatSlaLabel(conversation: Conversation, targetMs: number | null, now
   const isTerminal = conversation.status === 'resolved' || conversation.status === 'closed'
   if (state === 'met' || (isTerminal && state !== 'breached')) return 'SLA met'
 
-  const remainingSeconds =
-    conversation.sla_remaining_seconds ??
-    (targetMs === null ? null : Math.floor((targetMs - nowMs) / 1000))
+  const isLive = conversation.sla_is_live !== false && !isTerminal
+  const computedRemainingSeconds =
+    targetMs === null ? null : Math.floor((targetMs - nowMs) / 1000)
+  const remainingSeconds = isLive
+    ? computedRemainingSeconds
+    : conversation.sla_remaining_seconds ?? computedRemainingSeconds
 
   if (state === 'breached') {
     const duration = remainingSeconds === null ? null : formatDurationCompact(Math.abs(remainingSeconds))
@@ -186,6 +189,9 @@ function formatSlaLabel(conversation: Conversation, targetMs: number | null, now
   }
 
   if (remainingSeconds === null) return null
+  if (remainingSeconds <= 0 && conversation.sla_is_live === true && !isTerminal) {
+    return `SLA overdue ${formatDurationCompact(Math.abs(remainingSeconds))}`
+  }
   return `SLA ${formatDurationCompact(remainingSeconds)} left`
 }
 
@@ -226,7 +232,7 @@ export function ConversationListItem({
 }: ConversationListItemProps) {
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
-    const interval = setInterval(() => setNowMs(Date.now()), 30_000)
+    const interval = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(interval)
   }, [])
 
@@ -240,17 +246,17 @@ export function ConversationListItem({
     if (!shouldShowBacklog(conversation, queueState)) return null
 
     const backlogStartMs = toMs(resolveBacklogStart(conversation, queueState))
-    const backlogMinutes =
-      conversation.backlog_minutes ??
-      (backlogStartMs === null ? null : Math.max(0, Math.floor((nowMs - backlogStartMs) / 60000)))
-    const backlogState = conversation.backlog_state ?? fallbackBacklogState(backlogMinutes)
+    const backlogSeconds =
+      backlogStartMs === null ? null : Math.max(0, Math.floor((nowMs - backlogStartMs) / 1000))
+    const backlogMinutes = backlogSeconds === null ? null : Math.floor(backlogSeconds / 60)
+    const backlogState = fallbackBacklogState(backlogMinutes)
 
-    if (backlogMinutes === null) return null
+    if (backlogSeconds === null) return null
     return {
       state: backlogState,
-      label: formatBacklogLabel(queueState, backlogMinutes),
+      label: formatBacklogLabel(queueState, backlogSeconds),
     }
-  }, [conversation, conversation.backlog_minutes, conversation.backlog_state, nowMs, queueState])
+  }, [conversation, nowMs, queueState])
 
   const sla = useMemo(() => {
     const slaTarget = conversation.sla_target_at
@@ -262,8 +268,13 @@ export function ConversationListItem({
     const label = formatSlaLabel(conversation, targetMs, nowMs)
 
     if (conversation.sla_state && label) {
+      const liveState =
+        conversation.sla_is_live === true && targetMs !== null
+          ? fallbackSlaState(Math.floor((targetMs - nowMs) / 1000))
+          : conversation.sla_state
+
       return {
-        state: conversation.sla_state,
+        state: liveState,
         label,
       }
     }

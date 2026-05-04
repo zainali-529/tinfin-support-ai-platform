@@ -6,6 +6,7 @@ import { getOrgPlanId } from "../lib/subscriptions"
 import { canStartConversation } from "../lib/billing-limits"
 import { routePendingConversation } from "../services/inbox-ops.service"
 import { notifyNewConversation } from "../services/notifications.service"
+import { emitAgentRealtimeEvent } from "../services/realtime-events.service"
 import {
   parseWhatsAppWebhook,
   sendWhatsAppMessage,
@@ -303,6 +304,14 @@ async function triggerAIAutoReply(params: {
       message_type: "text",
       raw_payload: { source: "auto_reply" },
     })
+
+    emitAgentRealtimeEvent(account.org_id, {
+      type: "ai:response",
+      conversationId,
+      channel: "whatsapp",
+      content: ragResult.message,
+      createdAt: new Date().toISOString(),
+    })
   } catch (err) {
     console.error(
       "[whatsapp-webhook/ai] Auto-reply failed:",
@@ -379,6 +388,24 @@ async function processInboundMessage(params: {
   if (waError) {
     throw new Error(`Failed to insert whatsapp_message: ${waError.message}`)
   }
+
+  const realtimeCreatedAt = new Date().toISOString()
+  if (isNew) {
+    emitAgentRealtimeEvent(account.org_id, {
+      type: "conversation:new",
+      conversationId,
+      channel: "whatsapp",
+      createdAt: realtimeCreatedAt,
+    })
+  }
+
+  emitAgentRealtimeEvent(account.org_id, {
+    type: "visitor:message",
+    conversationId,
+    channel: "whatsapp",
+    content: inboundContent(parsed),
+    createdAt: realtimeCreatedAt,
+  })
 
   console.log(
     `[whatsapp-webhook] org=${account.org_id} conv=${conversationId} isNew=${isNew} from=${parsed.fromPhone}`

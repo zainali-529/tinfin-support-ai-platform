@@ -147,12 +147,14 @@ export function UnifiedInbox() {
     loadMore,
     refetch,
     patchConversation,
+    upsertConversation,
   } = useConversations(orgId, {
     channelFilter,
     statusFilter,
     savedView,
     search: debouncedSearch,
     limit: 10,
+    currentUserId: agentId,
   })
   const savedViewCountsQuery = trpc.chat.getSavedViewCounts.useQuery(undefined, {
     staleTime: 15_000,
@@ -203,6 +205,41 @@ export function UnifiedInbox() {
   const handleInboxSocketMessage = useCallback((payload: AgentRealtimeEvent) => {
     const type = payload.type
     const record = payload as Record<string, unknown>
+
+    if (type === 'conversation:new' && payload.conversation) {
+      upsertConversation(payload.conversation)
+      utils.chat.getConversation.setData({ conversationId: payload.conversationId }, (previous) =>
+        previous ? ({ ...previous, ...payload.conversation } as typeof previous) : previous
+      )
+    }
+
+    if (
+      type === 'visitor:message' ||
+      type === 'agent:message' ||
+      type === 'ai:response'
+    ) {
+      const conversationId = typeof record.conversationId === 'string' ? record.conversationId : null
+      const content = typeof record.content === 'string' ? record.content : null
+      const createdAt = typeof record.createdAt === 'string' ? record.createdAt : new Date().toISOString()
+
+      if (conversationId) {
+        const patch: Partial<Conversation> = {
+          latest_message_content: content,
+          latest_message_at: createdAt,
+        }
+
+        if (type === 'visitor:message') {
+          patch.last_customer_message_at = createdAt
+        } else {
+          patch.last_agent_reply_at = createdAt
+        }
+
+        patchConversation(conversationId, patch)
+        utils.chat.getConversation.setData({ conversationId }, (previous) =>
+          previous ? ({ ...previous, ...patch } as typeof previous) : previous
+        )
+      }
+    }
 
     if (type === 'conversation:status_changed') {
       const conversationId = typeof record.conversationId === 'string' ? record.conversationId : null
@@ -266,6 +303,7 @@ export function UnifiedInbox() {
     patchConversation,
     pendingApprovalsQuery,
     refetch,
+    upsertConversation,
     utils.chat.getConversation,
     utils.chat.getSavedViewCounts,
     utils.dashboard.getHomeOverview,

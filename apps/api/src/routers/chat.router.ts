@@ -1,11 +1,16 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
-import { INBOX_SAVED_VIEW_IDS, type InboxSavedViewId } from '@workspace/types'
+import { INBOX_SAVED_VIEW_IDS, type InboxSavedViewId, type RealtimeTimelineItem } from '@workspace/types'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 import { routePendingConversation } from '../services/inbox-ops.service'
 import { notifyConversationAssigned } from '../services/notifications.service'
 import { emitAgentRealtimeEvent } from '../services/realtime-events.service'
+import {
+  recordConversationTimelineEvent,
+  safeRecordConversationTimelineEvent,
+  type ConversationTimelineEventType,
+} from '../services/conversation-timeline.service'
 import {
   deriveInboxBacklog,
   deriveInboxSla,
@@ -98,6 +103,27 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function metadataWithDefinedValues(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined)
+  )
+}
+
+function statusTimelineEventType(previousStatus: string | null, nextStatus: string): ConversationTimelineEventType {
+  if (nextStatus === 'bot') return 'ai_takeover'
+  if ((previousStatus === 'bot' || previousStatus === 'pending') && nextStatus === 'open') return 'ai_released'
+  return 'status_changed'
+}
+
+function statusTimelineTitle(previousStatus: string | null, nextStatus: string): string {
+  if (nextStatus === 'bot') return 'AI resumed conversation'
+  if ((previousStatus === 'bot' || previousStatus === 'pending') && nextStatus === 'open') {
+    return 'Human agent took over'
+  }
+  if (nextStatus === 'resolved' || nextStatus === 'closed') return 'Conversation resolved'
+  return 'Status changed'
+}
+
 function normalizeLabels(labels: string[]): string[] {
   const seen = new Set<string>()
   const output: string[] = []
@@ -177,8 +203,117 @@ type ConversationBaseRow = {
   contacts: unknown
 }
 
+type TimelineActor = {
+  id: string
+  name: string | null
+  email: string | null
+}
+
+type ConversationTimelineItem = {
+  id: string
+  kind: 'note' | 'event'
+  eventType: ConversationTimelineEventType
+  title: string
+  body: string | null
+  actorUserId: string | null
+  actorName: string | null
+  actorEmail: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+type InternalNoteRow = {
+  id: string
+  conversation_id: string
+  author_user_id: string | null
+  body: string
+  metadata: Record<string, unknown> | null
+  edited_at: string | null
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 type SupabaseQueryClient = {
   from: (table: string) => any
+}
+
+function authUserDisplayName(user: {
+  email?: string | null
+  user_metadata?: Record<string, unknown> | null
+}): string | null {
+  const metadata = user.user_metadata ?? {}
+  const name = metadata.full_name ?? metadata.name
+  return typeof name === 'string' && name.trim().length > 0 ? name.trim() : null
+}
+
+async function assertConversationInOrg(
+  supabase: SupabaseQueryClient,
+  orgId: string,
+  conversationId: string
+): Promise<ConversationBaseRow> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select(conversationSelectFields)
+    .eq('id', conversationId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load conversation: ${error.message}`,
+    })
+  }
+
+  if (!data) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
+  }
+
+  return data as unknown as ConversationBaseRow
+}
+
+async function assertEditableInternalNote(params: {
+  supabase: SupabaseQueryClient
+  orgId: string
+  noteId: string
+  userId: string
+}): Promise<InternalNoteRow> {
+  const { data, error } = await params.supabase
+    .from('conversation_internal_notes')
+    .select('id, conversation_id, author_user_id, body, metadata, edited_at, deleted_at, created_at, updated_at')
+    .eq('id', params.noteId)
+    .eq('org_id', params.orgId)
+    .maybeSingle()
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load internal note: ${error.message}`,
+    })
+  }
+
+  if (!data) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Internal note not found.' })
+  }
+
+  const note = data as InternalNoteRow
+
+  if (note.author_user_id !== params.userId) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only the author can edit or delete this internal note.',
+    })
+  }
+
+  if (note.deleted_at) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'This internal note has already been deleted.',
+    })
+  }
+
+  return note
 }
 
 const HYDRATED_SAVED_VIEWS = new Set<InboxSavedViewId>(['sla_at_risk', 'sla_breached'])
@@ -511,6 +646,395 @@ async function hydrateConversationListItems(
   })
 }
 
+async function loadTimelineActors(
+  supabase: SupabaseQueryClient,
+  actorIds: Array<string | null | undefined>
+): Promise<Map<string, TimelineActor>> {
+  const ids = Array.from(new Set(actorIds.filter((value): value is string => Boolean(value))))
+  const actors = new Map<string, TimelineActor>()
+  if (ids.length === 0) return actors
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .in('id', ids)
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load timeline actors: ${error.message}`,
+    })
+  }
+
+  for (const row of (data ?? []) as TimelineActor[]) {
+    actors.set(row.id, row)
+  }
+
+  return actors
+}
+
+function buildTimelineItem(params: {
+  id: string
+  kind: 'note' | 'event'
+  eventType: ConversationTimelineEventType
+  title: string
+  body?: string | null
+  actorUserId?: string | null
+  actor?: TimelineActor | null
+  metadata?: Record<string, unknown>
+  createdAt: string
+}): ConversationTimelineItem {
+  return {
+    id: params.id,
+    kind: params.kind,
+    eventType: params.eventType,
+    title: params.title,
+    body: params.body ?? null,
+    actorUserId: params.actorUserId ?? null,
+    actorName: params.actor?.name ?? null,
+    actorEmail: params.actor?.email ?? null,
+    metadata: params.metadata ?? {},
+    createdAt: params.createdAt,
+  }
+}
+
+async function loadConversationTimelineItems(params: {
+  supabase: SupabaseQueryClient
+  orgId: string
+  conversation: ConversationBaseRow
+}): Promise<ConversationTimelineItem[]> {
+  const conversationId = params.conversation.id
+  const [
+    notesResult,
+    eventsResult,
+    messagesResult,
+    emailEventsResult,
+    whatsappEventsResult,
+    actionLogsResult,
+  ] = await Promise.all([
+    params.supabase
+      .from('conversation_internal_notes')
+      .select('id, author_user_id, deleted_by_user_id, body, metadata, edited_at, deleted_at, updated_at, created_at')
+      .eq('org_id', params.orgId)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(80),
+    params.supabase
+      .from('conversation_timeline_events')
+      .select('id, actor_user_id, event_type, title, body, metadata, created_at')
+      .eq('org_id', params.orgId)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(120),
+    params.supabase
+      .from('messages')
+      .select('id, role, content, ai_metadata, created_at')
+      .eq('org_id', params.orgId)
+      .eq('conversation_id', conversationId)
+      .in('role', ['user', 'agent'])
+      .order('created_at', { ascending: false })
+      .limit(40),
+    params.supabase
+      .from('email_messages')
+      .select('id, direction, subject, from_email, status, created_at')
+      .eq('org_id', params.orgId)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(30),
+    params.supabase
+      .from('whatsapp_messages')
+      .select('id, direction, status, message_type, wa_contact_id, created_at')
+      .eq('org_id', params.orgId)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(30),
+    params.supabase
+      .from('ai_action_logs')
+      .select('id, action_id, status, error_message, duration_ms, status_code, retry_count, created_at, completed_at, approved_by')
+      .eq('org_id', params.orgId)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(60),
+  ])
+
+  const errors = [
+    notesResult.error,
+    eventsResult.error,
+    messagesResult.error,
+    emailEventsResult.error,
+    whatsappEventsResult.error,
+    actionLogsResult.error,
+  ].filter(Boolean)
+
+  if (errors.length > 0) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load conversation timeline: ${errors[0]?.message ?? 'Unknown error'}`,
+    })
+  }
+
+  const actionRows = (actionLogsResult.data ?? []) as Array<{
+    id: string
+    action_id: string | null
+    status: string
+    error_message: string | null
+    duration_ms: number | null
+    status_code: number | null
+    retry_count: number | null
+    created_at: string
+    completed_at: string | null
+    approved_by: string | null
+  }>
+  const actionIds = Array.from(new Set(actionRows.map((row) => row.action_id).filter(Boolean))) as string[]
+  const actionNamesById = new Map<string, string>()
+
+  if (actionIds.length > 0) {
+    const { data, error } = await params.supabase
+      .from('ai_actions')
+      .select('id, display_name, name')
+      .eq('org_id', params.orgId)
+      .in('id', actionIds)
+
+    if (error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to load action names: ${error.message}`,
+      })
+    }
+
+    for (const row of (data ?? []) as Array<{ id: string; display_name: string | null; name: string | null }>) {
+      actionNamesById.set(row.id, row.display_name ?? row.name ?? 'AI action')
+    }
+  }
+
+  const actorIds = [
+    ...(notesResult.data ?? []).map((row: { author_user_id: string | null }) => row.author_user_id),
+    ...(notesResult.data ?? []).map((row: { deleted_by_user_id?: string | null }) => row.deleted_by_user_id ?? null),
+    ...(eventsResult.data ?? []).map((row: { actor_user_id: string | null }) => row.actor_user_id),
+    ...(messagesResult.data ?? []).map((row: { ai_metadata: Record<string, unknown> | null }) => {
+      const metadata = asRecord(row.ai_metadata)
+      return typeof metadata.agentId === 'string' ? metadata.agentId : null
+    }),
+    ...actionRows.map((row) => row.approved_by),
+  ]
+  const actors = await loadTimelineActors(params.supabase, actorIds)
+  const items: ConversationTimelineItem[] = []
+
+  const sla = deriveInboxSla(params.conversation, Date.now())
+  if (sla.slaState) {
+    const eventType: ConversationTimelineEventType =
+      sla.slaState === 'breached'
+        ? 'sla_breached'
+        : sla.slaState === 'met'
+          ? 'sla_met'
+          : 'sla_changed'
+    items.push(buildTimelineItem({
+      id: `sla:${conversationId}:${sla.slaState}:${sla.slaStage ?? 'unknown'}`,
+      kind: 'event',
+      eventType,
+      title:
+        sla.slaState === 'breached'
+          ? 'SLA breached'
+          : sla.slaState === 'met'
+            ? 'SLA met'
+            : sla.slaState === 'at_risk'
+              ? 'SLA at risk'
+              : 'SLA on track',
+      body: sla.slaStage ? `Current ${sla.slaStage.replace(/_/g, ' ')} target status.` : null,
+      metadata: {
+        slaState: sla.slaState,
+        slaStage: sla.slaStage,
+        slaTargetAt: sla.slaTargetAt,
+        slaRemainingSeconds: sla.slaRemainingSeconds,
+        synthetic: true,
+      },
+      createdAt: sla.slaTargetAt ?? params.conversation.started_at,
+    }))
+  }
+
+  for (const row of (notesResult.data ?? []) as Array<{
+    id: string
+    author_user_id: string | null
+    deleted_by_user_id: string | null
+    body: string
+    metadata: Record<string, unknown> | null
+    edited_at: string | null
+    deleted_at: string | null
+    updated_at: string
+    created_at: string
+  }>) {
+    const actorId = row.deleted_at ? row.deleted_by_user_id : row.author_user_id
+    const actor = actorId ? actors.get(actorId) : null
+    const metadata = asRecord(row.metadata)
+
+    if (row.deleted_at) {
+      items.push(buildTimelineItem({
+        id: `note:${row.id}`,
+        kind: 'event',
+        eventType: 'internal_note_deleted',
+        title: 'Internal note deleted',
+        body: 'A note was deleted by its author.',
+        actorUserId: actorId,
+        actor,
+        metadata: {
+          ...metadata,
+          noteId: row.id,
+          deletedAt: row.deleted_at,
+          deletedByUserId: row.deleted_by_user_id,
+        },
+        createdAt: row.created_at,
+      }))
+      continue
+    }
+
+    items.push(buildTimelineItem({
+      id: `note:${row.id}`,
+      kind: 'note',
+      eventType: 'internal_note',
+      title: 'Internal note',
+      body: row.body,
+      actorUserId: row.author_user_id,
+      actor,
+      metadata: {
+        ...metadata,
+        noteId: row.id,
+        editedAt: row.edited_at,
+        updatedAt: row.updated_at,
+      },
+      createdAt: row.created_at,
+    }))
+  }
+
+  for (const row of (eventsResult.data ?? []) as Array<{
+    id: string
+    actor_user_id: string | null
+    event_type: ConversationTimelineEventType
+    title: string
+    body: string | null
+    metadata: Record<string, unknown> | null
+    created_at: string
+  }>) {
+    if (row.event_type === 'internal_note_deleted') {
+      continue
+    }
+
+    const actor = row.actor_user_id ? actors.get(row.actor_user_id) : null
+    items.push(buildTimelineItem({
+      id: `event:${row.id}`,
+      kind: 'event',
+      eventType: row.event_type,
+      title: row.title,
+      body: row.body,
+      actorUserId: row.actor_user_id,
+      actor,
+      metadata: asRecord(row.metadata),
+      createdAt: row.created_at,
+    }))
+  }
+
+  for (const row of (messagesResult.data ?? []) as Array<{
+    id: string
+    role: string
+    content: string | null
+    ai_metadata: Record<string, unknown> | null
+    created_at: string
+  }>) {
+    const metadata = asRecord(row.ai_metadata)
+    const actorId = typeof metadata.agentId === 'string' ? metadata.agentId : null
+    const actor = actorId ? actors.get(actorId) : null
+    items.push(buildTimelineItem({
+      id: `message:${row.id}`,
+      kind: 'event',
+      eventType: 'channel_event',
+      title: row.role === 'agent' ? 'Agent reply sent' : 'Customer message received',
+      body: row.content ? row.content.slice(0, 180) : null,
+      actorUserId: actorId,
+      actor,
+      metadata: {
+        channel: params.conversation.channel,
+        role: row.role,
+        source: 'messages',
+      },
+      createdAt: row.created_at,
+    }))
+  }
+
+  for (const row of (emailEventsResult.data ?? []) as Array<{
+    id: string
+    direction: string
+    subject: string | null
+    from_email: string | null
+    status: string | null
+    created_at: string
+  }>) {
+    items.push(buildTimelineItem({
+      id: `email:${row.id}`,
+      kind: 'event',
+      eventType: 'channel_event',
+      title: row.direction === 'outbound' ? 'Email sent' : 'Email received',
+      body: row.subject || row.from_email,
+      metadata: {
+        channel: 'email',
+        direction: row.direction,
+        status: row.status,
+      },
+      createdAt: row.created_at,
+    }))
+  }
+
+  for (const row of (whatsappEventsResult.data ?? []) as Array<{
+    id: string
+    direction: string
+    status: string | null
+    message_type: string | null
+    wa_contact_id: string | null
+    created_at: string
+  }>) {
+    items.push(buildTimelineItem({
+      id: `whatsapp:${row.id}`,
+      kind: 'event',
+      eventType: 'channel_event',
+      title: row.direction === 'outbound' ? 'WhatsApp sent' : 'WhatsApp received',
+      body: row.message_type ? `${row.message_type.replace(/_/g, ' ')} message` : null,
+      metadata: {
+        channel: 'whatsapp',
+        direction: row.direction,
+        status: row.status,
+        waContactId: row.wa_contact_id,
+      },
+      createdAt: row.created_at,
+    }))
+  }
+
+  for (const row of actionRows) {
+    const actor = row.approved_by ? actors.get(row.approved_by) : null
+    const actionName = row.action_id ? actionNamesById.get(row.action_id) : null
+    items.push(buildTimelineItem({
+      id: `action:${row.id}`,
+      kind: 'event',
+      eventType: 'action_executed',
+      title: `Action ${row.status}`,
+      body: actionName ?? row.error_message ?? 'AI action event',
+      actorUserId: row.approved_by,
+      actor,
+      metadata: {
+        actionId: row.action_id,
+        actionName,
+        status: row.status,
+        errorMessage: row.error_message,
+        durationMs: row.duration_ms,
+        statusCode: row.status_code,
+        retryCount: row.retry_count,
+      },
+      createdAt: row.completed_at ?? row.created_at,
+    }))
+  }
+
+  return items
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 180)
+}
+
 export const chatRouter = router({
   getConversations: protectedProcedure
     .input(
@@ -770,6 +1294,287 @@ export const chatRouter = router({
       return data ?? []
     }),
 
+  getConversationTimeline: protectedProcedure
+    .input(z.object({ conversationId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      const orgId = ctx.userOrgId
+      const conversation = await assertConversationInOrg(ctx.supabase, orgId, input.conversationId)
+
+      return loadConversationTimelineItems({
+        supabase: ctx.supabase,
+        orgId,
+        conversation,
+      })
+    }),
+
+  createInternalNote: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().uuid(),
+        body: z.string().trim().min(1).max(4000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      const orgId = ctx.userOrgId
+      await assertConversationInOrg(ctx.supabase, orgId, input.conversationId)
+
+      const { data, error } = await ctx.supabase
+        .from('conversation_internal_notes')
+        .insert({
+          org_id: orgId,
+          conversation_id: input.conversationId,
+          author_user_id: ctx.user.id,
+          body: input.body,
+          metadata: {},
+        })
+        .select('id, body, author_user_id, metadata, created_at')
+        .maybeSingle()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to save internal note: ${error.message}`,
+        })
+      }
+
+      if (!data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Internal note was saved but no row was returned.',
+        })
+      }
+
+      const timelineItem: RealtimeTimelineItem = {
+        id: `note:${data.id as string}`,
+        kind: 'note',
+        eventType: 'internal_note',
+        title: 'Internal note',
+        body: (data.body as string | null | undefined) ?? input.body,
+        actorUserId: (data.author_user_id as string | null | undefined) ?? ctx.user.id,
+        actorName: authUserDisplayName(ctx.user),
+        actorEmail: ctx.user.email ?? null,
+        metadata: (data.metadata as Record<string, unknown> | null | undefined) ?? {},
+        createdAt: (data.created_at as string | null | undefined) ?? new Date().toISOString(),
+      }
+
+      emitAgentRealtimeEvent(orgId, {
+        type: 'timeline:updated',
+        conversationId: input.conversationId,
+        eventType: 'internal_note',
+        timelineItem,
+        createdAt: timelineItem.createdAt,
+      })
+
+      return {
+        note: data,
+        timelineItem,
+      }
+    }),
+
+  updateInternalNote: protectedProcedure
+    .input(
+      z.object({
+        noteId: z.string().uuid(),
+        body: z.string().trim().min(1).max(4000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      const orgId = ctx.userOrgId
+      const existing = await assertEditableInternalNote({
+        supabase: ctx.supabase,
+        orgId,
+        noteId: input.noteId,
+        userId: ctx.user.id,
+      })
+
+      if (existing.body.trim() === input.body.trim()) {
+        const timelineItem: RealtimeTimelineItem = {
+          id: `note:${existing.id}`,
+          kind: 'note',
+          eventType: 'internal_note',
+          title: 'Internal note',
+          body: existing.body,
+          actorUserId: existing.author_user_id,
+          actorName: authUserDisplayName(ctx.user),
+          actorEmail: ctx.user.email ?? null,
+          metadata: {
+            ...asRecord(existing.metadata),
+            noteId: existing.id,
+            editedAt: existing.edited_at,
+            updatedAt: existing.updated_at,
+          },
+          createdAt: existing.created_at,
+        }
+
+        return {
+          note: existing,
+          timelineItem,
+        }
+      }
+
+      const editedAt = new Date().toISOString()
+      const nextMetadata = {
+        ...asRecord(existing.metadata),
+        editedAt,
+        editedByUserId: ctx.user.id,
+      }
+
+      const { data, error } = await ctx.supabase
+        .from('conversation_internal_notes')
+        .update({
+          body: input.body,
+          edited_at: editedAt,
+          metadata: nextMetadata,
+        })
+        .eq('id', input.noteId)
+        .eq('org_id', orgId)
+        .is('deleted_at', null)
+        .select('id, body, author_user_id, metadata, edited_at, updated_at, created_at')
+        .maybeSingle()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to update internal note: ${error.message}`,
+        })
+      }
+
+      if (!data) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Internal note not found.' })
+      }
+
+      await safeRecordConversationTimelineEvent({
+        supabase: ctx.supabase,
+        orgId,
+        conversationId: existing.conversation_id,
+        eventType: 'internal_note_edited',
+        title: 'Internal note edited',
+        body: 'A note was updated by its author.',
+        actorUserId: ctx.user.id,
+        metadata: {
+          noteId: input.noteId,
+          previousLength: existing.body.length,
+          nextLength: input.body.length,
+        },
+      })
+
+      const timelineItem: RealtimeTimelineItem = {
+        id: `note:${data.id as string}`,
+        kind: 'note',
+        eventType: 'internal_note',
+        title: 'Internal note',
+        body: (data.body as string | null | undefined) ?? input.body,
+        actorUserId: (data.author_user_id as string | null | undefined) ?? ctx.user.id,
+        actorName: authUserDisplayName(ctx.user),
+        actorEmail: ctx.user.email ?? null,
+        metadata: {
+          ...((data.metadata as Record<string, unknown> | null | undefined) ?? {}),
+          noteId: data.id as string,
+          editedAt: (data.edited_at as string | null | undefined) ?? editedAt,
+          updatedAt: (data.updated_at as string | null | undefined) ?? editedAt,
+        },
+        createdAt: (data.created_at as string | null | undefined) ?? existing.created_at,
+      }
+
+      emitAgentRealtimeEvent(orgId, {
+        type: 'timeline:updated',
+        conversationId: existing.conversation_id,
+        eventType: 'internal_note',
+        timelineItem,
+        createdAt: editedAt,
+      })
+
+      return {
+        note: data,
+        timelineItem,
+      }
+    }),
+
+  deleteInternalNote: protectedProcedure
+    .input(z.object({ noteId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      const orgId = ctx.userOrgId
+      const existing = await assertEditableInternalNote({
+        supabase: ctx.supabase,
+        orgId,
+        noteId: input.noteId,
+        userId: ctx.user.id,
+      })
+
+      const deletedAt = new Date().toISOString()
+      const { error } = await ctx.supabase
+        .from('conversation_internal_notes')
+        .update({
+          deleted_at: deletedAt,
+          deleted_by_user_id: ctx.user.id,
+          metadata: {
+            ...asRecord(existing.metadata),
+            deletedAt,
+            deletedByUserId: ctx.user.id,
+          },
+        })
+        .eq('id', input.noteId)
+        .eq('org_id', orgId)
+        .is('deleted_at', null)
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to delete internal note: ${error.message}`,
+        })
+      }
+
+      await recordConversationTimelineEvent({
+        supabase: ctx.supabase,
+        orgId,
+        conversationId: existing.conversation_id,
+        eventType: 'internal_note_deleted',
+        title: 'Internal note deleted',
+        body: 'A note was deleted by its author.',
+        actorUserId: ctx.user.id,
+        metadata: {
+          noteId: input.noteId,
+          deletedAt,
+        },
+        emitRealtime: false,
+      })
+
+      const timelineItem: RealtimeTimelineItem = {
+        id: `note:${input.noteId}`,
+        kind: 'event',
+        eventType: 'internal_note_deleted',
+        title: 'Internal note deleted',
+        body: 'A note was deleted by its author.',
+        actorUserId: ctx.user.id,
+        actorName: authUserDisplayName(ctx.user),
+        actorEmail: ctx.user.email ?? null,
+        metadata: {
+          noteId: input.noteId,
+          deletedAt,
+          deletedByUserId: ctx.user.id,
+        },
+        createdAt: existing.created_at,
+      }
+
+      emitAgentRealtimeEvent(orgId, {
+        type: 'timeline:updated',
+        conversationId: existing.conversation_id,
+        eventType: 'internal_note_deleted',
+        timelineItem,
+        createdAt: deletedAt,
+      })
+
+      return {
+        noteId: input.noteId,
+        conversationId: existing.conversation_id,
+        timelineItem,
+      }
+    }),
+
   updateStatus: protectedProcedure
     .input(
       z.object({
@@ -781,6 +1586,7 @@ export const chatRouter = router({
     .mutation(async ({ ctx, input }) => {
       requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
       const orgId = ctx.userOrgId
+      const previousConversation = await assertConversationInOrg(ctx.supabase, orgId, input.conversationId)
 
       if (input.assignedTo) {
         const { data: membership, error: membershipError } = await ctx.supabase
@@ -872,6 +1678,41 @@ export const chatRouter = router({
         actorUserId: ctx.user.id,
         createdAt: new Date().toISOString(),
       })
+
+      if (previousConversation.assigned_to !== (finalData.assigned_to ?? null)) {
+        await safeRecordConversationTimelineEvent({
+          supabase: ctx.supabase,
+          orgId,
+          conversationId: input.conversationId,
+          eventType: 'assignment_changed',
+          title: finalData.assigned_to ? 'Conversation assigned' : 'Conversation unassigned',
+          body: null,
+          actorUserId: ctx.user.id,
+          metadata: metadataWithDefinedValues({
+            previousAssignedTo: previousConversation.assigned_to,
+            nextAssignedTo: finalData.assigned_to ?? null,
+            status: finalData.status,
+          }),
+        })
+      }
+
+      if (previousConversation.status !== finalData.status) {
+        await safeRecordConversationTimelineEvent({
+          supabase: ctx.supabase,
+          orgId,
+          conversationId: input.conversationId,
+          eventType: statusTimelineEventType(previousConversation.status, finalData.status),
+          title: statusTimelineTitle(previousConversation.status, finalData.status),
+          body: `${previousConversation.status} -> ${finalData.status}`,
+          actorUserId: ctx.user.id,
+          metadata: metadataWithDefinedValues({
+            previousStatus: previousConversation.status,
+            nextStatus: finalData.status,
+            previousQueueState: previousConversation.queue_state,
+            nextQueueState: finalData.queue_state ?? null,
+          }),
+        })
+      }
 
       if (typeof finalData.assigned_to === 'string' && finalData.assigned_to === input.assignedTo) {
         try {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
-import type { InboxSavedViewId } from '@workspace/types'
+import type { InboxSavedViewId, RealtimeConversationSnapshot } from '@workspace/types'
 import type { Conversation } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
@@ -17,6 +17,65 @@ interface UseConversationsOptions {
   savedView?: InboxSavedViewId
   search?: string
   limit?: number
+  currentUserId?: string | null
+}
+
+function snapshotToConversation(snapshot: RealtimeConversationSnapshot): Conversation {
+  return {
+    ...snapshot,
+    channel: snapshot.channel as Conversation['channel'],
+    status: snapshot.status as Conversation['status'],
+    queue_state: snapshot.queue_state as Conversation['queue_state'],
+    backlog_state: snapshot.backlog_state as Conversation['backlog_state'],
+    sla_state: snapshot.sla_state as Conversation['sla_state'],
+    sla_stage: snapshot.sla_stage as Conversation['sla_stage'],
+    contacts: snapshot.contacts
+      ? {
+          ...snapshot.contacts,
+          org_id: snapshot.org_id,
+          meta: null,
+          created_at: snapshot.started_at,
+        }
+      : null,
+  }
+}
+
+function conversationMatchesStatus(conversation: Conversation, status: StatusFilter): boolean {
+  if (status === 'all') return true
+  if (status === 'resolved') return conversation.status === 'resolved' || conversation.status === 'closed'
+  return conversation.status === status
+}
+
+function conversationMatchesSavedView(
+  conversation: Conversation,
+  savedView: InboxSavedViewId,
+  currentUserId?: string | null
+): boolean {
+  switch (savedView) {
+    case 'my_open':
+      return conversation.status === 'open' && Boolean(currentUserId) && conversation.assigned_to === currentUserId
+    case 'unassigned':
+      return !['resolved', 'closed'].includes(conversation.status) && conversation.assigned_to === null
+    case 'sla_at_risk':
+      return conversation.sla_is_live === true && conversation.sla_state === 'at_risk'
+    case 'sla_breached':
+      return conversation.sla_is_live === true && conversation.sla_state === 'breached'
+    case 'waiting_customer':
+      return conversation.queue_state === 'waiting_customer'
+    case 'human_takeover':
+      return conversation.status === 'pending'
+    case 'email_only':
+      return conversation.channel === 'email'
+    case 'whatsapp_only':
+      return conversation.channel === 'whatsapp'
+    case 'ai_handled':
+      return conversation.status === 'bot' || conversation.queue_state === 'bot'
+    case 'actions_failed':
+      return false
+    case 'all':
+    default:
+      return true
+  }
 }
 
 export function useConversations(orgId: string, options?: UseConversationsOptions) {
@@ -26,6 +85,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
   const queueFilter = options?.queueFilter ?? 'all'
   const savedView = options?.savedView ?? 'all'
   const search = options?.search?.trim() ?? ''
+  const currentUserId = options?.currentUserId ?? null
 
   const [page, setPage] = useState(1)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -94,6 +154,44 @@ export function useConversations(orgId: string, options?: UseConversationsOption
       )
     )
   }, [])
+
+  const conversationMatchesCurrentView = useCallback((conversation: Conversation) => {
+    if (search) return false
+    if (channelFilter !== 'all' && conversation.channel !== channelFilter) return false
+    if (!conversationMatchesStatus(conversation, statusFilter)) return false
+    if (queueFilter !== 'all' && conversation.queue_state !== queueFilter) return false
+    return conversationMatchesSavedView(conversation, savedView, currentUserId)
+  }, [channelFilter, currentUserId, queueFilter, savedView, search, statusFilter])
+
+  const upsertConversation = useCallback((snapshot: RealtimeConversationSnapshot, options?: { bump?: boolean }) => {
+    const conversation = snapshotToConversation(snapshot)
+    const shouldInsert = conversationMatchesCurrentView(conversation)
+    const shouldBump = options?.bump !== false
+    let inserted = false
+
+    setConversations((previous) => {
+      const existingIndex = previous.findIndex((item) => item.id === conversation.id)
+      if (existingIndex >= 0) {
+        const next = [...previous]
+        const merged = { ...next[existingIndex], ...conversation }
+        next.splice(existingIndex, 1)
+        return shouldBump ? [merged, ...next] : [
+          ...next.slice(0, existingIndex),
+          merged,
+          ...next.slice(existingIndex),
+        ]
+      }
+
+      if (!shouldInsert) return previous
+      inserted = true
+      return [conversation, ...previous]
+    })
+
+    setTotalCount((previous) => {
+      if (!inserted) return previous
+      return previous + 1
+    })
+  }, [conversationMatchesCurrentView])
 
   const refreshFirstPage = useCallback(async () => {
     if (page === 1) {
@@ -184,5 +282,6 @@ export function useConversations(orgId: string, options?: UseConversationsOption
     loadMore,
     refetch: refreshFirstPage,
     patchConversation,
+    upsertConversation,
   }
 }

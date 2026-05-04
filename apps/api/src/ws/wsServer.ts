@@ -20,6 +20,7 @@ import {
   notifyHandoffRequested,
   notifyNewConversation,
 } from '../services/notifications.service'
+import { safeRecordConversationTimelineEvent } from '../services/conversation-timeline.service'
 import { startAgentRealtimeBridge } from './agentRealtimeBridge'
 import {
   addSocketToRoom,
@@ -1193,6 +1194,19 @@ async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unk
     assignedTo: socket.agentId,
     queueState: 'in_progress',
   })
+  await safeRecordConversationTimelineEvent({
+    supabase: getSupabase(),
+    orgId,
+    conversationId,
+    eventType: 'ai_released',
+    title: 'Human agent took over',
+    body: 'AI released the conversation to a human agent.',
+    actorUserId: socket.agentId ?? null,
+    metadata: {
+      status: 'open',
+      queueState: 'in_progress',
+    },
+  })
   send(socket, { type: 'takeover:success', conversationId })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: '— Agent joined the conversation —', aiMetadata: { system: true, event: 'agent_joined' } })
 }
@@ -1218,6 +1232,19 @@ async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unkn
     assignedTo: null,
     queueState: 'bot',
   })
+  await safeRecordConversationTimelineEvent({
+    supabase: getSupabase(),
+    orgId,
+    conversationId,
+    eventType: 'ai_takeover',
+    title: 'AI resumed conversation',
+    body: 'The conversation was released back to AI.',
+    actorUserId: socket.agentId ?? null,
+    metadata: {
+      status: 'bot',
+      queueState: 'bot',
+    },
+  })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: reply, aiMetadata: { system: true, event: 'released_to_bot' } })
 }
 
@@ -1241,6 +1268,19 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
     conversationId,
     status: 'resolved',
     queueState: 'resolved',
+  })
+  await safeRecordConversationTimelineEvent({
+    supabase: getSupabase(),
+    orgId,
+    conversationId,
+    eventType: 'status_changed',
+    title: 'Conversation resolved',
+    body: 'open -> resolved',
+    actorUserId: socket.agentId ?? null,
+    metadata: {
+      nextStatus: 'resolved',
+      nextQueueState: 'resolved',
+    },
   })
 }
 

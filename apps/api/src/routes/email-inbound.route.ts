@@ -27,6 +27,7 @@ import { getOrgPlanId } from '../lib/subscriptions'
 import { canStartConversation } from '../lib/billing-limits'
 import { routePendingConversation } from '../services/inbox-ops.service'
 import { notifyNewConversation } from '../services/notifications.service'
+import { emitAgentRealtimeEvent } from '../services/realtime-events.service'
 
 export const emailInboundRoute: Router = Router()
 
@@ -88,6 +89,15 @@ async function isEmailChannelAllowed(
 ): Promise<boolean> {
   const planId = await getOrgPlanId(supabase, orgId)
   return planAllows(planId, 'emailChannel')
+}
+
+function inboundEmailContent(parsed: ParsedInboundEmail): string {
+  return (
+    parsed.textBody ||
+    (parsed.htmlBody ? stripHtml(parsed.htmlBody) : '') ||
+    parsed.subject ||
+    '(email with no text body)'
+  )
 }
 
 // ─── Duplicate Check ──────────────────────────────────────────────────────────
@@ -399,6 +409,14 @@ async function triggerAIAutoReply(
       raw_headers: { 'resend-id': sendResult.resendId },
     })
 
+    emitAgentRealtimeEvent(orgId, {
+      type: 'ai:response',
+      conversationId,
+      channel: 'email',
+      content: ragResult.message,
+      createdAt: new Date().toISOString(),
+    })
+
     console.log(`[email-inbound/ai] Auto-reply sent for conv=${conversationId}`)
   } catch (err) {
     console.error('[email-inbound/ai] Auto-reply failed:', err instanceof Error ? err.message : err)
@@ -446,6 +464,24 @@ async function processInboundEmail(
     return
   }
   await storeInboundEmail(supabase, account.org_id, conversationId, parsed)
+  const realtimeCreatedAt = new Date().toISOString()
+
+  if (isNew) {
+    emitAgentRealtimeEvent(account.org_id, {
+      type: 'conversation:new',
+      conversationId,
+      channel: 'email',
+      createdAt: realtimeCreatedAt,
+    })
+  }
+
+  emitAgentRealtimeEvent(account.org_id, {
+    type: 'visitor:message',
+    conversationId,
+    channel: 'email',
+    content: inboundEmailContent(parsed),
+    createdAt: realtimeCreatedAt,
+  })
 
   if (isNew) {
     void notifyNewConversation({
