@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
+import { INBOX_SAVED_VIEW_IDS, type InboxSavedViewId } from '@workspace/types'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 import { routePendingConversation } from '../services/inbox-ops.service'
@@ -16,6 +17,7 @@ import {
 
 const statusFilterSchema = z.enum(['all', 'bot', 'open', 'pending', 'resolved'])
 const channelFilterSchema = z.enum(['all', 'chat', 'email', 'whatsapp'])
+const inboxSavedViewSchema = z.enum(INBOX_SAVED_VIEW_IDS)
 const queueFilterSchema = z.enum([
   'all',
   'bot',
@@ -177,6 +179,170 @@ type ConversationBaseRow = {
 
 type SupabaseQueryClient = {
   from: (table: string) => any
+}
+
+const HYDRATED_SAVED_VIEWS = new Set<InboxSavedViewId>(['sla_at_risk', 'sla_breached'])
+const SAVED_VIEW_CANDIDATE_LIMIT = 1200
+
+function isHydratedSavedView(savedView: InboxSavedViewId): boolean {
+  return HYDRATED_SAVED_VIEWS.has(savedView)
+}
+
+function filterConversationBySavedView(
+  conversation: ConversationListItem,
+  savedView: InboxSavedViewId,
+  userId: string
+): boolean {
+  switch (savedView) {
+    case 'my_open':
+      return conversation.status === 'open' && conversation.assigned_to === userId
+    case 'unassigned':
+      return !['resolved', 'closed'].includes(conversation.status) && conversation.assigned_to === null
+    case 'sla_at_risk':
+      return conversation.sla_is_live === true && conversation.sla_state === 'at_risk'
+    case 'sla_breached':
+      return conversation.sla_is_live === true && conversation.sla_state === 'breached'
+    case 'waiting_customer':
+      return conversation.queue_state === 'waiting_customer'
+    case 'human_takeover':
+      return conversation.status === 'pending'
+    case 'email_only':
+      return conversation.channel === 'email'
+    case 'whatsapp_only':
+      return conversation.channel === 'whatsapp'
+    case 'ai_handled':
+      return conversation.status === 'bot' || conversation.queue_state === 'bot'
+    case 'actions_failed':
+      return true
+    case 'all':
+    default:
+      return true
+  }
+}
+
+async function getFailedActionConversationIds(
+  supabase: SupabaseQueryClient,
+  orgId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('ai_action_logs')
+    .select('conversation_id')
+    .eq('org_id', orgId)
+    .in('status', ['failed', 'timeout'])
+    .not('conversation_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1500)
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load failed action conversations: ${error.message}`,
+    })
+  }
+
+  return Array.from(
+    new Set(
+      ((data ?? []) as Array<{ conversation_id: string | null }>)
+        .map((row) => row.conversation_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  )
+}
+
+function applySavedViewQueryFilters(
+  query: any,
+  params: {
+    savedView: InboxSavedViewId
+    userId: string
+    failedActionConversationIds?: string[]
+  }
+) {
+  switch (params.savedView) {
+    case 'my_open':
+      return query.eq('status', 'open').eq('assigned_to', params.userId)
+    case 'unassigned':
+      return query.in('status', ['bot', 'pending', 'open']).is('assigned_to', null)
+    case 'sla_at_risk':
+    case 'sla_breached':
+      return query.in('status', ['pending', 'open'])
+    case 'waiting_customer':
+      return query.eq('queue_state', 'waiting_customer').eq('status', 'open')
+    case 'human_takeover':
+      return query.eq('status', 'pending')
+    case 'email_only':
+      return query.eq('channel', 'email')
+    case 'whatsapp_only':
+      return query.eq('channel', 'whatsapp')
+    case 'ai_handled':
+      return query.eq('status', 'bot')
+    case 'actions_failed':
+      return query.in('id', params.failedActionConversationIds ?? [])
+    case 'all':
+    default:
+      return query
+  }
+}
+
+async function countSavedViewConversations(params: {
+  supabase: SupabaseQueryClient
+  orgId: string
+  userId: string
+  savedView: InboxSavedViewId
+}): Promise<number> {
+  const failedActionConversationIds =
+    params.savedView === 'actions_failed'
+      ? await getFailedActionConversationIds(params.supabase, params.orgId)
+      : undefined
+
+  if (params.savedView === 'actions_failed' && failedActionConversationIds?.length === 0) {
+    return 0
+  }
+
+  let query = params.supabase
+    .from('conversations')
+    .select(conversationSelectFields, { count: 'exact', head: !isHydratedSavedView(params.savedView) })
+    .eq('org_id', params.orgId)
+
+  query = applySavedViewQueryFilters(query, {
+    savedView: params.savedView,
+    userId: params.userId,
+    failedActionConversationIds,
+  })
+
+  if (!isHydratedSavedView(params.savedView)) {
+    const { count, error } = await query
+
+    if (error) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to count saved view conversations: ${error.message}`,
+      })
+    }
+
+    return count ?? 0
+  }
+
+  const { data, error } = await query
+    .order('started_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(0, SAVED_VIEW_CANDIDATE_LIMIT - 1)
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to count SLA saved view conversations: ${error.message}`,
+    })
+  }
+
+  const hydrated = await hydrateConversationListItems(
+    params.supabase,
+    params.orgId,
+    ((data ?? []) as unknown) as ConversationBaseRow[]
+  )
+
+  return hydrated.filter((conversation) =>
+    filterConversationBySavedView(conversation, params.savedView, params.userId)
+  ).length
 }
 
 async function hydrateConversationListItems(
@@ -355,6 +521,7 @@ export const chatRouter = router({
           status: statusFilterSchema.default('all'),
           channel: channelFilterSchema.default('all'),
           queue: queueFilterSchema.default('all'),
+          savedView: inboxSavedViewSchema.default('all'),
           page: z.number().int().min(1).default(1),
           limit: z.number().int().min(1).max(50).default(10),
         })
@@ -369,14 +536,35 @@ export const chatRouter = router({
       const status = input?.status ?? 'all'
       const channel = input?.channel ?? 'all'
       const queue = input?.queue ?? 'all'
+      const savedView = input?.savedView ?? 'all'
       const rawSearch = input?.search?.trim() ?? ''
       const search = rawSearch.length > 0 ? cleanSearchValue(rawSearch) : ''
       const offset = (page - 1) * limit
+      const failedActionConversationIds =
+        savedView === 'actions_failed'
+          ? await getFailedActionConversationIds(ctx.supabase, orgId)
+          : undefined
+
+      if (savedView === 'actions_failed' && failedActionConversationIds?.length === 0) {
+        return {
+          items: [] as ConversationListItem[],
+          totalCount: 0,
+          page,
+          limit,
+          hasMore: false,
+        }
+      }
 
       let query = ctx.supabase
         .from('conversations')
         .select(conversationSelectFields, { count: 'exact' })
         .eq('org_id', orgId)
+
+      query = applySavedViewQueryFilters(query, {
+        savedView,
+        userId: ctx.user.id,
+        failedActionConversationIds,
+      })
 
       if (channel !== 'all') {
         query = query.eq('channel', channel)
@@ -454,6 +642,37 @@ export const chatRouter = router({
         }
       }
 
+      if (isHydratedSavedView(savedView)) {
+        const { data: candidateRows, error: candidateError } = await query
+          .order('started_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(0, SAVED_VIEW_CANDIDATE_LIMIT - 1)
+
+        if (candidateError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to load saved view conversations: ${candidateError.message}`,
+          })
+        }
+
+        const hydratedCandidates = await hydrateConversationListItems(
+          ctx.supabase,
+          orgId,
+          ((candidateRows ?? []) as unknown) as ConversationBaseRow[]
+        )
+        const filteredItems = hydratedCandidates.filter((conversation) =>
+          filterConversationBySavedView(conversation, savedView, ctx.user.id)
+        )
+
+        return {
+          items: filteredItems.slice(offset, offset + limit),
+          totalCount: filteredItems.length,
+          page,
+          limit,
+          hasMore: offset + limit < filteredItems.length,
+        }
+      }
+
       const { data: baseRows, error: baseError, count } = await query
         .order('started_at', { ascending: false })
         .order('id', { ascending: false })
@@ -479,6 +698,25 @@ export const chatRouter = router({
         hasMore,
       }
     }),
+
+  getSavedViewCounts: protectedProcedure.query(async ({ ctx }) => {
+    requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+    const orgId = ctx.userOrgId
+
+    const entries = await Promise.all(
+      INBOX_SAVED_VIEW_IDS.map(async (savedView) => [
+        savedView,
+        await countSavedViewConversations({
+          supabase: ctx.supabase,
+          orgId,
+          userId: ctx.user.id,
+          savedView,
+        }),
+      ] as const)
+    )
+
+    return Object.fromEntries(entries) as Record<InboxSavedViewId, number>
+  }),
 
   getConversation: protectedProcedure
     .input(z.object({ conversationId: z.string().uuid() }))

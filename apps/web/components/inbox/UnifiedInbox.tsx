@@ -20,7 +20,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@workspace/ui/components/dialog'
-import { SearchIcon } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@workspace/ui/components/dropdown-menu'
+import { SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
 import { useAgentRealtimeListener } from '@/components/realtime/AgentRealtimeProvider'
 import { useActiveOrg } from '@/components/org/OrgContext'
@@ -29,14 +39,14 @@ import { trpc } from '@/lib/trpc'
 import { ConversationListItem } from './ConversationListItem'
 import { ConversationRenderer } from './ConversationRenderer'
 import { EmptyState } from './EmptyState'
+import { InboxSavedViews } from './InboxSavedViews'
 import { PendingApprovals } from '@/components/actions/PendingApprovals'
-import type { AgentRealtimeEvent } from '@workspace/types'
+import { INBOX_SAVED_VIEW_IDS, type AgentRealtimeEvent, type InboxSavedViewId } from '@workspace/types'
 import type { Conversation, ConversationQueueState } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
-type QueueFilter = 'all' | 'bot' | 'queued' | 'assigned' | 'in_progress' | 'waiting_customer' | 'resolved'
-type QueueStateValue = Exclude<QueueFilter, 'all'>
+type QueueStateValue = 'bot' | 'queued' | 'assigned' | 'in_progress' | 'waiting_customer' | 'resolved'
 
 function queueStateForConversation(status: StatusFilter | 'closed', assignedTo?: string | null): QueueStateValue {
   if (status === 'resolved' || status === 'closed') return 'resolved'
@@ -61,17 +71,12 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'resolved', label: 'Resolved' },
 ]
 
-const QUEUE_OPTIONS: Array<{ value: QueueFilter; label: string }> = [
-  { value: 'all', label: 'All queue states' },
-  { value: 'queued', label: 'Queued' },
-  { value: 'assigned', label: 'Assigned' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'waiting_customer', label: 'Waiting Customer' },
-  { value: 'bot', label: 'Bot Queue' },
-  { value: 'resolved', label: 'Resolved' },
-]
-
 const EMPTY_CONVERSATION_ID = '00000000-0000-0000-0000-000000000000'
+const SAVED_VIEW_IDS = new Set<string>(INBOX_SAVED_VIEW_IDS)
+
+function parseSavedView(value: string | null): InboxSavedViewId {
+  return value && SAVED_VIEW_IDS.has(value) ? (value as InboxSavedViewId) : 'all'
+}
 
 function useAgentId() {
   const [agentId, setAgentId] = useState<string | null>(null)
@@ -102,7 +107,9 @@ export function UnifiedInbox() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all')
-  const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
+  const [savedView, setSavedView] = useState<InboxSavedViewId>(() =>
+    parseSavedView(searchParams.get('view'))
+  )
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [approvalsOpen, setApprovalsOpen] = useState(false)
   const [approvingLogId, setApprovingLogId] = useState<string | null>(null)
@@ -118,10 +125,17 @@ export function UnifiedInbox() {
   }, [searchInput])
 
   useEffect(() => {
+    const queryView = parseSavedView(searchParams.get('view'))
+    setSavedView((prev) => (prev === queryView ? prev : queryView))
+
     const queryChannel = searchParams.get('channel')
     const allowed = CHANNEL_OPTIONS.find((item) => item.value === queryChannel)
-    const nextChannel = allowed?.value ?? 'all'
+    const nextChannel = queryView === 'all' ? (allowed?.value ?? 'all') : 'all'
     setChannelFilter((prev) => (prev === nextChannel ? prev : nextChannel))
+
+    if (queryView !== 'all') {
+      setStatusFilter('all')
+    }
   }, [searchParams])
 
   const {
@@ -136,9 +150,13 @@ export function UnifiedInbox() {
   } = useConversations(orgId, {
     channelFilter,
     statusFilter,
-    queueFilter,
+    savedView,
     search: debouncedSearch,
     limit: 10,
+  })
+  const savedViewCountsQuery = trpc.chat.getSavedViewCounts.useQuery(undefined, {
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   })
   const pendingApprovalsQuery = trpc.actions.getPendingApprovals.useQuery(undefined, {
     staleTime: 10_000,
@@ -236,10 +254,12 @@ export function UnifiedInbox() {
     if (shouldRefreshList) {
       void refetch()
       void utils.dashboard.getHomeOverview.invalidate()
+      void utils.chat.getSavedViewCounts.invalidate()
     }
 
     if (type === 'approval:requested' || type === 'approval:resolved') {
       void pendingApprovalsQuery.refetch()
+      void utils.chat.getSavedViewCounts.invalidate()
       void refetch()
     }
   }, [
@@ -247,6 +267,7 @@ export function UnifiedInbox() {
     pendingApprovalsQuery,
     refetch,
     utils.chat.getConversation,
+    utils.chat.getSavedViewCounts,
     utils.dashboard.getHomeOverview,
   ])
 
@@ -264,11 +285,21 @@ export function UnifiedInbox() {
   }, [orgId])
 
   const pushQueryState = useCallback(
-    (nextChannel: ChannelFilter, nextConversationId: string | null) => {
+    (
+      nextChannel: ChannelFilter,
+      nextConversationId: string | null,
+      nextSavedView: InboxSavedViewId = savedView
+    ) => {
       const params = new URLSearchParams(searchParams.toString())
 
-      if (nextChannel === 'all') params.delete('channel')
-      else params.set('channel', nextChannel)
+      if (nextSavedView === 'all') {
+        params.delete('view')
+        if (nextChannel === 'all') params.delete('channel')
+        else params.set('channel', nextChannel)
+      } else {
+        params.set('view', nextSavedView)
+        params.delete('channel')
+      }
 
       if (nextConversationId) params.set('conversation', nextConversationId)
       else params.delete('conversation')
@@ -276,34 +307,53 @@ export function UnifiedInbox() {
       const query = params.toString()
       router.replace(query ? `${pathname}?${query}` : pathname)
     },
-    [pathname, router, searchParams]
+    [pathname, router, savedView, searchParams]
   )
 
-  const handleChannelChange = useCallback(
-    (nextChannel: ChannelFilter) => {
-      setChannelFilter(nextChannel)
+  const handleSavedViewChange = useCallback(
+    (nextView: InboxSavedViewId) => {
+      setSavedView(nextView)
+      setStatusFilter('all')
+      setChannelFilter('all')
       setSelectedId(null)
-      pushQueryState(nextChannel, null)
+      pushQueryState('all', null, nextView)
     },
     [pushQueryState]
   )
 
-  const handleStatusChangeFilter = useCallback((nextStatus: StatusFilter) => {
-    setStatusFilter(nextStatus)
-    setSelectedId(null)
-  }, [])
+  const handleChannelChange = useCallback(
+    (nextChannel: ChannelFilter) => {
+      setSavedView('all')
+      setChannelFilter(nextChannel)
+      setSelectedId(null)
+      pushQueryState(nextChannel, null, 'all')
+    },
+    [pushQueryState]
+  )
 
-  const handleQueueChange = useCallback((nextQueue: QueueFilter) => {
-    setQueueFilter(nextQueue)
+  const handleStatusChangeFilter = useCallback(
+    (nextStatus: StatusFilter) => {
+      setSavedView('all')
+      setStatusFilter(nextStatus)
+      setSelectedId(null)
+      pushQueryState(channelFilter, null, 'all')
+    },
+    [channelFilter, pushQueryState]
+  )
+
+  const handleClearManualFilters = useCallback(() => {
+    setSavedView('all')
+    setStatusFilter('all')
     setSelectedId(null)
-  }, [])
+    pushQueryState(channelFilter, null, 'all')
+  }, [channelFilter, pushQueryState])
 
   const handleSelectConversation = useCallback(
     (conversationId: string) => {
       setSelectedId(conversationId)
-      pushQueryState(channelFilter, conversationId)
+      pushQueryState(channelFilter, conversationId, savedView)
     },
-    [channelFilter, pushQueryState]
+    [channelFilter, pushQueryState, savedView]
   )
 
   const selectedConversation =
@@ -378,6 +428,8 @@ export function UnifiedInbox() {
     }
   }
 
+  const hasManualFilters = statusFilter !== 'all'
+
   return (
     <>
       <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
@@ -413,46 +465,69 @@ export function UnifiedInbox() {
           </div>
         </div>
 
-        <div className="space-y-2 border-b px-3 py-2.5">
-          <div className="grid grid-cols-5 gap-1">
-            {STATUS_OPTIONS.map((option) => (
-              <Button
-                key={option.value}
-                type="button"
-                variant={statusFilter === option.value ? 'secondary' : 'ghost'}
-                className="h-7 px-2 text-[10px]"
-                onClick={() => handleStatusChangeFilter(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
+        <div className="border-b px-3 py-2.5">
+          <div className="grid grid-cols-[minmax(0,1fr)_112px_36px] gap-2">
+            <InboxSavedViews
+              activeView={savedView}
+              counts={savedViewCountsQuery.data}
+              loading={savedViewCountsQuery.isLoading}
+              onChange={handleSavedViewChange}
+            />
+
+            <Select value={channelFilter} onValueChange={(value) => handleChannelChange(value as ChannelFilter)}>
+              <SelectTrigger size="sm" className="h-9 w-full text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {CHANNEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="text-xs">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant={hasManualFilters ? 'secondary' : 'outline'}
+                  className="relative size-9 shadow-none"
+                  aria-label="Advanced inbox filters"
+                >
+                  <SlidersHorizontalIcon className="size-3.5" />
+                  {hasManualFilters && (
+                    <span className="absolute right-1 top-1 size-1.5 rounded-full bg-primary" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  Status
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={statusFilter}
+                  onValueChange={(value) => handleStatusChangeFilter(value as StatusFilter)}
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <DropdownMenuRadioItem key={option.value} value={option.value} className="text-xs">
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={!hasManualFilters}
+                  onSelect={handleClearManualFilters}
+                  className="gap-2 text-xs"
+                >
+                  <XIcon className="size-3.5" />
+                  Clear advanced filters
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-
-          <Select value={channelFilter} onValueChange={(value) => handleChannelChange(value as ChannelFilter)}>
-            <SelectTrigger size="sm" className="h-8 w-full text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              {CHANNEL_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value} className="text-xs">
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={queueFilter} onValueChange={(value) => handleQueueChange(value as QueueFilter)}>
-            <SelectTrigger size="sm" className="h-8 w-full text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              {QUEUE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value} className="text-xs">
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto" onScroll={handleListScroll}>

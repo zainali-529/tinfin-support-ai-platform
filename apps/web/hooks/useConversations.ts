@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
+import type { InboxSavedViewId } from '@workspace/types'
 import type { Conversation } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
@@ -13,6 +14,7 @@ interface UseConversationsOptions {
   channelFilter?: ChannelFilter | null
   statusFilter?: StatusFilter
   queueFilter?: QueueFilter
+  savedView?: InboxSavedViewId
   search?: string
   limit?: number
 }
@@ -22,6 +24,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
   const channelFilter = options?.channelFilter ?? 'all'
   const statusFilter = options?.statusFilter ?? 'all'
   const queueFilter = options?.queueFilter ?? 'all'
+  const savedView = options?.savedView ?? 'all'
   const search = options?.search?.trim() ?? ''
 
   const [page, setPage] = useState(1)
@@ -35,6 +38,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
       channel: channelFilter,
       status: statusFilter,
       queue: queueFilter,
+      savedView,
       search: search || undefined,
     },
     {
@@ -47,7 +51,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
     setPage(1)
     setConversations([])
     setTotalCount(0)
-  }, [orgId, channelFilter, statusFilter, queueFilter, search, limit])
+  }, [orgId, channelFilter, statusFilter, queueFilter, savedView, search, limit])
 
   useEffect(() => {
     const payload = query.data

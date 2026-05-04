@@ -187,3 +187,4 @@ export interface APIError {
 
 export * from './team-permissions'
 export * from './realtime'
+export * from './inbox-saved-views'
