@@ -3,6 +3,8 @@ import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 import { routePendingConversation } from '../services/inbox-ops.service'
+import { notifyConversationAssigned } from '../services/notifications.service'
+import { emitAgentRealtimeEvent } from '../services/realtime-events.service'
 import {
   deriveInboxBacklog,
   deriveInboxSla,
@@ -23,6 +25,14 @@ const queueFilterSchema = z.enum([
   'waiting_customer',
   'resolved',
 ])
+
+function queueStateForStatus(status: string, assignedTo: string | null): string {
+  if (status === 'resolved' || status === 'closed') return 'resolved'
+  if (status === 'bot') return 'bot'
+  if (status === 'open') return 'in_progress'
+  if (status === 'pending') return assignedTo ? 'assigned' : 'queued'
+  return assignedTo ? 'assigned' : 'queued'
+}
 
 const conversationSelectFields = [
   'id',
@@ -557,9 +567,14 @@ export const chatRouter = router({
         }
       }
 
+      const nextAssignedTo = input.assignedTo ?? null
       const { data: updatedRow, error: updateError } = await ctx.supabase
         .from('conversations')
-        .update({ status: input.status, assigned_to: input.assignedTo ?? null })
+        .update({
+          status: input.status,
+          assigned_to: nextAssignedTo,
+          queue_state: queueStateForStatus(input.status, nextAssignedTo),
+        })
         .eq('id', input.conversationId)
         .eq('org_id', orgId)
         .select('id')
@@ -608,6 +623,34 @@ export const chatRouter = router({
 
       if (!finalData) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Conversation not found.' })
+      }
+
+      emitAgentRealtimeEvent(orgId, {
+        type: 'conversation:status_changed',
+        conversationId: input.conversationId,
+        status: finalData.status,
+        assignedTo: finalData.assigned_to ?? null,
+        queueState: finalData.queue_state ?? null,
+        actorUserId: ctx.user.id,
+        createdAt: new Date().toISOString(),
+      })
+
+      if (typeof finalData.assigned_to === 'string' && finalData.assigned_to === input.assignedTo) {
+        try {
+          await notifyConversationAssigned({
+            supabase: ctx.supabase,
+            orgId,
+            conversationId: input.conversationId,
+            assignedTo: finalData.assigned_to,
+            actorUserId: ctx.user.id,
+            reason: 'manual_assignment',
+          })
+        } catch (notificationError) {
+          console.error(
+            '[chat.updateStatus] assignment notification failed:',
+            notificationError instanceof Error ? notificationError.message : notificationError
+          )
+        }
       }
 
       return finalData

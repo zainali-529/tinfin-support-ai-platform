@@ -5,6 +5,7 @@ import { router, protectedProcedure } from "../trpc/trpc"
 import { requireFeature } from "../lib/plan-guards"
 import { sendWhatsAppMessage } from "../services/whatsapp.service"
 import { requirePermissionFromContext } from "../lib/org-permissions"
+import { emitAgentRealtimeEvent } from "../services/realtime-events.service"
 
 interface WhatsAppAccountRow {
   id: string
@@ -473,9 +474,19 @@ export const whatsappRouter = router({
       if (conversation.status === "bot" || conversation.status === "pending") {
         await ctx.supabase
           .from("conversations")
-          .update({ status: "open", assigned_to: ctx.user.id })
+          .update({ status: "open", assigned_to: ctx.user.id, queue_state: "in_progress" })
           .eq("id", conversation.id)
           .eq("org_id", ctx.userOrgId)
+
+        emitAgentRealtimeEvent(ctx.userOrgId, {
+          type: "conversation:status_changed",
+          conversationId: conversation.id,
+          status: "open",
+          assignedTo: ctx.user.id,
+          queueState: "in_progress",
+          actorUserId: ctx.user.id,
+          createdAt: new Date().toISOString(),
+        })
       }
 
       return { success: true, waMessageId: sendResult.waMessageId }

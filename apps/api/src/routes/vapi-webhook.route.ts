@@ -17,6 +17,7 @@ import {
   handleConfirmedAction,
 } from '@workspace/ai'
 import type { VapiWebhookEvent, VapiToolCall, VapiToolResult } from '@workspace/ai'
+import { notifyActionApprovalRequested } from '../services/notifications.service'
 
 export const vapiWebhookRoute: Router = Router()
 
@@ -303,6 +304,7 @@ async function insertActionLog(params: {
 }
 
 async function enqueueActionApproval(params: {
+  orgId: string
   logId: string
   conversationId?: string | null
   actionName: string
@@ -321,7 +323,21 @@ async function enqueueActionApproval(params: {
 
   if (error) {
     console.error('[vapi-webhook] Failed to queue action approval:', error.message)
+    return
   }
+
+  void notifyActionApprovalRequested({
+    supabase: getSupabase(),
+    orgId: params.orgId,
+    conversationId: params.conversationId,
+    logId: params.logId,
+    actionName: params.actionName,
+  }).catch((notificationError) => {
+    console.error(
+      '[vapi-webhook] action approval notification failed:',
+      notificationError instanceof Error ? notificationError.message : notificationError
+    )
+  })
 }
 
 /**
@@ -491,6 +507,7 @@ async function handleToolCalls(
 
       if (logId) {
         await enqueueActionApproval({
+          orgId,
           logId,
           conversationId,
           actionName: action.displayName,

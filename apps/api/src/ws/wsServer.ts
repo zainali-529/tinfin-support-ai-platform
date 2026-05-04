@@ -15,6 +15,12 @@ import {
 } from '@workspace/ai'
 import { canStartConversation } from '../lib/billing-limits'
 import { routePendingConversation } from '../services/inbox-ops.service'
+import {
+  notifyActionApprovalRequested,
+  notifyHandoffRequested,
+  notifyNewConversation,
+} from '../services/notifications.service'
+import { subscribeAgentRealtimeEvents } from '../services/realtime-events.service'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -78,6 +84,24 @@ function broadcastToAgents(orgId: string, data: unknown) {
     if (s.isAgent && s.readyState === WebSocket.OPEN) {
       s.send(JSON.stringify(data))
     }
+  })
+}
+
+function queueNewConversationNotification(params: {
+  orgId: string
+  conversationId: string
+  channel?: string
+}) {
+  void notifyNewConversation({
+    supabase: getSupabase(),
+    orgId: params.orgId,
+    conversationId: params.conversationId,
+    channel: params.channel ?? 'chat',
+  }).catch((notificationError) => {
+    console.error(
+      '[ws] new conversation notification failed:',
+      notificationError instanceof Error ? notificationError.message : notificationError
+    )
   })
 }
 
@@ -710,6 +734,17 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
     createdAt,
     handoff: true,
   })
+  void notifyHandoffRequested({
+    supabase: getSupabase(),
+    orgId,
+    conversationId,
+    assignedTo: routedAssigneeId,
+  }).catch((notificationError) => {
+    console.error(
+      '[ws] handoff notification failed:',
+      notificationError instanceof Error ? notificationError.message : notificationError
+    )
+  })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: msg, aiMetadata: { shouldHandoff: true } })
 }
 
@@ -789,6 +824,13 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
       })
       socket.conversationId = result.conversationId
       send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: result.isNew })
+      if (result.isNew) {
+        queueNewConversationNotification({
+          orgId,
+          conversationId: result.conversationId,
+          channel: 'chat',
+        })
+      }
     } catch (error) {
       if (error instanceof Error && error.message === 'CHAT_LIMIT_REACHED') {
         send(socket, { type: 'error', message: 'Chat limit reached for this workspace. Buy a conversation add-on or try again next billing period.' })
@@ -1035,6 +1077,18 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             conversationId,
             createdAt,
           })
+          void notifyActionApprovalRequested({
+            supabase: getSupabase(),
+            orgId,
+            conversationId,
+            logId: ragResult.actionLog?.logId,
+            actionName: ragResult.actionLog?.actionName,
+          }).catch((notificationError) => {
+            console.error(
+              '[ws] action approval notification failed:',
+              notificationError instanceof Error ? notificationError.message : notificationError
+            )
+          })
 
           send(socket, {
             type: 'ai:response',
@@ -1168,11 +1222,21 @@ async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unk
   const orgId = socket.orgId!
   if (!conversationId) return
 
-  const updated = await updateConversation(orgId, conversationId, { status: 'open', assigned_to: socket.agentId ?? null })
+  const updated = await updateConversation(orgId, conversationId, {
+    status: 'open',
+    assigned_to: socket.agentId ?? null,
+    queue_state: 'in_progress',
+  })
   if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   await sendToVisitor(orgId, conversationId, { type: 'agent:joined', conversationId, createdAt: new Date().toISOString() })
-  broadcastToAgents(orgId, { type: 'conversation:status_changed', conversationId, status: 'open', assignedTo: socket.agentId })
+  broadcastToAgents(orgId, {
+    type: 'conversation:status_changed',
+    conversationId,
+    status: 'open',
+    assignedTo: socket.agentId,
+    queueState: 'in_progress',
+  })
   send(socket, { type: 'takeover:success', conversationId })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: '— Agent joined the conversation —', aiMetadata: { system: true, event: 'agent_joined' } })
 }
@@ -1182,12 +1246,22 @@ async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unkn
   const orgId = socket.orgId!
   if (!conversationId) return
 
-  const updated = await updateConversation(orgId, conversationId, { status: 'bot', assigned_to: null })
+  const updated = await updateConversation(orgId, conversationId, {
+    status: 'bot',
+    assigned_to: null,
+    queue_state: 'bot',
+  })
   if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   const reply = "You've been transferred back to our AI assistant. How can I help you?"
   await sendToVisitor(orgId, conversationId, { type: 'bot:resumed', content: reply, conversationId, createdAt: new Date().toISOString() })
-  broadcastToAgents(orgId, { type: 'conversation:status_changed', conversationId, status: 'bot', assignedTo: null })
+  broadcastToAgents(orgId, {
+    type: 'conversation:status_changed',
+    conversationId,
+    status: 'bot',
+    assignedTo: null,
+    queueState: 'bot',
+  })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: reply, aiMetadata: { system: true, event: 'released_to_bot' } })
 }
 
@@ -1196,14 +1270,22 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
   const orgId = socket.orgId!
   if (!conversationId) return
 
-  const updated = await updateConversation(orgId, conversationId, { status: 'resolved' })
+  const updated = await updateConversation(orgId, conversationId, {
+    status: 'resolved',
+    queue_state: 'resolved',
+  })
   if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   await sendToVisitor(orgId, conversationId, {
     type: 'conversation:resolved', content: 'This conversation has been resolved. Thank you! 😊',
     conversationId, createdAt: new Date().toISOString(),
   })
-  broadcastToAgents(orgId, { type: 'conversation:status_changed', conversationId, status: 'resolved' })
+  broadcastToAgents(orgId, {
+    type: 'conversation:status_changed',
+    conversationId,
+    status: 'resolved',
+    queueState: 'resolved',
+  })
 }
 
 // ── Conversation helpers ───────────────────────────────────────────────────────
@@ -1218,6 +1300,13 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
     const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
     socket.conversationId = result.conversationId
     send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
+    if (result.isNew) {
+      queueNewConversationNotification({
+        orgId,
+        conversationId: result.conversationId,
+        channel: 'chat',
+      })
+    }
     await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
     return
   }
@@ -1227,6 +1316,13 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
     const result = await getOrCreateConversation({ orgId, visitorId: socket.visitorId! })
     socket.conversationId = result.conversationId
     send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
+    if (result.isNew) {
+      queueNewConversationNotification({
+        orgId,
+        conversationId: result.conversationId,
+        channel: 'chat',
+      })
+    }
     await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
     return
   }
@@ -1305,6 +1401,11 @@ async function handleNewChat(socket: TinfinSocket, msg: Record<string, unknown>)
 
   send(socket, { type: 'conversation:ready', conversationId: result.conversationId, isNew: true })
   if (result.isNew) {
+    queueNewConversationNotification({
+      orgId,
+      conversationId: result.conversationId,
+      channel: 'chat',
+    })
     await sendWelcomeMessage({ socket, conversationId: result.conversationId, orgId })
   }
 }
@@ -1458,8 +1559,16 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
 
 // ── Server ────────────────────────────────────────────────────────────────────
 
+let unsubscribeAgentRealtimeEvents: (() => void) | null = null
+
 export function createWsServer(port: number) {
   const wss = new WebSocketServer({ port })
+
+  if (!unsubscribeAgentRealtimeEvents) {
+    unsubscribeAgentRealtimeEvents = subscribeAgentRealtimeEvents((orgId, payload) => {
+      broadcastToAgents(orgId, payload)
+    })
+  }
 
   wss.on('connection', async (socket: TinfinSocket, req: IncomingMessage) => {
     try {

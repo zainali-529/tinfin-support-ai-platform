@@ -20,6 +20,7 @@ import { ThemeToggle } from '@/components/nav/ThemeToggle'
 import { OrgProvider } from '@/components/org/OrgContext'
 import { getEffectiveTeamPermissions } from '@workspace/types'
 import { DocsSearchLauncher } from '@/components/docs/DocsSearchLauncher'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
   const msg = (error?.message ?? '').toLowerCase()
@@ -138,6 +139,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 </BreadcrumbList>
               </Breadcrumb>
               <div className="ml-auto flex items-center gap-2">
+                <NotificationBell />
                 <DocsSearchLauncher compact />
                 <ThemeToggle />
               </div>

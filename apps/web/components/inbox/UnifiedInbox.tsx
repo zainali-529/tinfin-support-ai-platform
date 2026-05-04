@@ -22,6 +22,7 @@ import {
 } from '@workspace/ui/components/dialog'
 import { SearchIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
+import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
 import { useActiveOrg } from '@/components/org/OrgContext'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
@@ -29,7 +30,7 @@ import { ConversationListItem } from './ConversationListItem'
 import { ConversationRenderer } from './ConversationRenderer'
 import { EmptyState } from './EmptyState'
 import { PendingApprovals } from '@/components/actions/PendingApprovals'
-import type { Conversation } from '@/types/database'
+import type { Conversation, ConversationQueueState } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
 type ChannelFilter = 'all' | 'chat' | 'email' | 'whatsapp'
@@ -179,6 +180,75 @@ export function UnifiedInbox() {
     requestedAt: String(item.requestedAt),
     expiresAt: item.expiresAt ? String(item.expiresAt) : null,
   }))
+
+  const handleInboxSocketMessage = useCallback((payload: Record<string, unknown>) => {
+    const type = typeof payload.type === 'string' ? payload.type : ''
+
+    if (type === 'conversation:status_changed') {
+      const conversationId = typeof payload.conversationId === 'string' ? payload.conversationId : null
+      if (conversationId) {
+        const nextStatus = typeof payload.status === 'string' ? payload.status : null
+        const hasAssignedTo = Object.prototype.hasOwnProperty.call(payload, 'assignedTo')
+        const nextAssignedTo =
+          typeof payload.assignedTo === 'string'
+            ? payload.assignedTo
+            : hasAssignedTo
+              ? null
+              : undefined
+        const patch: Partial<Conversation> = {}
+
+        if (nextStatus) {
+          patch.status = nextStatus as Conversation['status']
+        }
+        if (nextAssignedTo !== undefined) {
+          patch.assigned_to = nextAssignedTo
+        }
+        if (nextStatus && nextAssignedTo !== undefined) {
+          patch.queue_state = queueStateForConversation(
+            nextStatus as StatusFilter | 'closed',
+            nextAssignedTo
+          )
+        } else if (typeof payload.queueState === 'string') {
+          patch.queue_state = payload.queueState as ConversationQueueState
+        }
+
+        if (Object.keys(patch).length > 0) {
+          patchConversation(conversationId, patch)
+          utils.chat.getConversation.setData({ conversationId }, (previous) =>
+            previous ? ({ ...previous, ...patch } as typeof previous) : previous
+          )
+        }
+      }
+    }
+
+    const shouldRefreshList = [
+      'conversation:new',
+      'conversation:status_changed',
+      'visitor:message',
+      'agent:message',
+      'ai:response',
+      'handoff:requested',
+      'contact:updated',
+    ].includes(type)
+
+    if (shouldRefreshList) {
+      void refetch()
+      void utils.dashboard.getHomeOverview.invalidate()
+    }
+
+    if (type === 'approval:requested' || type === 'approval:resolved') {
+      void pendingApprovalsQuery.refetch()
+      void refetch()
+    }
+  }, [
+    patchConversation,
+    pendingApprovalsQuery,
+    refetch,
+    utils.chat.getConversation,
+    utils.dashboard.getHomeOverview,
+  ])
+
+  useAgentWebSocket(orgId, agentId ?? '', handleInboxSocketMessage)
 
   useEffect(() => {
     setSelectedId((prev) => (prev === queryConversationId ? prev : queryConversationId))

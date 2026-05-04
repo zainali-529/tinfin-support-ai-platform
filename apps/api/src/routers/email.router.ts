@@ -15,6 +15,7 @@ import {
 } from '../services/email.service'
 import { requireFeature } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
+import { emitAgentRealtimeEvent } from '../services/realtime-events.service'
 
 interface EmailAccountRow {
   id: string
@@ -378,9 +379,19 @@ export const emailRouter = router({
       if (conv.status === 'pending' || conv.status === 'bot') {
         await ctx.supabase
           .from('conversations')
-          .update({ status: 'open', assigned_to: ctx.user.id })
+          .update({ status: 'open', assigned_to: ctx.user.id, queue_state: 'in_progress' })
           .eq('id', input.conversationId)
           .eq('org_id', orgId)
+
+        emitAgentRealtimeEvent(orgId, {
+          type: 'conversation:status_changed',
+          conversationId: input.conversationId,
+          status: 'open',
+          assignedTo: ctx.user.id,
+          queueState: 'in_progress',
+          actorUserId: ctx.user.id,
+          createdAt: new Date().toISOString(),
+        })
       }
 
       return { success: true, messageId: sendResult.messageId, resendId: sendResult.resendId }

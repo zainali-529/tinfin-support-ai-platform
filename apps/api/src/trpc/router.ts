@@ -16,6 +16,7 @@ import { contactsRouter } from '../routers/contacts.router'
 import { dashboardRouter } from '../routers/dashboard.router'
 import { actionsRouter } from '../routers/actions.router'
 import { widgetInstallRouter } from '../routers/widget-install.router'
+import { notificationsRouter } from '../routers/notifications.router'
 
 export const appRouter = router({
   health: healthRouter,
@@ -35,6 +36,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   actions: actionsRouter,
   widgetInstall: widgetInstallRouter,
+  notifications: notificationsRouter,
 })
 
 export type AppRouter = typeof appRouter;

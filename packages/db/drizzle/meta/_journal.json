@@ -43,6 +43,13 @@
       "when": 1778054400000,
       "tag": "0006_billing_addons",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778140800000,
+      "tag": "0007_notification_system",
+      "breakpoints": true
     }
   ]
 }

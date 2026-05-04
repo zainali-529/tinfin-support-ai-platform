@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { notifyConversationAssigned } from './notifications.service'
+import { emitAgentRealtimeEvent } from './realtime-events.service'
 
 type AnySupabase = SupabaseClient<any, 'public', any>
 
@@ -259,6 +261,16 @@ export async function routePendingConversation(params: {
       },
     })
 
+    emitAgentRealtimeEvent(orgId, {
+      type: 'conversation:status_changed',
+      conversationId,
+      status: conversation.status,
+      assignedTo: null,
+      queueState: 'queued',
+      reason,
+      createdAt: new Date().toISOString(),
+    })
+
     return {
       assignedTo: null,
       strategy: 'round_robin_load_aware',
@@ -320,6 +332,31 @@ export async function routePendingConversation(params: {
       loadByUserId,
     },
   })
+
+  emitAgentRealtimeEvent(orgId, {
+    type: 'conversation:status_changed',
+    conversationId,
+    status: conversation.status,
+    assignedTo,
+    queueState: 'assigned',
+    reason,
+    createdAt: nowIso,
+  })
+
+  try {
+    await notifyConversationAssigned({
+      supabase,
+      orgId,
+      conversationId,
+      assignedTo,
+      reason,
+    })
+  } catch (notificationError) {
+    console.error(
+      '[inbox-ops] assignment notification failed:',
+      notificationError instanceof Error ? notificationError.message : notificationError
+    )
+  }
 
   return {
     assignedTo,

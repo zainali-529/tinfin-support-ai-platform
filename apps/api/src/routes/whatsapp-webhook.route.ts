@@ -5,6 +5,7 @@ import { planAllows } from "../lib/plans"
 import { getOrgPlanId } from "../lib/subscriptions"
 import { canStartConversation } from "../lib/billing-limits"
 import { routePendingConversation } from "../services/inbox-ops.service"
+import { notifyNewConversation } from "../services/notifications.service"
 import {
   parseWhatsAppWebhook,
   sendWhatsAppMessage,
@@ -382,6 +383,20 @@ async function processInboundMessage(params: {
   console.log(
     `[whatsapp-webhook] org=${account.org_id} conv=${conversationId} isNew=${isNew} from=${parsed.fromPhone}`
   )
+
+  if (isNew) {
+    void notifyNewConversation({
+      supabase,
+      orgId: account.org_id,
+      conversationId,
+      channel: "whatsapp",
+    }).catch((error) => {
+      console.error(
+        "[whatsapp-webhook] new conversation notification failed:",
+        error instanceof Error ? error.message : error
+      )
+    })
+  }
 
   void triggerAIAutoReply({
     supabase,

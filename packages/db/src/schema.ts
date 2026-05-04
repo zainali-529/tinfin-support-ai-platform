@@ -181,6 +181,44 @@ export const messages = pgTable('messages', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    recipientUserId: uuid('recipient_user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    type: text('type').notNull(),
+    severity: text('severity').default('info').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    href: text('href'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    dedupeKey: text('dedupe_key'),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    emailStatus: text('email_status').default('not_queued').notNull(),
+    emailSentAt: timestamp('email_sent_at', { withTimezone: true }),
+    emailError: text('email_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgRecipientCreatedIndex: index('idx_notifications_org_recipient_created').on(
+      table.orgId,
+      table.recipientUserId,
+      table.createdAt
+    ),
+    orgTypeCreatedIndex: index('idx_notifications_org_type_created').on(
+      table.orgId,
+      table.type,
+      table.createdAt
+    ),
+  })
+)
+
 export const knowledgeBases = pgTable('knowledge_bases', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),

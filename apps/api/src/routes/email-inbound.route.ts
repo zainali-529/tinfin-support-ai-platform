@@ -26,6 +26,7 @@ import { planAllows } from '../lib/plans'
 import { getOrgPlanId } from '../lib/subscriptions'
 import { canStartConversation } from '../lib/billing-limits'
 import { routePendingConversation } from '../services/inbox-ops.service'
+import { notifyNewConversation } from '../services/notifications.service'
 
 export const emailInboundRoute: Router = Router()
 
@@ -445,6 +446,20 @@ async function processInboundEmail(
     return
   }
   await storeInboundEmail(supabase, account.org_id, conversationId, parsed)
+
+  if (isNew) {
+    void notifyNewConversation({
+      supabase,
+      orgId: account.org_id,
+      conversationId,
+      channel: 'email',
+    }).catch((error) => {
+      console.error(
+        '[email-inbound] new conversation notification failed:',
+        error instanceof Error ? error.message : error
+      )
+    })
+  }
 
   console.log(`[email-inbound/${provider}] org=${account.org_id} conv=${conversationId} isNew=${isNew} from=${parsed.fromEmail}`)
 

@@ -100,6 +100,11 @@ export function useConversations(orgId: string, options?: UseConversationsOption
   }, [page, query.refetch])
 
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshFirstPageRef = useRef(refreshFirstPage)
+
+  useEffect(() => {
+    refreshFirstPageRef.current = refreshFirstPage
+  }, [refreshFirstPage])
 
   useEffect(() => {
     if (!orgId) return
@@ -109,7 +114,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
       if (refreshTimerRef.current) return
       refreshTimerRef.current = setTimeout(() => {
         refreshTimerRef.current = null
-        void refreshFirstPage()
+        void refreshFirstPageRef.current()
       }, 120)
     }
 
@@ -145,6 +150,16 @@ export function useConversations(orgId: string, options?: UseConversationsOption
         },
         scheduleRefresh
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'whatsapp_messages',
+          filter: `org_id=eq.${orgId}`,
+        },
+        scheduleRefresh
+      )
       .subscribe()
 
     return () => {
@@ -154,7 +169,7 @@ export function useConversations(orgId: string, options?: UseConversationsOption
       }
       void supabase.removeChannel(channel)
     }
-  }, [orgId, refreshFirstPage])
+  }, [orgId])
 
   return {
     conversations,
