@@ -19,6 +19,7 @@ import { TooltipProvider } from '@workspace/ui/components/tooltip'
 import { ThemeToggle } from '@/components/nav/ThemeToggle'
 import { OrgProvider } from '@/components/org/OrgContext'
 import { getEffectiveTeamPermissions } from '@workspace/types'
+import { DocsSearchLauncher } from '@/components/docs/DocsSearchLauncher'
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
   const msg = (error?.message ?? '').toLowerCase()
@@ -136,7 +137,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <DocsSearchLauncher compact />
                 <ThemeToggle />
               </div>
             </header>
