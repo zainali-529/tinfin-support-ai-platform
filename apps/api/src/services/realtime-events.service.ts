@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events'
+import type { AgentRealtimeEvent } from '@workspace/types'
 
-export type AgentRealtimePayload = Record<string, unknown> & {
-  type: string
-}
+export type AgentRealtimePayload = AgentRealtimeEvent
 
 type AgentRealtimeHandler = (orgId: string, payload: AgentRealtimePayload) => void
 

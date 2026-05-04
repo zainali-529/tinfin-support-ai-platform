@@ -4,7 +4,7 @@
 // 3. persistMessage accepts optional attachments param
 // 4. broadcast messages now carry attachments to relevant sockets
 
-import { WebSocketServer, WebSocket } from 'ws'
+import { WebSocketServer } from 'ws'
 import { IncomingMessage } from 'http'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
@@ -20,44 +20,20 @@ import {
   notifyHandoffRequested,
   notifyNewConversation,
 } from '../services/notifications.service'
-import { subscribeAgentRealtimeEvents } from '../services/realtime-events.service'
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-interface Attachment {
-  url: string
-  name: string
-  size: number
-  type: string
-}
-
-interface TinfinSocket extends WebSocket {
-  orgId?: string
-  visitorId?: string
-  conversationId?: string
-  isAlive?: boolean
-  isAgent?: boolean
-  agentId?: string
-  awaitingHandoffConfirm?: boolean
-  pendingActionLogId?: string
-  identityReset?: boolean
-}
-
-type ConversationStatus = 'bot' | 'pending' | 'open' | 'resolved' | 'closed'
-
-interface VisitorConversationSummary {
-  id: string
-  status: ConversationStatus
-  startedAt: string
-  resolvedAt: string | null
-  contactName: string | null
-  contactEmail: string | null
-  lastMessage: string
-  lastMessageAt: string
-}
-
-// orgId → all sockets in that org
-const rooms = new Map<string, Set<TinfinSocket>>()
+import { startAgentRealtimeBridge } from './agentRealtimeBridge'
+import {
+  addSocketToRoom,
+  broadcastToAgents,
+  removeSocketFromRoom,
+  send,
+  sendToVisitorSocket,
+} from './rooms'
+import type {
+  Attachment,
+  ConversationStatus,
+  TinfinSocket,
+  VisitorConversationSummary,
+} from './types'
 
 const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
@@ -71,20 +47,6 @@ function getSupabase(): SupabaseClient {
     process.env.SUPABASE_SERVICE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
-}
-
-function send(socket: TinfinSocket, data: unknown) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(data))
-  }
-}
-
-function broadcastToAgents(orgId: string, data: unknown) {
-  rooms.get(orgId)?.forEach(s => {
-    if (s.isAgent && s.readyState === WebSocket.OPEN) {
-      s.send(JSON.stringify(data))
-    }
-  })
 }
 
 function queueNewConversationNotification(params: {
@@ -264,13 +226,7 @@ async function sendToVisitor(orgId: string, conversationId: string, data: unknow
     console.warn(`[ws] No visitor found for conv ${conversationId}`)
     return
   }
-  let delivered = false
-  rooms.get(orgId)?.forEach(s => {
-    if (!s.isAgent && s.visitorId === visitorId && s.readyState === WebSocket.OPEN) {
-      s.send(JSON.stringify(data))
-      delivered = true
-    }
-  })
+  const delivered = sendToVisitorSocket(orgId, visitorId, data)
   if (!delivered) {
     console.warn(`[ws] No open visitor socket for visitor ${visitorId} (conv ${conversationId})`)
   }
@@ -1559,16 +1515,10 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
 
 // ── Server ────────────────────────────────────────────────────────────────────
 
-let unsubscribeAgentRealtimeEvents: (() => void) | null = null
-
 export function createWsServer(port: number) {
   const wss = new WebSocketServer({ port })
 
-  if (!unsubscribeAgentRealtimeEvents) {
-    unsubscribeAgentRealtimeEvents = subscribeAgentRealtimeEvents((orgId, payload) => {
-      broadcastToAgents(orgId, payload)
-    })
-  }
+  startAgentRealtimeBridge()
 
   wss.on('connection', async (socket: TinfinSocket, req: IncomingMessage) => {
     try {
@@ -1599,8 +1549,7 @@ export function createWsServer(port: number) {
       socket.awaitingHandoffConfirm = false
       socket.pendingActionLogId = undefined
 
-      if (!rooms.has(orgId)) rooms.set(orgId, new Set())
-      rooms.get(orgId)!.add(socket)
+      addSocketToRoom(orgId, socket)
 
       const knownVisitor = isAgent ? undefined : (await getVisitorContactIds(orgId, visitorId)).length > 0
       send(socket, {
@@ -1618,10 +1567,7 @@ export function createWsServer(port: number) {
           await handleMessage(socket, msg)
         } catch (e) { console.error('[ws] parse:', e) }
       })
-      socket.on('close', () => {
-        rooms.get(orgId)?.delete(socket)
-        if (rooms.get(orgId)?.size === 0) rooms.delete(orgId)
-      })
+      socket.on('close', () => removeSocketFromRoom(orgId, socket))
       socket.on('error', () => socket.terminate())
     } catch (e) {
       console.error('[ws] connection setup failed:', e)

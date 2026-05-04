@@ -40,9 +40,13 @@ import {
   FileIcon, ImageIcon, XIcon, Loader2Icon, DownloadIcon,
 } from 'lucide-react'
 import { useMessages } from '@/hooks/useMessages'
-import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
+import {
+  useAgentRealtime,
+  useAgentRealtimeListener,
+} from '@/components/realtime/AgentRealtimeProvider'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
+import type { AgentRealtimeEvent } from '@workspace/types'
 import type { Conversation, Attachment } from '@/types/database'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -288,14 +292,16 @@ interface TeamMember {
 export function ConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
   const router = useRouter()
   const { messages, loading, sending, sendMessage, refetch, appendMessage } = useMessages(conversation.id, orgId)
+  const { send: wsSend } = useAgentRealtime()
   const [aiTypingConversationId, setAiTypingConversationId] = useState<string | null>(null)
   const [replyingAgents, setReplyingAgents] = useState<Record<string, number>>({})
   const [isLocalReplying, setIsLocalReplying] = useState(false)
   const localReplyingRef = useRef(false)
-  const handleAgentSocketMessage = useCallback((payload: Record<string, unknown>) => {
-    const type = typeof payload.type === 'string' ? payload.type : ''
+  const handleAgentSocketMessage = useCallback((payload: AgentRealtimeEvent) => {
+    const type = payload.type
+    const record = payload as Record<string, unknown>
     const payloadConversationId =
-      typeof payload.conversationId === 'string' ? payload.conversationId : null
+      typeof record.conversationId === 'string' ? record.conversationId : null
     if (payloadConversationId && payloadConversationId !== conversation.id) return
     if (
       (type === 'visitor:message' || type === 'agent:message' || type === 'ai:response') &&
@@ -304,7 +310,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       return
     }
 
-    const source = typeof payload.source === 'string' ? payload.source : ''
+    const source = typeof record.source === 'string' ? record.source : ''
 
     if (type === 'typing:start' && source === 'ai') {
       if (payloadConversationId) {
@@ -321,8 +327,8 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     }
 
     if (type === 'agent:replying') {
-      const senderId = typeof payload.agentId === 'string' ? payload.agentId : null
-      const isReplying = payload.isReplying === true
+      const senderId = typeof record.agentId === 'string' ? record.agentId : null
+      const isReplying = record.isReplying === true
       if (!senderId || senderId === agentId) return
 
       setReplyingAgents((previous) => {
@@ -346,17 +352,17 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
         conversation_id: conversation.id,
         org_id: orgId,
         role: 'user',
-        content: typeof payload.content === 'string' ? payload.content : '',
-        attachments: Array.isArray(payload.attachments) ? (payload.attachments as Attachment[]) : [],
+        content: typeof record.content === 'string' ? record.content : '',
+        attachments: Array.isArray(record.attachments) ? (record.attachments as Attachment[]) : [],
         ai_metadata: null,
-        created_at: toIsoString(payload.createdAt),
+        created_at: toIsoString(record.createdAt),
       })
       return
     }
 
     if (type === 'agent:message') {
-      const senderId = typeof payload.agentId === 'string' ? payload.agentId : null
-      const clientNonce = typeof payload.clientNonce === 'string' ? payload.clientNonce : null
+      const senderId = typeof record.agentId === 'string' ? record.agentId : null
+      const clientNonce = typeof record.clientNonce === 'string' ? record.clientNonce : null
       const aiMetadata =
         senderId || clientNonce
           ? {
@@ -369,10 +375,10 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
         conversation_id: conversation.id,
         org_id: orgId,
         role: 'agent',
-        content: typeof payload.content === 'string' ? payload.content : '',
-        attachments: Array.isArray(payload.attachments) ? (payload.attachments as Attachment[]) : [],
+        content: typeof record.content === 'string' ? record.content : '',
+        attachments: Array.isArray(record.attachments) ? (record.attachments as Attachment[]) : [],
         ai_metadata: aiMetadata,
-        created_at: toIsoString(payload.createdAt),
+        created_at: toIsoString(record.createdAt),
       })
       if (senderId && senderId !== agentId) {
         setReplyingAgents((previous) => {
@@ -388,13 +394,13 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     if (type === 'ai:response') {
       setAiTypingConversationId(null)
       const actionLog =
-        payload.actionLog && typeof payload.actionLog === 'object' && !Array.isArray(payload.actionLog)
-          ? (payload.actionLog as Record<string, unknown>)
+        record.actionLog && typeof record.actionLog === 'object' && !Array.isArray(record.actionLog)
+          ? (record.actionLog as Record<string, unknown>)
           : null
       const aiMetadata =
-        actionLog || typeof payload.confidence === 'number'
+        actionLog || typeof record.confidence === 'number'
           ? {
-              ...(typeof payload.confidence === 'number' ? { confidence: payload.confidence } : {}),
+              ...(typeof record.confidence === 'number' ? { confidence: record.confidence } : {}),
               ...(actionLog ? { actionLog } : {}),
             }
           : null
@@ -403,10 +409,10 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
         conversation_id: conversation.id,
         org_id: orgId,
         role: 'assistant',
-        content: typeof payload.content === 'string' ? payload.content : '',
+        content: typeof record.content === 'string' ? record.content : '',
         attachments: [],
         ai_metadata: aiMetadata,
-        created_at: toIsoString(payload.createdAt),
+        created_at: toIsoString(record.createdAt),
       })
       return
     }
@@ -415,7 +421,7 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
       setAiTypingConversationId(null)
     }
   }, [agentId, appendMessage, conversation.id, orgId])
-  const { send: wsSend } = useAgentWebSocket(orgId, agentId, handleAgentSocketMessage)
+  useAgentRealtimeListener(handleAgentSocketMessage)
   const emitReplyingState = useCallback((next: boolean) => {
     if (localReplyingRef.current === next) return
     localReplyingRef.current = next

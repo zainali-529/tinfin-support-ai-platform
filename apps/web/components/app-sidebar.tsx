@@ -58,9 +58,9 @@ import { UserMenu } from '@/components/nav/UserMenu'
 import { OrgSwitcher } from '@/components/org/OrgSwitcher'
 import { PlanBadge } from '@/components/billing/PlanGuard'
 import { usePlan } from '@/hooks/usePlan'
-import { useAgentWebSocket, type AgentWebSocketPayload } from '@/hooks/useAgentWebSocket'
+import { useAgentRealtimeListener } from '@/components/realtime/AgentRealtimeProvider'
 import { createClient } from '@/lib/supabase'
-import type { TeamPermissionKey } from '@workspace/types'
+import type { AgentRealtimeEvent, TeamPermissionKey } from '@workspace/types'
 
 type NavItem = {
   label: string
@@ -139,7 +139,6 @@ const navGroups: NavGroup[] = [
 
 function useUnreadCount(orgId: string): number {
   const [count, setCount] = React.useState(0)
-  const [agentId, setAgentId] = React.useState<string | null>(null)
 
   const fetchCount = React.useCallback(async () => {
     if (!orgId) return
@@ -152,13 +151,6 @@ function useUnreadCount(orgId: string): number {
 
     if (!error) setCount(unreadCount ?? 0)
   }, [orgId])
-
-  React.useEffect(() => {
-    const supabase = createClient()
-    void supabase.auth.getSession().then(({ data }) => {
-      setAgentId(data.session?.user.id ?? null)
-    })
-  }, [])
 
   React.useEffect(() => {
     if (!orgId) return
@@ -188,8 +180,8 @@ function useUnreadCount(orgId: string): number {
     }
   }, [fetchCount, orgId])
 
-  useAgentWebSocket(orgId, agentId ?? '', React.useCallback((payload: AgentWebSocketPayload) => {
-    const type = typeof payload.type === 'string' ? payload.type : ''
+  useAgentRealtimeListener(React.useCallback((payload: AgentRealtimeEvent) => {
+    const type = payload.type
     if (
       type === 'conversation:new' ||
       type === 'conversation:status_changed' ||

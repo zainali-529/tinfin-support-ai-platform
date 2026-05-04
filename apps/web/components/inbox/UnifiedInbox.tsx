@@ -22,7 +22,7 @@ import {
 } from '@workspace/ui/components/dialog'
 import { SearchIcon } from 'lucide-react'
 import { useConversations } from '@/hooks/useConversations'
-import { useAgentWebSocket } from '@/hooks/useAgentWebSocket'
+import { useAgentRealtimeListener } from '@/components/realtime/AgentRealtimeProvider'
 import { useActiveOrg } from '@/components/org/OrgContext'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
@@ -30,6 +30,7 @@ import { ConversationListItem } from './ConversationListItem'
 import { ConversationRenderer } from './ConversationRenderer'
 import { EmptyState } from './EmptyState'
 import { PendingApprovals } from '@/components/actions/PendingApprovals'
+import type { AgentRealtimeEvent } from '@workspace/types'
 import type { Conversation, ConversationQueueState } from '@/types/database'
 
 type StatusFilter = 'all' | 'bot' | 'open' | 'pending' | 'resolved'
@@ -181,17 +182,18 @@ export function UnifiedInbox() {
     expiresAt: item.expiresAt ? String(item.expiresAt) : null,
   }))
 
-  const handleInboxSocketMessage = useCallback((payload: Record<string, unknown>) => {
-    const type = typeof payload.type === 'string' ? payload.type : ''
+  const handleInboxSocketMessage = useCallback((payload: AgentRealtimeEvent) => {
+    const type = payload.type
+    const record = payload as Record<string, unknown>
 
     if (type === 'conversation:status_changed') {
-      const conversationId = typeof payload.conversationId === 'string' ? payload.conversationId : null
+      const conversationId = typeof record.conversationId === 'string' ? record.conversationId : null
       if (conversationId) {
-        const nextStatus = typeof payload.status === 'string' ? payload.status : null
-        const hasAssignedTo = Object.prototype.hasOwnProperty.call(payload, 'assignedTo')
+        const nextStatus = typeof record.status === 'string' ? record.status : null
+        const hasAssignedTo = Object.prototype.hasOwnProperty.call(record, 'assignedTo')
         const nextAssignedTo =
-          typeof payload.assignedTo === 'string'
-            ? payload.assignedTo
+          typeof record.assignedTo === 'string'
+            ? record.assignedTo
             : hasAssignedTo
               ? null
               : undefined
@@ -208,8 +210,8 @@ export function UnifiedInbox() {
             nextStatus as StatusFilter | 'closed',
             nextAssignedTo
           )
-        } else if (typeof payload.queueState === 'string') {
-          patch.queue_state = payload.queueState as ConversationQueueState
+        } else if (typeof record.queueState === 'string') {
+          patch.queue_state = record.queueState as ConversationQueueState
         }
 
         if (Object.keys(patch).length > 0) {
@@ -248,7 +250,7 @@ export function UnifiedInbox() {
     utils.dashboard.getHomeOverview,
   ])
 
-  useAgentWebSocket(orgId, agentId ?? '', handleInboxSocketMessage)
+  useAgentRealtimeListener(agentId ? handleInboxSocketMessage : null)
 
   useEffect(() => {
     setSelectedId((prev) => (prev === queryConversationId ? prev : queryConversationId))

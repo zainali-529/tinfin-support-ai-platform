@@ -21,6 +21,7 @@ import { OrgProvider } from '@/components/org/OrgContext'
 import { getEffectiveTeamPermissions } from '@workspace/types'
 import { DocsSearchLauncher } from '@/components/docs/DocsSearchLauncher'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
+import { AgentRealtimeProvider } from '@/components/realtime/AgentRealtimeProvider'
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
   const msg = (error?.message ?? '').toLowerCase()
@@ -118,37 +119,39 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <TooltipProvider delayDuration={0}>
       <OrgProvider org={activeOrgWithRole}>
-        <SidebarProvider>
-          <AppSidebar user={sidebarUser} activeOrg={activeOrgWithRole} />
-          <SidebarInset>
-            <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-              <SidebarTrigger className="-ml-1" />
-              <Separator
-                orientation="vertical"
-                className="mr-2 data-[orientation=vertical]:h-4"
-              />
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem className="hidden md:block">
-                    <BreadcrumbLink href="/dashboard">Dashboard</BreadcrumbLink>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator className="hidden md:block" />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>{activeOrg.name}</BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-              <div className="ml-auto flex items-center gap-2">
-                <NotificationBell />
-                <DocsSearchLauncher compact />
-                <ThemeToggle />
+        <AgentRealtimeProvider>
+          <SidebarProvider>
+            <AppSidebar user={sidebarUser} activeOrg={activeOrgWithRole} />
+            <SidebarInset>
+              <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+                <SidebarTrigger className="-ml-1" />
+                <Separator
+                  orientation="vertical"
+                  className="mr-2 data-[orientation=vertical]:h-4"
+                />
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    <BreadcrumbItem className="hidden md:block">
+                      <BreadcrumbLink href="/dashboard">Dashboard</BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator className="hidden md:block" />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{activeOrg.name}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
+                <div className="ml-auto flex items-center gap-2">
+                  <NotificationBell />
+                  <DocsSearchLauncher compact />
+                  <ThemeToggle />
+                </div>
+              </header>
+              <div className="mx-auto flex min-h-0 w-full max-w-[1680px] flex-1 flex-col gap-4 p-4">
+                {children}
               </div>
-            </header>
-            <div className="mx-auto flex min-h-0 w-full max-w-[1680px] flex-1 flex-col gap-4 p-4">
-              {children}
-            </div>
-          </SidebarInset>
-        </SidebarProvider>
+            </SidebarInset>
+          </SidebarProvider>
+        </AgentRealtimeProvider>
       </OrgProvider>
     </TooltipProvider>
   )
