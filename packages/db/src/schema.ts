@@ -289,17 +289,50 @@ export const knowledgeBases = pgTable('knowledge_bases', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
-export const kbChunks = pgTable('kb_chunks', {
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  kbId: uuid('kb_id').references(() => knowledgeBases.id, { onDelete: 'cascade' }).notNull(),
-  orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
-  content: text('content').notNull(),
-  embedding: vector('embedding', 1536),
-  sourceUrl: text('source_url'),
-  sourceTitle: text('source_title'),
-  metadata: jsonb('metadata').default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const kbSources = pgTable(
+  'kb_sources',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    kbId: uuid('kb_id').references(() => knowledgeBases.id, { onDelete: 'cascade' }).notNull(),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    sourceType: text('source_type').notNull(),
+    sourceUrl: text('source_url'),
+    sourceTitle: text('source_title'),
+    status: text('status').default('indexed').notNull(),
+    chunkCount: integer('chunk_count').default(0).notNull(),
+    qualityScore: integer('quality_score'),
+    warningCodes: jsonb('warning_codes').default([]).notNull(),
+    errorMessage: text('error_message'),
+    lastIndexedAt: timestamp('last_indexed_at', { withTimezone: true }),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgKbIndex: index('idx_kb_sources_org_kb').on(table.orgId, table.kbId, table.updatedAt),
+    orgStatusIndex: index('idx_kb_sources_org_status').on(table.orgId, table.status, table.updatedAt),
+  })
+)
+
+export const kbChunks = pgTable(
+  'kb_chunks',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    kbId: uuid('kb_id').references(() => knowledgeBases.id, { onDelete: 'cascade' }).notNull(),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    sourceId: uuid('source_id').references(() => kbSources.id, { onDelete: 'set null' }),
+    content: text('content').notNull(),
+    embedding: vector('embedding', 1536),
+    sourceUrl: text('source_url'),
+    sourceTitle: text('source_title'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    sourceIndex: index('idx_kb_chunks_source_id').on(table.sourceId),
+  })
+)
 
 export const widgetConfigs = pgTable('widget_configs', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),

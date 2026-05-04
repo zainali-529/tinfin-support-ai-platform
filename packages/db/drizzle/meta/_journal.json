@@ -78,6 +78,13 @@
       "when": 1778486400000,
       "tag": "0011_remove_ai_answer_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778572800000,
+      "tag": "0012_kb_source_health_cleanup",
+      "breakpoints": true
     }
   ]
 }

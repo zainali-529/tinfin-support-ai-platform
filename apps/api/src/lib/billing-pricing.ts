@@ -41,7 +41,7 @@ function readTrimmedEnv(name: string): string | null {
 
 export function promotionCodesEnabled(couponId?: string | null): boolean {
   if (couponId) return false
-  return process.env.STRIPE_ALLOW_PROMOTION_CODES === 'true'
+  return process.env.STRIPE_ENABLE_CUSTOMER_PROMO_CODES === 'true'
 }
 
 export function trialDaysForPlan(planId: PlanId): number | null {

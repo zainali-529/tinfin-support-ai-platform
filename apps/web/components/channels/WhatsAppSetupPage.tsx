@@ -44,8 +44,8 @@ function CopyButton({ value }: { value: string }) {
 }
 
 export function WhatsAppSetupPage() {
-  const { canUse } = usePlan()
-  const isReadOnly = !canUse('whatsappChannel')
+  const { canUse, isPlanLoading } = usePlan()
+  const isReadOnly = isPlanLoading || !canUse('whatsappChannel')
 
   const {
     account,
@@ -109,7 +109,7 @@ export function WhatsAppSetupPage() {
           <LockIcon className="size-4 text-amber-700 dark:text-amber-300" />
           <AlertDescription className="flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
             <span>
-              WhatsApp channel setup is available on Pro and Scale plans.
+              WhatsApp setup is visible in preview on Free and Starter, but connecting, enabling, and sending require Pro.
             </span>
             <Button size="sm" className="h-7" asChild>
               <Link href="/billing">Upgrade</Link>
@@ -134,6 +134,7 @@ export function WhatsAppSetupPage() {
                 onChange={(event) => setPhoneNumberId(event.target.value)}
                 placeholder="e.g. 123456789012345"
                 className="h-9"
+                disabled={isReadOnly || setupAccount.isPending}
               />
             </div>
 
@@ -146,6 +147,7 @@ export function WhatsAppSetupPage() {
                 onChange={(event) => setWhatsappBusinessId(event.target.value)}
                 placeholder="e.g. 109876543210987"
                 className="h-9"
+                disabled={isReadOnly || setupAccount.isPending}
               />
             </div>
 
@@ -157,6 +159,7 @@ export function WhatsAppSetupPage() {
                 placeholder="Permanent Meta token"
                 type="password"
                 className="h-9 font-mono"
+                disabled={isReadOnly || setupAccount.isPending}
               />
             </div>
 
@@ -170,6 +173,7 @@ export function WhatsAppSetupPage() {
                   onChange={(event) => setDisplayPhoneNumber(event.target.value)}
                   placeholder="+923001234567"
                   className="h-9"
+                  disabled={isReadOnly || setupAccount.isPending}
                 />
               </div>
               <div className="space-y-1.5">
@@ -181,6 +185,7 @@ export function WhatsAppSetupPage() {
                   onChange={(event) => setDisplayName(event.target.value)}
                   placeholder="Tinfin Support"
                   className="h-9"
+                  disabled={isReadOnly || setupAccount.isPending}
                 />
               </div>
             </div>
@@ -195,25 +200,33 @@ export function WhatsAppSetupPage() {
             )}
 
             <div className="flex justify-end">
-              <Button
-                onClick={handleConnect}
-                disabled={
-                  isReadOnly ||
-                  setupAccount.isPending ||
-                  !phoneNumberId.trim() ||
-                  !whatsappBusinessId.trim() ||
-                  !accessToken.trim() ||
-                  !displayPhoneNumber.trim()
-                }
-                className="gap-1.5"
-              >
-                {setupAccount.isPending ? (
-                  <Spinner className="size-3.5" />
-                ) : (
-                  <PlugZapIcon className="size-3.5" />
-                )}
-                {setupAccount.isPending ? 'Connecting...' : 'Connect WhatsApp'}
-              </Button>
+              {isReadOnly ? (
+                <Button asChild className="gap-1.5">
+                  <Link href="/billing">
+                    <LockIcon className="size-3.5" />
+                    Upgrade to Pro
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleConnect}
+                  disabled={
+                    setupAccount.isPending ||
+                    !phoneNumberId.trim() ||
+                    !whatsappBusinessId.trim() ||
+                    !accessToken.trim() ||
+                    !displayPhoneNumber.trim()
+                  }
+                  className="gap-1.5"
+                >
+                  {setupAccount.isPending ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <PlugZapIcon className="size-3.5" />
+                  )}
+                  {setupAccount.isPending ? 'Connecting...' : 'Connect WhatsApp'}
+                </Button>
+              )}
             </div>
 
             {webhookUrl && verifyToken && (

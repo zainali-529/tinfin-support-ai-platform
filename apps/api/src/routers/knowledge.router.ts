@@ -1,35 +1,52 @@
-/**
- * KNOWLEDGE ROUTER — Multi-Org Fixed
- *
- * Same fix as chat.router.ts: use ctx.userOrgId from middleware instead of
- * requireOrgAccess(ctx.userOrgId, input.orgId) which caused 403 on org switch.
- */
-
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
+import { ingestText, ingestUrl } from '@workspace/ai'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requireLimit } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
+import {
+  assertKnowledgeBaseAccess,
+  createIndexingSource,
+  decorateDuplicateWarnings,
+  deleteChunksForSource,
+  getKbSource,
+  normalizeSourceRow,
+  updateSourceAfterIngest,
+  uiSourceType,
+} from '../services/knowledge-sources.service'
+
+const sourceTypeInput = z.enum(['url', 'file', 'text']).optional()
+
+function asRawText(metadata: Record<string, unknown>): string | null {
+  const value = metadata.rawText
+  return typeof value === 'string' && value.trim() ? value : null
+}
 
 export const knowledgeRouter = router({
   getKnowledgeBases: protectedProcedure
     .input(z.object({
-      orgId: z.string().uuid().optional(), // kept for backward compat
+      orgId: z.string().uuid().optional(),
     }).optional())
     .query(async ({ ctx }) => {
       requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
-      const orgId = ctx.userOrgId // middleware-validated active org
+      const orgId = ctx.userOrgId
 
-      const { data } = await ctx.supabase
+      const { data, error } = await ctx.supabase
         .from('knowledge_bases')
         .select('*')
         .eq('org_id', orgId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+
       return data ?? []
     }),
 
   createKnowledgeBase: protectedProcedure
     .input(z.object({
-      orgId: z.string().uuid().optional(), // kept for backward compat
+      orgId: z.string().uuid().optional(),
       name: z.string().min(1),
       sourceType: z.string(),
     }))
@@ -43,11 +60,16 @@ export const knowledgeRouter = router({
         .eq('org_id', orgId)
       await requireLimit(ctx.supabase, orgId, 'knowledgeBases', kbCount ?? 0)
 
-      const { data } = await ctx.supabase
+      const { data, error } = await ctx.supabase
         .from('knowledge_bases')
         .insert({ org_id: orgId, name: input.name, source_type: input.sourceType })
         .select()
         .single()
+
+      if (error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+
       return data
     }),
 
@@ -57,26 +79,83 @@ export const knowledgeRouter = router({
       requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
       const orgId = ctx.userOrgId
 
-      await ctx.supabase
+      const { error } = await ctx.supabase
         .from('knowledge_bases')
         .delete()
         .eq('id', input.id)
-        .eq('org_id', orgId) // ensures we only delete from active org
+        .eq('org_id', orgId)
+
+      if (error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+
       return { success: true }
+    }),
+
+  getKnowledgeSources: protectedProcedure
+    .input(z.object({ kbId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
+      const orgId = ctx.userOrgId
+
+      await assertKnowledgeBaseAccess(ctx.supabase, orgId, input.kbId)
+
+      const { data, error } = await ctx.supabase
+        .from('kb_sources')
+        .select('*')
+        .eq('org_id', orgId)
+        .eq('kb_id', input.kbId)
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+      }
+
+      const rows = decorateDuplicateWarnings((data ?? []).map((row: Record<string, unknown>) => normalizeSourceRow(row)))
+
+      return rows.map((row) => ({
+        ...row,
+        type: uiSourceType(row.source_type),
+      }))
     }),
 
   deleteKnowledgeSource: protectedProcedure
     .input(
       z.object({
-        kbId: z.string().uuid(),
+        sourceId: z.string().uuid().optional(),
+        kbId: z.string().uuid().optional(),
         sourceUrl: z.string().nullable().optional(),
         sourceTitle: z.string().nullable().optional(),
-        type: z.enum(['url', 'file', 'text']).optional(),
+        type: sourceTypeInput,
       })
     )
     .mutation(async ({ ctx, input }) => {
       requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
       const orgId = ctx.userOrgId
+
+      if (input.sourceId) {
+        const source = await getKbSource(ctx.supabase, orgId, input.sourceId)
+        await deleteChunksForSource(ctx.supabase, source)
+
+        const { error } = await ctx.supabase
+          .from('kb_sources')
+          .delete()
+          .eq('id', source.id)
+          .eq('org_id', orgId)
+
+        if (error) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to delete source: ${error.message}` })
+        }
+
+        return { success: true }
+      }
+
+      if (!input.kbId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Knowledge base or source ID is required.' })
+      }
+
+      await assertKnowledgeBaseAccess(ctx.supabase, orgId, input.kbId)
+
       const sourceUrl = input.sourceUrl?.trim() || null
       const sourceTitle = input.sourceTitle?.trim() || null
 
@@ -84,20 +163,6 @@ export const knowledgeRouter = router({
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'Source URL or title is required.',
-        })
-      }
-
-      const { data: kb } = await ctx.supabase
-        .from('knowledge_bases')
-        .select('id')
-        .eq('id', input.kbId)
-        .eq('org_id', orgId)
-        .maybeSingle()
-
-      if (!kb) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Knowledge base not found.',
         })
       }
 
@@ -131,5 +196,80 @@ export const knowledgeRouter = router({
       }
 
       return { success: true }
+    }),
+
+  reindexKnowledgeSource: protectedProcedure
+    .input(z.object({ sourceId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
+      const orgId = ctx.userOrgId
+      const source = await getKbSource(ctx.supabase, orgId, input.sourceId)
+
+      if (source.source_type === 'file') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Uploaded files cannot be re-indexed automatically yet. Delete and upload the file again.',
+        })
+      }
+
+      await createIndexingSource(ctx.supabase, {
+        orgId,
+        kbId: source.kb_id,
+        sourceType: source.source_type,
+        sourceUrl: source.source_url,
+        sourceTitle: source.source_title,
+        metadata: source.metadata,
+        existingSourceId: source.id,
+      })
+
+      await deleteChunksForSource(ctx.supabase, source)
+
+      if (source.source_type === 'url') {
+        if (!source.source_url) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'URL source is missing its URL.' })
+        }
+
+        const result = await ingestUrl({
+          url: source.source_url,
+          kbId: source.kb_id,
+          orgId,
+          sourceId: source.id,
+        })
+
+        await updateSourceAfterIngest(ctx.supabase, source, {
+          success: result.success,
+          chunksStored: result.chunksStored,
+          error: result.error,
+          sourceTitle: result.sourceTitle,
+        }, { recrawledBy: ctx.user.id })
+
+        return result
+      }
+
+      const rawText = asRawText(source.metadata)
+      if (!rawText) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This text source cannot be re-indexed because the original text was not stored. Delete and add it again.',
+        })
+      }
+
+      const result = await ingestText({
+        content: rawText,
+        title: source.source_title ?? undefined,
+        kbId: source.kb_id,
+        orgId,
+        sourceId: source.id,
+      })
+
+      await updateSourceAfterIngest(ctx.supabase, source, {
+        success: result.success,
+        chunksStored: result.chunksStored,
+        error: result.error,
+        sourceTitle: result.sourceTitle,
+        contentLength: rawText.length,
+      }, { reindexedBy: ctx.user.id })
+
+      return result
     }),
 })

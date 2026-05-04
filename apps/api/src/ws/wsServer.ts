@@ -1,4 +1,4 @@
-// ── Key changes vs original:
+// â”€â”€ Key changes vs original:
 // 1. handleVisitorMessage now reads msg.attachments and passes to persistMessage
 // 2. handleAgentMessage now reads msg.attachments and passes to visitor + persistMessage
 // 3. persistMessage accepts optional attachments param
@@ -38,9 +38,9 @@ import type {
 
 const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
-const DEFAULT_WELCOME_MESSAGE = 'Hi 👋 How can we help?'
+const DEFAULT_WELCOME_MESSAGE = 'Hi ðŸ‘‹ How can we help?'
 
-// ── Utils ──────────────────────────────────────────────────────────────────────
+// â”€â”€ Utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getSupabase(): SupabaseClient {
   return createClient(
@@ -133,6 +133,75 @@ function aiRealtimeFields(metadata: Record<string, unknown>): Record<string, unk
     answerType: typeof metadata.type === 'string' ? metadata.type : undefined,
     tokensUsed: typeof metadata.tokensUsed === 'number' ? metadata.tokensUsed : undefined,
   })
+}
+
+function normalizeIntentText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+    .replace(/\s+/g, ' ')
+}
+
+function isHandoffDecline(content: string): boolean {
+  const text = normalizeIntentText(content)
+  if (!text) return false
+
+  return [
+    /^no\b/,
+    /^nope\b/,
+    /^nah\b/,
+    /^not now\b/,
+    /^no thanks\b/,
+    /^no thank you\b/,
+    /^cancel\b/,
+    /^never mind\b/,
+    /^leave it\b/,
+    /^skip\b/,
+    /^don't\b/,
+    /^do not\b/,
+    /\bdon't connect\b/,
+    /\bdo not connect\b/,
+    /\bno need\b/,
+    /\bnot needed\b/,
+    /\bnahi\b/,
+    /\bnahin\b/,
+    /\bnai\b/,
+    /\babhi nahi\b/,
+    /\brehne do\b/,
+  ].some((pattern) => pattern.test(text))
+}
+
+function isHandoffAccept(content: string): boolean {
+  const text = normalizeIntentText(content)
+  if (!text) return false
+
+  return [
+    /^yes\b/,
+    /^yeah\b/,
+    /^yep\b/,
+    /^sure\b/,
+    /^ok\b/,
+    /^okay\b/,
+    /^please\b/,
+    /^go ahead\b/,
+    /^do it\b/,
+    /\bconnect\b/,
+    /\btransfer\b/,
+    /\bescalate\b/,
+    /\bhuman\b/,
+    /\bagent\b/,
+    /\breal person\b/,
+    /\bsomeone\b/,
+    /\bhelp me\b/,
+    /\bhaan\b/,
+    /\bhan\b/,
+    /\bji\b/,
+    /\btheek hai\b/,
+    /\bkar do\b/,
+    /\bkarwa do\b/,
+    /\bbaat karwa\b/,
+  ].some((pattern) => pattern.test(text))
 }
 
 function isVisitorIdentityDeleted(settings: unknown, visitorId: string): boolean {
@@ -295,7 +364,7 @@ async function sendToVisitor(orgId: string, conversationId: string, data: unknow
   }
 }
 
-// ── DB helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€ DB helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getConversationStatus(orgId: string, conversationId: string): Promise<ConversationStatus | null> {
   try {
@@ -377,7 +446,7 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
         const contact = contactById.get((conversation as { contact_id: string | null }).contact_id ?? '')
         const last = latestMsgByConv.get(conversation.id)
         const lastContent = last?.attachments?.length
-          ? `📎 ${last.attachments[0]?.name ?? 'File'}`
+          ? `ðŸ“Ž ${last.attachments[0]?.name ?? 'File'}`
           : (last?.content ?? '')
 
         return {
@@ -522,7 +591,7 @@ async function rejectPendingAction(
   }
 }
 
-// ── Contact helpers (unchanged from original) ──────────────────────────────────
+// â”€â”€ Contact helpers (unchanged from original) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface ContactIdentityRow {
   id: string
@@ -717,7 +786,7 @@ async function getOrCreateConversation(params: { orgId: string; visitorId: strin
   return { conversationId: newConv.id, isNew: true }
 }
 
-// ── Handoff ────────────────────────────────────────────────────────────────────
+// â”€â”€ Handoff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgId: string) {
   socket.awaitingHandoffConfirm = false
@@ -736,7 +805,7 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
   } catch (routingError) {
     console.error('[ws] triggerHandoff routing failed:', routingError)
   }
-  const msg = "I'm connecting you with a human agent now. Please hold on! 🙏"
+  const msg = "I'm connecting you with a human agent now. Please hold on! ðŸ™"
   const createdAt = new Date().toISOString()
   send(socket, { type: 'ai:response', content: msg, conversationId, createdAt, handoff: true })
   broadcastToAgents(orgId, {
@@ -767,7 +836,7 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
   await persistMessage({ conversationId, orgId, role: 'assistant', content: msg, aiMetadata: { shouldHandoff: true } })
 }
 
-// ── Visitor: identify ─────────────────────────────────────────────────────────
+// â”€â”€ Visitor: identify â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleVisitorIdentify(socket: TinfinSocket, msg: Record<string, unknown>) {
   const orgId = socket.orgId!
@@ -808,7 +877,7 @@ async function handleVisitorIdentify(socket: TinfinSocket, msg: Record<string, u
   })
 }
 
-// ── Visitor: message (with attachments) ───────────────────────────────────────
+// â”€â”€ Visitor: message (with attachments) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
@@ -892,7 +961,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
   if (status === 'resolved' || status === 'closed') {
     send(socket, {
       type: 'conversation:resolved',
-      content: 'This conversation has been resolved. Thank you! 😊',
+      content: 'This conversation has been resolved. Thank you! ðŸ˜Š',
       conversationId, createdAt: new Date().toISOString(),
     })
     return
@@ -914,10 +983,10 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     console.error('[ws] visitor message persist failed:', error)
   })
 
-  // If agent is handling → skip AI
+  // If agent is handling â†’ skip AI
   if (status === 'open') return
 
-  // If only file attachment, no text → just acknowledge, don't run AI
+  // If only file attachment, no text â†’ just acknowledge, don't run AI
   if (!content && attachments.length > 0) return
 
   // Pending action confirmation flow
@@ -976,17 +1045,49 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
 
   // Handoff confirmation flow
   if (socket.awaitingHandoffConfirm) {
-    if (isHandoffConfirmation(content)) {
-      await triggerHandoff(socket, conversationId, orgId)
-    } else {
+    if (isHandoffDecline(content)) {
       socket.awaitingHandoffConfirm = false
-      const reply = "No problem! Feel free to ask me anything else. 😊"
+      const reply = 'Understood.'
       const createdAt = new Date().toISOString()
-      send(socket, { type: 'ai:response', content: reply, conversationId, createdAt })
-      broadcastToAgents(orgId, { type: 'ai:response', content: reply, conversationId, createdAt })
-      await persistMessage({ conversationId, orgId, role: 'assistant', content: reply })
+      const aiMetadata = buildAiResponseMetadata({
+        type: 'casual',
+        confidence: 1,
+        sources: [],
+      }, {
+        handoffDeclined: true,
+      })
+      send(socket, {
+        type: 'ai:response',
+        content: reply,
+        conversationId,
+        createdAt,
+        ...aiRealtimeFields(aiMetadata),
+      })
+      broadcastToAgents(orgId, {
+        type: 'ai:response',
+        content: reply,
+        conversationId,
+        createdAt,
+        ...aiRealtimeFields(aiMetadata),
+      })
+      await persistMessage({
+        conversationId,
+        orgId,
+        role: 'assistant',
+        content: reply,
+        aiMetadata,
+      })
+      return
     }
-    return
+
+    if (isHandoffAccept(content) || isHandoffConfirmation(content)) {
+      await triggerHandoff(socket, conversationId, orgId)
+      return
+    }
+
+    // The visitor asked a new question instead of confirming handoff.
+    // Continue through the normal AI pipeline; do not send a canned reply.
+    socket.awaitingHandoffConfirm = false
   }
 
   // AI typing
@@ -1171,7 +1272,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
         console.error('[ws] RAG error:', err)
         send(socket, { type: 'typing:stop', source: 'ai', conversationId })
         broadcastToAgents(orgId, { type: 'typing:stop', source: 'ai', conversationId })
-        const fallback = "I'm having a little trouble right now. Would you like me to connect you with a human agent? (Reply **yes** to connect)"
+        const fallback = "I'm having a little trouble right now. If you'd like, I can connect you with a human agent. Reply **yes** or **ok** to connect."
         const createdAt = new Date().toISOString()
         send(socket, { type: 'ai:response', content: fallback, conversationId, createdAt })
         broadcastToAgents(orgId, { type: 'ai:response', content: fallback, conversationId, createdAt })
@@ -1180,7 +1281,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     })()
 }
 
-// ── Agent: message (with attachments) ─────────────────────────────────────────
+// â”€â”€ Agent: message (with attachments) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
@@ -1236,7 +1337,7 @@ async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unkn
   })
 }
 
-// ── Agent: takeover, release, resolve (unchanged) ─────────────────────────────
+// â”€â”€ Agent: takeover, release, resolve (unchanged) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
@@ -1272,7 +1373,7 @@ async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unk
     },
   })
   send(socket, { type: 'takeover:success', conversationId })
-  await persistMessage({ conversationId, orgId, role: 'assistant', content: '— Agent joined the conversation —', aiMetadata: { system: true, event: 'agent_joined' } })
+  await persistMessage({ conversationId, orgId, role: 'assistant', content: 'â€” Agent joined the conversation â€”', aiMetadata: { system: true, event: 'agent_joined' } })
 }
 
 async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unknown>) {
@@ -1324,7 +1425,7 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
   if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   await sendToVisitor(orgId, conversationId, {
-    type: 'conversation:resolved', content: 'This conversation has been resolved. Thank you! 😊',
+    type: 'conversation:resolved', content: 'This conversation has been resolved. Thank you! ðŸ˜Š',
     conversationId, createdAt: new Date().toISOString(),
   })
   broadcastToAgents(orgId, {
@@ -1348,7 +1449,7 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
   })
 }
 
-// ── Conversation helpers ───────────────────────────────────────────────────────
+// â”€â”€ Conversation helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleConversationResume(socket: TinfinSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
@@ -1470,7 +1571,7 @@ async function handleNewChat(socket: TinfinSocket, msg: Record<string, unknown>)
   }
 }
 
-// ── Router ────────────────────────────────────────────────────────────────────
+// â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
   switch (msg.type) {
@@ -1617,7 +1718,7 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
   }
 }
 
-// ── Server ────────────────────────────────────────────────────────────────────
+// â”€â”€ Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function createWsServer(port: number) {
   const wss = new WebSocketServer({ port })

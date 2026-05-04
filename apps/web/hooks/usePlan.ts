@@ -47,7 +47,8 @@ export function usePlan() {
 
   /**
    * Check if the current plan includes a feature.
-   * Returns true when loading (don't block UI during load).
+   * Returns true when the subscription payload is still loading so pages do not
+   * flash a blocked state. Sensitive pages can also read `isPlanLoading`.
    */
   function canUse(feature: FeatureKey): boolean {
     if (!sub?.planDetails) return true
@@ -116,6 +117,7 @@ export function usePlan() {
     cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: sub?.currentPeriodEnd ?? null,
     canManageBilling: sub?.canManageBilling ?? false,
+    isPlanLoading: subLoading,
     usage: usageData?.usage ?? null,
     limits: usageData?.limits ?? null,
     baseLimits: usageData?.baseLimits ?? null,

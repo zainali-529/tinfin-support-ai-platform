@@ -827,6 +827,7 @@ export const dashboardRouter = router({
     const canManageInbox = ctx.userPermissions.inbox === true
     const canInviteTeam = ctx.userRole === 'admin'
     const canManageActions = ctx.userRole === 'admin'
+    const canUseAiActions = plan.features.aiActions === true
 
     const widgetData = widgetResult.data as {
       id?: string
@@ -1035,16 +1036,18 @@ export const dashboardRouter = router({
         key: 'ai_action',
         title: 'Create first AI action',
         description: 'Add one safe read action, such as order lookup or account status.',
-        href: '/ai-actions',
-        ctaLabel: 'Create action',
+        href: canUseAiActions ? '/ai-actions' : '/billing',
+        ctaLabel: canUseAiActions ? 'Create action' : 'View plans',
         docsHref: '/docs/ai/actions-v1',
         verifyLabel: 'Check action',
         category: 'Automation',
         completed: hasActiveAiAction,
-        locked: !canManageActions,
-        status: stepStatus(hasActiveAiAction, !canManageActions, hasKnowledgeSource),
+        locked: !canManageActions || !canUseAiActions,
+        status: stepStatus(hasActiveAiAction, !canManageActions || !canUseAiActions, hasKnowledgeSource),
         statusDetail: hasActiveAiAction
           ? 'Active AI action found.'
+          : !canUseAiActions
+            ? 'AI Actions are preview-only on Free and Starter. Upgrade to Pro to save and run actions.'
           : hasKnowledgeSource
             ? 'Create a read-only test action first.'
             : 'Add knowledge first, then create a safe action.',

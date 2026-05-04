@@ -69,15 +69,57 @@ const HUMAN_REQUEST_PATTERNS = [
 ]
 
 const CONFIRM_YES_PATTERNS = [
-  /^(yes|yeah|yep|yup|sure|ok|okay|please|haan|ha|ji|ji\s?haan|please\s?do|go\s?ahead)\b/i,
+  /^(yes|yeah|yep|yup|sure|ok|okay|please|please\s?do|go\s?ahead)\b/i,
+]
+
+const ORG_IDENTITY_PATTERNS = [
+  /\b(your|our|company|organization|organisation|business|brand|team|services|service|product|products)\b/i,
+  /\b(who\s+are\s+you|what\s+do\s+you\s+do|tell\s+me\s+about\s+(your|the)\s+company|about\s+your\s+company)\b/i,
 ]
 
 function isExplicitHumanRequest(query: string): boolean {
   return HUMAN_REQUEST_PATTERNS.some((pattern) => pattern.test(query.trim()))
 }
 
+function isOrganizationIdentityQuery(query: string): boolean {
+  const trimmed = query.trim()
+  if (!trimmed) return false
+  return ORG_IDENTITY_PATTERNS.some((pattern) => pattern.test(trimmed))
+}
+
+function buildRetrievalQuery(query: string, orgDisplayName: string | null): string {
+  if (!isOrganizationIdentityQuery(query)) return query
+
+  const orgHint = orgDisplayName ? `Current organization/company name: ${orgDisplayName}.` : 'Current organization/company.'
+  return [
+    orgHint,
+    'Find company overview, about us, services, products, value proposition, support scope, policies, and introduction from the approved knowledge base.',
+    `Customer question: ${query}`,
+  ].join('\n')
+}
+
 export function isHandoffConfirmation(query: string): boolean {
   return CONFIRM_YES_PATTERNS.some((pattern) => pattern.test(query.trim()))
+}
+
+async function getOrgDisplayName(orgId: string): Promise<string | null> {
+  const supabase = getSupabaseAdmin()
+  const [orgResult, widgetResult] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select('name')
+      .eq('id', orgId)
+      .maybeSingle(),
+    supabase
+      .from('widget_configs')
+      .select('company_name')
+      .eq('org_id', orgId)
+      .maybeSingle(),
+  ])
+
+  const widgetName = typeof widgetResult.data?.company_name === 'string' ? widgetResult.data.company_name.trim() : ''
+  const orgName = typeof orgResult.data?.name === 'string' ? orgResult.data.name.trim() : ''
+  return widgetName || orgName || null
 }
 
 async function searchSimilarChunks(
@@ -170,12 +212,26 @@ function deriveTopicsHint(chunks: MatchedChunk[]): string {
   return sources.length > 0 ? `Topics available in knowledge base: ${sources.join(', ')}` : ''
 }
 
-function buildMasterPrompt(context: string, topicsHint: string, hasStrongContext: boolean): string {
+function buildMasterPrompt(
+  context: string,
+  topicsHint: string,
+  hasStrongContext: boolean,
+  orgDisplayName: string | null,
+  orgIdentityQuery: boolean
+): string {
   const kbSection = context
     ? `## Knowledge Base Context\n${context}`
     : '## Knowledge Base Context\n(No relevant articles found for this specific query)'
+  const organizationLine = orgDisplayName
+    ? `You represent the current organization: ${orgDisplayName}.`
+    : 'You represent the current organization that owns this support workspace.'
+  const identityGuidance = orgIdentityQuery
+    ? 'The user is asking about this organization/company/services. Interpret "your company", "your services", "you", or "we" as the current organization, not as a third-party company.'
+    : 'If the user says "your company", "your services", "you", or "we", interpret that as the current organization unless they clearly mention a third-party company.'
 
   return `You are a professional, intelligent, and warm customer support assistant.
+${organizationLine}
+${identityGuidance}
 
 ${kbSection}
 
@@ -201,11 +257,12 @@ ${hasStrongContext
 1. Never reveal source tags [Source N:] in your reply.
 2. Never mention "knowledge base", "context", "chunks", or internal system details.
 3. Never answer questions about topics outside the provided knowledge base.
-4. Always respond in the same language the user is writing in.
+4. Respond in English by default.
 5. Be warm, professional, and human.
 6. Keep responses concise but complete.
 7. Format longer answers with clean Markdown: short paragraphs, numbered steps, bullets, and fenced code blocks for commands/code.
-8. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.`.trim()
+8. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.
+9. Do not ask "which company?" for identity or services questions unless the user clearly asks about an unrelated third-party company and the knowledge base has no matching context.`.trim()
 }
 
 async function generateContextualResponse(
@@ -231,20 +288,43 @@ async function generateContextualResponse(
   }
 }
 
-function buildNoAnswerMessage(query: string): string {
-  const romanUrdu = /\b(aap|ap|tum|kya|kia|hai|hain|mujhe|mujha|btao|batao|kesay|kaise)\b/i.test(query)
-  if (romanUrdu) {
-    return 'Mere paas is sawal ka verified answer available nahi hai. Agar aap chahen to main aapko human agent se connect kar sakta hoon. (Reply **yes** to connect)'
+async function generateNoAnswerMessage(
+  client: ReturnType<typeof createOpenAIClient>,
+  query: string,
+  orgDisplayName: string | null
+): Promise<{ text: string; tokens: number }> {
+  const organizationLine = orgDisplayName
+    ? `You represent ${orgDisplayName}.`
+    : 'You represent the current support organization.'
+
+  try {
+    return await generateContextualResponse(
+      client,
+      `You are a professional customer support AI. ${organizationLine}
+
+The approved knowledge sources did not contain a verified answer to the customer's question.
+
+Write a concise, natural English response. Do not answer the factual question from general knowledge. Do not mention internal terms like "knowledge base", "RAG", "chunks", or "sources". Offer to connect the customer with a human agent in a natural way, but do not prescribe exact words the customer must reply with.
+
+Avoid sounding like a fixed template. Keep it to 1-2 sentences.`,
+      query,
+      120,
+      0.4
+    )
+  } catch {
+    return {
+      text: "I don't have verified information on that yet. If you'd like, I can connect you with a human agent who can help.",
+      tokens: 0,
+    }
   }
-  return "I'm sorry, I don't have specific information about that at the moment. Would you like me to connect you with a human agent who can help further? (Reply **yes** to connect)"
 }
 
-function withDebug(result: RAGResult, query: string): RAGResult {
+function withDebug(result: RAGResult, query: string, rewrittenQuery = query): RAGResult {
   return {
     ...result,
     debug: {
       intent: result.type,
-      rewrittenQuery: query,
+      rewrittenQuery,
       guidanceCount: 0,
       usedPinnedCompanyContext: false,
     },
@@ -263,6 +343,7 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
 
   const trimmedQuery = query.trim()
   const client = createOpenAIClient(openaiApiKey)
+  const orgDisplayName = await getOrgDisplayName(orgId)
 
   if (!trimmedQuery) {
     const { text, tokens } = await generateContextualResponse(
@@ -300,7 +381,9 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     }, trimmedQuery)
   }
 
-  const queryEmbedding = await generateEmbedding(trimmedQuery, openaiApiKey)
+  const orgIdentityQuery = isOrganizationIdentityQuery(trimmedQuery)
+  const retrievalQuery = buildRetrievalQuery(trimmedQuery, orgDisplayName)
+  const queryEmbedding = await generateEmbedding(retrievalQuery, openaiApiKey)
   const matchedChunks = await searchSimilarChunks(queryEmbedding, orgId, threshold, maxChunks, kbId)
   const confidence = calculateConfidence(matchedChunks)
   const hasStrongContext = confidence >= KB_RELEVANCE_THRESHOLD
@@ -314,19 +397,22 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   }))
 
   if (!hasStrongContext) {
+    const noAnswer = await generateNoAnswerMessage(client, trimmedQuery, orgDisplayName)
     return withDebug({
       type: 'ask_handoff',
-      message: buildNoAnswerMessage(trimmedQuery),
+      message: noAnswer.text,
       confidence,
       sources,
-      tokensUsed: 0,
-    }, trimmedQuery)
+      tokensUsed: noAnswer.tokens,
+    }, trimmedQuery, retrievalQuery)
   }
 
   const systemPrompt = buildMasterPrompt(
     buildContext(matchedChunks),
     deriveTopicsHint(matchedChunks),
-    hasStrongContext
+    hasStrongContext,
+    orgDisplayName,
+    orgIdentityQuery
   )
 
   const mainCompletion = await client.chat.completions.create({
@@ -343,13 +429,14 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   const tokensUsed = mainCompletion.usage?.total_tokens ?? 0
 
   if (!rawAnswer || rawAnswer === 'OUT_OF_SCOPE' || rawAnswer.includes('OUT_OF_SCOPE')) {
+    const noAnswer = await generateNoAnswerMessage(client, trimmedQuery, orgDisplayName)
     return withDebug({
       type: 'ask_handoff',
-      message: buildNoAnswerMessage(trimmedQuery),
+      message: noAnswer.text,
       confidence,
       sources,
-      tokensUsed,
-    }, trimmedQuery)
+      tokensUsed: tokensUsed + noAnswer.tokens,
+    }, trimmedQuery, retrievalQuery)
   }
 
   return withDebug({
@@ -358,5 +445,5 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     confidence,
     sources,
     tokensUsed,
-  }, trimmedQuery)
+  }, trimmedQuery, retrievalQuery)
 }

@@ -6,10 +6,10 @@
  * Reusable components for subscription gating throughout the UI.
  *
  * Components:
- *   PlanBadge       — small pill showing current plan (Free / Pro / Scale)
- *   UpgradePrompt   — full card shown when a feature isn't available
- *   UsageBar        — progress bar for a single limit metric
- *   PlanLimitAlert  — inline alert when approaching/hitting a limit
+ *   PlanBadge       - small pill showing current plan (Free / Pro / Scale)
+ *   UpgradePrompt   - full card shown when a feature isn't available
+ *   UsageBar        - progress bar for a single limit metric
+ *   PlanLimitAlert  - inline alert when approaching/hitting a limit
  */
 
 import Link from 'next/link'
@@ -17,8 +17,6 @@ import { Button } from '@workspace/ui/components/button'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { cn } from '@workspace/ui/lib/utils'
 import { ZapIcon, LockIcon, ArrowRightIcon, AlertTriangleIcon } from 'lucide-react'
-
-// ─── PlanBadge ────────────────────────────────────────────────────────────────
 
 export function PlanBadge({ planId, size = 'sm' }: { planId: string; size?: 'xs' | 'sm' }) {
   const colors: Record<string, string> = {
@@ -35,13 +33,10 @@ export function PlanBadge({ planId, size = 'sm' }: { planId: string; size?: 'xs'
       colors[planId] ?? colors.free,
       sizeClass
     )}>
-      {planId === 'scale' && '✦ '}
       {planId.charAt(0).toUpperCase() + planId.slice(1)}
     </span>
   )
 }
-
-// ─── UpgradePrompt ────────────────────────────────────────────────────────────
 
 interface UpgradePromptProps {
   feature: string
@@ -135,8 +130,6 @@ export function UpgradePrompt({
   )
 }
 
-// ─── UsageBar ─────────────────────────────────────────────────────────────────
-
 interface UsageBarProps {
   label: string
   current: number
@@ -169,7 +162,7 @@ export function UsageBar({ label, current, limit, unit = '', icon }: UsageBarPro
           isDanger ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-foreground'
         )}>
           {current.toLocaleString()}
-          {isUnlimited ? ' / ∞' : ` / ${limit.toLocaleString()}`}
+          {isUnlimited ? ' / Unlimited' : ` / ${limit.toLocaleString()}`}
           {unit && <span className="text-muted-foreground font-normal text-xs ml-1">{unit}</span>}
         </span>
       </div>
@@ -187,8 +180,6 @@ export function UsageBar({ label, current, limit, unit = '', icon }: UsageBarPro
     </div>
   )
 }
-
-// ─── PlanLimitAlert ───────────────────────────────────────────────────────────
 
 interface PlanLimitAlertProps {
   feature: string

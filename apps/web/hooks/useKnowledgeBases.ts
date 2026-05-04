@@ -1,14 +1,26 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { trpc } from '@/lib/trpc'
 
 export interface KBSource {
+  id: string
+  kb_id: string
+  org_id: string
+  source_type: 'url' | 'file' | 'text_note' | 'sitemap'
   source_url: string | null
   source_title: string | null
+  status: 'indexing' | 'indexed' | 'failed' | 'stale'
   chunk_count: number
+  quality_score: number | null
+  warning_codes: string[]
+  error_message: string | null
+  last_indexed_at: string | null
+  last_checked_at: string | null
+  metadata: Record<string, unknown>
   created_at: string
+  updated_at: string
   type: 'url' | 'file' | 'text'
 }
 
@@ -54,9 +66,24 @@ export function useKnowledgeBases(orgId: string): UseKnowledgeBasesReturn {
     onSuccess: () => utils.knowledge.getKnowledgeBases.invalidate(),
   })
 
-  const ingestUrl = trpc.ingest.ingestUrl.useMutation()
-  const ingestFile = trpc.ingest.ingestFile.useMutation()
-  const ingestText = trpc.ingest.ingestText.useMutation()
+  const ingestUrl = trpc.ingest.ingestUrl.useMutation({
+    onSuccess: () => {
+      void utils.knowledge.getKnowledgeBases.invalidate()
+      void utils.knowledge.getKnowledgeSources.invalidate()
+    },
+  })
+  const ingestFile = trpc.ingest.ingestFile.useMutation({
+    onSuccess: () => {
+      void utils.knowledge.getKnowledgeBases.invalidate()
+      void utils.knowledge.getKnowledgeSources.invalidate()
+    },
+  })
+  const ingestText = trpc.ingest.ingestText.useMutation({
+    onSuccess: () => {
+      void utils.knowledge.getKnowledgeBases.invalidate()
+      void utils.knowledge.getKnowledgeSources.invalidate()
+    },
+  })
 
   return {
     kbs: kbs as KnowledgeBase[],
@@ -71,65 +98,36 @@ export function useKnowledgeBases(orgId: string): UseKnowledgeBasesReturn {
 }
 
 export function useKBSources(kbId: string | null, orgId: string) {
-  const [sources, setSources] = useState<KBSource[]>([])
-  const [chunkCount, setChunkCount] = useState(0)
-  const [loading, setLoading] = useState(false)
+  const utils = trpc.useUtils()
+  const [refreshing, setRefreshing] = useState(false)
+  const {
+    data = [],
+    isLoading,
+    isFetching,
+    refetch: queryRefetch,
+  } = trpc.knowledge.getKnowledgeSources.useQuery(
+    { kbId: kbId ?? '00000000-0000-0000-0000-000000000000' },
+    { enabled: !!kbId && !!orgId, staleTime: 15_000 }
+  )
 
-  const fetch = useCallback(async () => {
-    if (!kbId || !orgId) return
-    setLoading(true)
-    try {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('kb_chunks')
-        .select('source_url, source_title, created_at')
-        .eq('kb_id', kbId)
-        .eq('org_id', orgId)
-        .order('created_at', { ascending: false })
-
-      const rows = (data ?? []) as Array<{
-        source_url: string | null
-        source_title: string | null
-        created_at: string
-      }>
-
-      setChunkCount(rows.length)
-
-      // Deduplicate by source key
-      const map = new Map<string, KBSource>()
-      for (const row of rows) {
-        const key = row.source_url ?? row.source_title ?? 'text'
-        if (!map.has(key)) {
-          const isUrl = !!row.source_url && row.source_url.startsWith('http')
-          const isFile =
-            !isUrl &&
-            (row.source_title?.endsWith('.pdf') ||
-              row.source_title?.endsWith('.docx'))
-          map.set(key, {
-            source_url: row.source_url,
-            source_title: row.source_title,
-            chunk_count: 0,
-            created_at: row.created_at,
-            type: isUrl ? 'url' : isFile ? 'file' : 'text',
-          })
-        }
-        const src = map.get(key)!
-        src.chunk_count++
-      }
-
-      setSources(Array.from(map.values()))
-    } catch (e) {
-      console.error('[useKBSources]', e)
-    } finally {
-      setLoading(false)
-    }
-  }, [kbId, orgId])
+  const sources = data as KBSource[]
+  const chunkCount = sources.reduce((sum, source) => sum + source.chunk_count, 0)
 
   useEffect(() => {
-    void fetch()
-  }, [fetch])
+    if (!kbId) return
+    void utils.knowledge.getKnowledgeSources.invalidate({ kbId })
+  }, [kbId, utils])
 
-  return { sources, chunkCount, loading, refetch: fetch }
+  const refetch = async () => {
+    setRefreshing(true)
+    try {
+      await queryRefetch()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  return { sources, chunkCount, loading: isLoading || refreshing, isFetching, refetch }
 }
 
 export function useDeleteKBSource() {
@@ -138,6 +136,18 @@ export function useDeleteKBSource() {
   return trpc.knowledge.deleteKnowledgeSource.useMutation({
     onSuccess: () => {
       void utils.knowledge.getKnowledgeBases.invalidate()
+      void utils.knowledge.getKnowledgeSources.invalidate()
+    },
+  })
+}
+
+export function useReindexKBSource() {
+  const utils = trpc.useUtils()
+
+  return trpc.knowledge.reindexKnowledgeSource.useMutation({
+    onSuccess: () => {
+      void utils.knowledge.getKnowledgeBases.invalidate()
+      void utils.knowledge.getKnowledgeSources.invalidate()
     },
   })
 }

@@ -49,11 +49,15 @@ function parseText(segment: string): MarkdownBlock[] {
       flush()
       const items = [ordered[2]!.trim()]
       while (index + 1 < lines.length) {
-        const next = (lines[index + 1] ?? '').trim()
+        let nextIndex = index + 1
+        while (nextIndex < lines.length && !(lines[nextIndex] ?? '').trim()) {
+          nextIndex += 1
+        }
+        const next = (lines[nextIndex] ?? '').trim()
         const match = /^(\d+)\.\s+(.+)$/.exec(next)
         if (!match) break
         items.push(match[2]!.trim())
-        index += 1
+        index = nextIndex
       }
       blocks.push({ type: 'ordered', items })
       continue
@@ -64,11 +68,15 @@ function parseText(segment: string): MarkdownBlock[] {
       flush()
       const items = [unordered[1]!.trim()]
       while (index + 1 < lines.length) {
-        const next = (lines[index + 1] ?? '').trim()
+        let nextIndex = index + 1
+        while (nextIndex < lines.length && !(lines[nextIndex] ?? '').trim()) {
+          nextIndex += 1
+        }
+        const next = (lines[nextIndex] ?? '').trim()
         const match = /^[-*]\s+(.+)$/.exec(next)
         if (!match) break
         items.push(match[1]!.trim())
-        index += 1
+        index = nextIndex
       }
       blocks.push({ type: 'unordered', items })
       continue

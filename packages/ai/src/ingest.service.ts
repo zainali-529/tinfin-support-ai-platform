@@ -10,6 +10,7 @@ export interface IngestUrlParams {
   orgId: string
   openaiApiKey?: string
   sourceType?: string
+  sourceId?: string
 }
 
 export interface IngestFileParams {
@@ -20,6 +21,7 @@ export interface IngestFileParams {
   orgId: string
   openaiApiKey?: string
   sourceType?: string
+  sourceId?: string
 }
 
 export interface IngestTextParams {
@@ -29,6 +31,7 @@ export interface IngestTextParams {
   orgId: string
   openaiApiKey?: string
   sourceType?: string
+  sourceId?: string
 }
 
 export interface IngestResult {
@@ -42,6 +45,7 @@ export interface IngestResult {
 interface KbChunkInsert {
   kb_id: string
   org_id: string
+  source_id?: string | null
   content: string
   embedding: number[]
   source_url: string | null
@@ -74,7 +78,7 @@ async function storeChunks(records: KbChunkInsert[]): Promise<void> {
  * Crawl a URL, chunk its content, embed, and store in kb_chunks.
  */
 export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> {
-  const { url, kbId, orgId, openaiApiKey, sourceType = 'url' } = params
+  const { url, kbId, orgId, openaiApiKey, sourceType = 'url', sourceId } = params
 
   try {
     // 1. Crawl
@@ -108,6 +112,7 @@ export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> 
     const records: KbChunkInsert[] = rawChunks.map((chunk, i) => ({
       kb_id: kbId,
       org_id: orgId,
+      source_id: sourceId ?? null,
       content: chunk.content,
       embedding: embeddings[i] ?? [],
       source_url: chunk.sourceUrl ?? null,
@@ -115,6 +120,7 @@ export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> 
       metadata: {
         ...((chunk.metadata ?? {}) as Record<string, unknown>),
         sourceType,
+        ...(sourceId ? { sourceId } : {}),
       },
     }))
 
@@ -139,7 +145,7 @@ export async function ingestUrl(params: IngestUrlParams): Promise<IngestResult> 
  * Parse a file buffer (PDF/DOCX), chunk, embed, and store in kb_chunks.
  */
 export async function ingestFile(params: IngestFileParams): Promise<IngestResult> {
-  const { fileBuffer, mimeType, filename, kbId, orgId, openaiApiKey, sourceType = 'file' } = params
+  const { fileBuffer, mimeType, filename, kbId, orgId, openaiApiKey, sourceType = 'file', sourceId } = params
 
   try {
     // 1. Parse
@@ -170,6 +176,7 @@ export async function ingestFile(params: IngestFileParams): Promise<IngestResult
     const records: KbChunkInsert[] = rawChunks.map((chunk, i) => ({
       kb_id: kbId,
       org_id: orgId,
+      source_id: sourceId ?? null,
       content: chunk.content,
       embedding: embeddings[i] ?? [],
       source_url: null,
@@ -177,6 +184,7 @@ export async function ingestFile(params: IngestFileParams): Promise<IngestResult
       metadata: {
         ...((chunk.metadata ?? {}) as Record<string, unknown>),
         sourceType,
+        ...(sourceId ? { sourceId } : {}),
       },
     }))
 
@@ -203,6 +211,7 @@ export async function ingestText(params: IngestTextParams): Promise<IngestResult
     orgId,
     openaiApiKey,
     sourceType = 'text_note',
+    sourceId,
   } = params
 
   try {
@@ -229,6 +238,7 @@ export async function ingestText(params: IngestTextParams): Promise<IngestResult
     const records: KbChunkInsert[] = rawChunks.map((chunk, index) => ({
       kb_id: kbId,
       org_id: orgId,
+      source_id: sourceId ?? null,
       content: chunk.content,
       embedding: embeddings[index] ?? [],
       source_url: null,
@@ -236,6 +246,7 @@ export async function ingestText(params: IngestTextParams): Promise<IngestResult
       metadata: {
         ...(chunk.metadata ?? {}),
         sourceType,
+        ...(sourceId ? { sourceId } : {}),
       },
     }))
 

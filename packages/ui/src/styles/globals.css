@@ -181,6 +181,6 @@ body{
   overflow-x: hidden;
 }
 
-.btn{
+.btn, button, a {
   cursor: pointer;
 }

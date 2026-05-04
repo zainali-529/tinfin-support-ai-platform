@@ -127,8 +127,8 @@ function SettingRow({
 export function EmailSettingsPage() {
   const { account, isLoading, upsertAccount, deleteAccount, regenerateToken, testConnection } =
     useEmailAccount()
-  const { canUse } = usePlan()
-  const isReadOnly = !canUse('emailChannel')
+  const { canUse, isPlanLoading } = usePlan()
+  const isReadOnly = isPlanLoading || !canUse('emailChannel')
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
@@ -297,7 +297,7 @@ export function EmailSettingsPage() {
           <LockIcon className="size-4 text-amber-600" />
           <AlertDescription className="flex flex-col gap-2 text-xs text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              Preview mode: email settings are visible on Free and Starter, but editing and saving require Pro.
+              Preview mode: email settings are visible on Free and Starter, but configuring, enabling, and sending require Pro.
             </span>
             <Button size="sm" className="h-7" asChild data-free-allow="true">
               <Link href="/billing">Upgrade to Pro</Link>
@@ -751,7 +751,7 @@ export function EmailSettingsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Upgrade Required for Email Configuration</AlertDialogTitle>
             <AlertDialogDescription>
-              You're currently in preview mode. Upgrade to Pro to configure and save email channel settings.
+              You're currently in preview mode. Upgrade to Pro to configure, enable, and save email channel settings.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -206,8 +206,8 @@ function PlanCard({
   const trialDays = planPricing?.trialDays ?? plan.trialDays ?? null
 
   const actionLabel = boolFeature(plan, 'aiActions')
-    ? 'AI Actions and API tools'
-    : 'AI Actions not included'
+    ? 'AI Actions: save and run'
+    : 'AI Actions preview only'
 
   return (
     <div
@@ -333,6 +333,14 @@ function Tick({ yes }: { yes: boolean }) {
   return yes ? <CheckIcon className="mx-auto size-4 text-emerald-500" /> : <XIcon className="mx-auto size-4 text-muted-foreground/30" />
 }
 
+function PreviewCell() {
+  return (
+    <Badge variant="outline" className="mx-auto w-fit border-amber-300 text-[10px] text-amber-700">
+      Preview
+    </Badge>
+  )
+}
+
 function InvoiceRow({ inv }: { inv: Invoice }) {
   const amount = (inv.amountPaid / 100).toFixed(2)
   return (
@@ -414,13 +422,6 @@ function AddOnCard({
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{addOn.description}</p>
         </div>
         <PackagePlusIcon className="size-4 shrink-0 text-primary" />
-      </div>
-
-      <div className="mb-3 rounded-xl border bg-muted/25 px-3 py-2">
-        <p className="text-xs text-muted-foreground">Base rate</p>
-        <p className="text-sm font-semibold">
-          {formatMoney(addOn.priceCents)} / {addOn.unitAmount.toLocaleString()} {addOn.unitLabel}
-        </p>
       </div>
 
       <div className="mb-3 rounded-xl border bg-background px-3 py-2">
@@ -627,7 +628,7 @@ function BillingInner() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">Available Plans</p>
-            <p className="text-xs text-muted-foreground">Starter keeps the core chat experience lean. Pro unlocks email, WhatsApp, voice, analytics, and AI Actions. Discounts and trials apply inside Stripe Checkout.</p>
+            <p className="text-xs text-muted-foreground">Starter keeps the core chat experience lean. Pro unlocks email, WhatsApp, voice, analytics, and AI Actions. Automatic discounts and trials are shown before checkout and applied in Stripe.</p>
           </div>
           <PlanBadge planId={planId} />
         </div>
@@ -851,7 +852,7 @@ function BillingInner() {
               { label: 'Widget customization', icon: SparklesIcon, free: <Tick yes={false} />, starter: <Tick yes />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Email channel', icon: MailIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'WhatsApp channel', icon: MessageCircleIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
-              { label: 'AI Actions', icon: WorkflowIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'AI Actions', icon: WorkflowIcon, free: <PreviewCell />, starter: <PreviewCell />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Voice calls', icon: PhoneCallIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Analytics', icon: SparklesIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Priority support', icon: StarIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes={false} />, scale: <Tick yes /> },

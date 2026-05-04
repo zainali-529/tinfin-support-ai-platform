@@ -17,9 +17,11 @@ import { Badge } from '@workspace/ui/components/badge'
 import { Spinner } from '@workspace/ui/components/spinner'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@workspace/ui/components/tabs'
 import { cn } from '@workspace/ui/lib/utils'
+import { trpc } from '@/lib/trpc'
 import {
   GlobeIcon, FileTextIcon, PencilLineIcon, UploadCloudIcon,
   CheckCircleIcon, OctagonXIcon, XIcon, LinkIcon,
+  AlertTriangleIcon,
 } from 'lucide-react'
 
 interface Props {
@@ -28,7 +30,7 @@ interface Props {
   kbId: string
   orgId: string
   kbName: string
-  onIngestUrl: (params: { orgId: string; kbId: string; url: string }) => Promise<{ chunksStored: number }>
+  onIngestUrl: (params: { orgId: string; kbId: string; url: string; replaceExisting?: boolean }) => Promise<{ chunksStored: number }>
   onIngestFile: (params: {
     orgId: string
     kbId: string
@@ -71,6 +73,18 @@ function isValidUrl(url: string) {
   }
 }
 
+function normalizeUrlForCompare(url: string) {
+  try {
+    const parsed = new URL(url.trim())
+    parsed.hash = ''
+    parsed.searchParams.sort()
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/'
+    return parsed.toString().toLowerCase()
+  } catch {
+    return url.trim().toLowerCase()
+  }
+}
+
 export function AddSourceDialog({
   open, onOpenChange, kbId, orgId, kbName, onIngestUrl, onIngestFile, onIngestText, onSuccess,
 }: Props) {
@@ -92,11 +106,31 @@ export function AddSourceDialog({
   const [textContent, setTextContent] = useState('')
   const [textStatus, setTextStatus] = useState<IngestStatus>('idle')
   const [textError, setTextError] = useState('')
+  const { data: existingSources = [] } = trpc.knowledge.getKnowledgeSources.useQuery(
+    { kbId },
+    { enabled: open && !!kbId, staleTime: 10_000 }
+  )
+
+  const normalizedExistingUrls = new Set(
+    existingSources
+      .filter((source) => source.type === 'url' && source.source_url)
+      .map((source) => normalizeUrlForCompare(source.source_url!))
+  )
+  const normalizedUrlInput = urlInput.trim() ? normalizeUrlForCompare(urlInput) : ''
+  const urlAlreadyIndexed = Boolean(normalizedUrlInput && normalizedExistingUrls.has(normalizedUrlInput))
+  const duplicateQueuedUrl = Boolean(
+    normalizedUrlInput &&
+    urlEntries.some((entry) => normalizeUrlForCompare(entry.url) === normalizedUrlInput)
+  )
+  const duplicateTextTitle = Boolean(
+    textTitle.trim() &&
+    existingSources.some((source) => source.type === 'text' && (source.source_title ?? '').trim().toLowerCase() === textTitle.trim().toLowerCase())
+  )
 
   const addUrl = () => {
     const url = urlInput.trim()
     if (!url || !isValidUrl(url)) return
-    if (urlEntries.some(e => e.url === url)) return
+    if (urlAlreadyIndexed || duplicateQueuedUrl) return
     setUrlEntries(prev => [...prev, { id: crypto.randomUUID(), url, status: 'idle' }])
     setUrlInput('')
   }
@@ -164,6 +198,13 @@ export function AddSourceDialog({
     if (file) processFile(file)
   }, [processFile])
 
+  const resetTextSuccessIfEditing = () => {
+    if (textStatus === 'success') {
+      setTextStatus('idle')
+      setTextError('')
+    }
+  }
+
   const ingestText = async () => {
     if (!textContent.trim()) return
     setTextStatus('loading')
@@ -183,6 +224,8 @@ export function AddSourceDialog({
 
       setTextStatus('success')
       setTextError('')
+      setTextTitle('')
+      setTextContent('')
       onSuccess()
     } catch (err) {
       setTextStatus('error')
@@ -237,10 +280,25 @@ export function AddSourceDialog({
                     onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addUrl())}
                   />
                 </div>
-                <Button size="sm" variant="outline" onClick={addUrl} disabled={!urlInput.trim() || !isValidUrl(urlInput.trim())}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addUrl}
+                  disabled={!urlInput.trim() || !isValidUrl(urlInput.trim()) || urlAlreadyIndexed || duplicateQueuedUrl}
+                >
                   Add
                 </Button>
               </div>
+              {(urlAlreadyIndexed || duplicateQueuedUrl) && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                  <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    {urlAlreadyIndexed
+                      ? 'This URL is already indexed. Use Re-index from the source health list to recrawl it.'
+                      : 'This URL is already queued in this batch.'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {urlEntries.length > 0 && (
@@ -375,9 +433,18 @@ export function AddSourceDialog({
                 placeholder="e.g. Refund Policy Note"
                 className="h-8 text-sm"
                 value={textTitle}
-                onChange={(e) => setTextTitle(e.target.value)}
+                onChange={(e) => {
+                  resetTextSuccessIfEditing()
+                  setTextTitle(e.target.value)
+                }}
                 disabled={textStatus === 'loading'}
               />
+              {duplicateTextTitle && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                  <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+                  <span>A text source with this title already exists. You can still add it, but the source health list will mark it as a duplicate.</span>
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Content</Label>
@@ -385,7 +452,10 @@ export function AddSourceDialog({
                 placeholder="Paste or write your knowledge content here..."
                 className="min-h-32 text-sm resize-none"
                 value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
+                onChange={(e) => {
+                  resetTextSuccessIfEditing()
+                  setTextContent(e.target.value)
+                }}
                 disabled={textStatus === 'loading'}
               />
             </div>

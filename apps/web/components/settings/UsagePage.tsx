@@ -58,6 +58,9 @@ export function UsagePage() {
 
   const isFreePlan = planId === 'free'
   const isStarterPlan = planId === 'starter'
+  const emailAccessLabel = canUse('emailChannel') ? 'Included' : 'Pro+ only'
+  const whatsappAccessLabel = canUse('whatsappChannel') ? 'Included' : 'Pro+ only'
+  const aiActionsAccessLabel = canUse('aiActions') ? 'Included' : 'Preview only'
 
   function handleRefresh() {
     void utils.usage.getUsage.invalidate()
@@ -262,9 +265,9 @@ export function UsagePage() {
                   label: 'Voice min/month',
                   value: limits?.voiceMinutes === 0 ? 'None' : `${limits?.voiceMinutes ?? 0}`,
                 },
-                { label: 'Email channel', value: canUse('emailChannel') ? 'Included' : 'Preview only' },
-                { label: 'WhatsApp channel', value: canUse('whatsappChannel') ? 'Included' : 'Preview only' },
-                { label: 'AI Actions', value: canUse('aiActions') ? 'Included' : 'Pro only' },
+                { label: 'Email channel', value: emailAccessLabel },
+                { label: 'WhatsApp channel', value: whatsappAccessLabel },
+                { label: 'AI Actions', value: aiActionsAccessLabel },
                 { label: 'Team members', value: `${limits?.teamMembers ?? 1}` },
                 { label: 'Knowledge bases', value: `${limits?.knowledgeBases ?? 1}` },
                 { label: 'KB chunks', value: limits?.kbChunks?.toLocaleString() ?? '100' },

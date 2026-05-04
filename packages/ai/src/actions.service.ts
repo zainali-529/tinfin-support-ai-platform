@@ -984,10 +984,34 @@ async function executeAndLogAction(input: {
   }
 }
 
-function buildSystemPrompt(actions: ActionConfig[]): string {
+async function getActionOrgDisplayName(orgId: string): Promise<string | null> {
+  const supabase = getSupabaseAdmin()
+  const [orgResult, widgetResult] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select('name')
+      .eq('id', orgId)
+      .maybeSingle(),
+    supabase
+      .from('widget_configs')
+      .select('company_name')
+      .eq('org_id', orgId)
+      .maybeSingle(),
+  ])
+
+  const widgetName = typeof widgetResult.data?.company_name === 'string' ? widgetResult.data.company_name.trim() : ''
+  const orgName = typeof orgResult.data?.name === 'string' ? orgResult.data.name.trim() : ''
+  return widgetName || orgName || null
+}
+
+function buildSystemPrompt(actions: ActionConfig[], orgDisplayName: string | null): string {
   const actionSummary = buildActionSummary(actions)
+  const organizationLine = orgDisplayName
+    ? `You represent the current organization: ${orgDisplayName}.`
+    : 'You represent the current organization that owns this support workspace.'
 
   return `You are a helpful customer support AI assistant.
+${organizationLine}
 
 ## Available Actions
 ${actionSummary}
@@ -999,10 +1023,53 @@ ${actionSummary}
 4. After action execution, report the result clearly.
 5. If you cannot help, use requestHumanAgent.
 6. Never fabricate data. Use tools for real information.
-7. Respond in the same language as the customer.
+7. Respond in English by default.
 8. Put the direct answer first. Use bullets only when they make the answer easier to scan.
 9. Format longer answers with clean Markdown: short paragraphs, numbered steps, bullets, and fenced code blocks for commands/code.
-10. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.`
+10. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.
+11. When the customer asks about "your company", "your services", "who are you", or "what do you do", treat that as the current organization and searchKnowledgeBase first. Do not ask "which company?" unless they clearly mean an unrelated third-party company.
+12. For factual questions, use searchKnowledgeBase before answering. If no verified answer is available, do not answer from general model knowledge.`
+}
+
+function isCasualInput(query: string): boolean {
+  const normalized = query.trim().toLowerCase().replace(/[!.?]+$/g, '')
+  if (!normalized) return true
+
+  return [
+    'hi',
+    'hello',
+    'hey',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'thanks',
+    'thank you',
+    'ok',
+    'okay',
+    'cool',
+    'great',
+  ].includes(normalized)
+}
+
+async function fallbackToGroundedRag(params: QueryWithActionsParams, tokenOffset: number): Promise<QueryWithActionsResult> {
+  const ragResult = await queryRAG({
+    query: params.query,
+    orgId: params.orgId,
+    kbId: params.kbId,
+    conversationId: params.conversationId,
+    channel: 'chat',
+    threshold: params.threshold,
+    maxChunks: params.maxChunks,
+    openaiApiKey: params.openaiApiKey,
+  })
+
+  return {
+    type: ragResult.type,
+    message: ragResult.message,
+    confidence: ragResult.confidence,
+    sources: ragResult.sources,
+    tokensUsed: (ragResult.tokensUsed ?? 0) + tokenOffset,
+  }
 }
 
 async function callOpenAIWithTools(input: {
@@ -1026,6 +1093,7 @@ export async function queryWithActions(
   const actions = await getOrgActions(params.orgId)
   const tools = buildOpenAITools(actions)
   const client = createOpenAIClient(params.openaiApiKey)
+  const orgDisplayName = await getActionOrgDisplayName(params.orgId)
 
   async function finish(
     result: QueryWithActionsResult
@@ -1036,7 +1104,7 @@ export async function queryWithActions(
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: buildSystemPrompt(actions),
+      content: buildSystemPrompt(actions, orgDisplayName),
     },
     ...toConversationHistoryMessages(params.conversationHistory),
     {
@@ -1063,10 +1131,14 @@ export async function queryWithActions(
   const assistantText = asString(assistantMessage.content) ?? ''
 
   if (firstChoice.finish_reason !== 'tool_calls') {
+    if (!isCasualInput(params.query)) {
+      return finish(await fallbackToGroundedRag(params, totalTokens))
+    }
+
     return finish({
-      type: 'answer',
+      type: 'casual',
       message: assistantText || "I'm here to help. Could you share a bit more detail?",
-      confidence: 0.9,
+      confidence: 1,
       sources: [],
       tokensUsed: totalTokens,
     })
@@ -1074,6 +1146,10 @@ export async function queryWithActions(
 
   const parsedCalls = parseToolCalls(assistantMessage)
   if (parsedCalls.length === 0) {
+    if (!isCasualInput(params.query)) {
+      return finish(await fallbackToGroundedRag(params, totalTokens))
+    }
+
     return finish({
       type: 'casual',
       message: assistantText || "I'm not sure what to do next. Could you rephrase that?",

@@ -74,10 +74,10 @@ function statusTone(status: string): string {
 }
 
 export function AIActionsAdminPage() {
-  const { canUse, isLoading: planLoading } = usePlan()
+  const { canUse, isPlanLoading } = usePlan()
   const canUseActions = canUse('aiActions')
-  const actionsEnabled = !planLoading
-  const isPreviewMode = !planLoading && !canUseActions
+  const actionsEnabled = !isPlanLoading
+  const isPreviewMode = !isPlanLoading && !canUseActions
   const {
     actions,
     actionStats,

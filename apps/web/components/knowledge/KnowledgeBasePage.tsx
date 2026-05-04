@@ -37,13 +37,14 @@ import {
   useDeleteKBSource,
   useKnowledgeBases,
   useKBSources,
+  useReindexKBSource,
   type KnowledgeBase,
   type KBSource,
 } from '@/hooks/useKnowledgeBases'
 import { CreateKBDialog } from './CreateKBDialog'
 import { AddSourceDialog } from './AddSourceDialog'
 
-// ─── Source type helpers ───────────────────────────────────────────────────────
+// Source type helpers
 
 const SOURCE_ICONS = {
   url: GlobeIcon,
@@ -70,7 +71,45 @@ const KB_TYPE_CONFIG: Record<string, { color: string; bg: string; label: string 
   text:    { color: 'text-amber-600 dark:text-amber-400',   bg: 'bg-amber-100 dark:bg-amber-900/30',   label: 'Notes' },
 }
 
-// ─── Empty States ──────────────────────────────────────────────────────────────
+const STATUS_CONFIG: Record<KBSource['status'], { label: string; className: string }> = {
+  indexed: {
+    label: 'Indexed',
+    className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  },
+  indexing: {
+    label: 'Indexing',
+    className: 'border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300',
+  },
+  failed: {
+    label: 'Failed',
+    className: 'border-destructive/20 bg-destructive/10 text-destructive',
+  },
+  stale: {
+    label: 'Stale',
+    className: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  },
+}
+
+const WARNING_LABELS: Record<string, string> = {
+  duplicate_source: 'Duplicate',
+  ingestion_failed: 'Failed',
+  low_chunk_count: 'Low coverage',
+  no_chunks: 'No chunks',
+  short_source: 'Short source',
+  missing_page_title: 'Missing title',
+}
+
+function sourceHealthSummary(source: KBSource): string {
+  if (source.status === 'failed') return source.error_message ?? 'Indexing failed.'
+  if (source.warning_codes.includes('duplicate_source')) return 'Duplicate source detected.'
+  if (source.warning_codes.includes('low_chunk_count')) return 'Only one chunk was indexed. Add more detail for better AI answers.'
+  if (source.warning_codes.includes('short_source')) return 'This source is very short. AI may need more context.'
+  if (source.warning_codes.includes('no_chunks')) return 'No searchable chunks were created.'
+  if (source.status === 'stale') return 'This source should be refreshed.'
+  return 'Healthy source.'
+}
+
+// Empty states
 
 function EmptyKBList({ onNew }: { onNew: () => void }) {
   return (
@@ -133,50 +172,98 @@ function EmptySelectState() {
   )
 }
 
-// ─── Source Row ────────────────────────────────────────────────────────────────
+// Source row
 
 function SourceRow({
   source,
   deleting,
+  reindexing,
   onDelete,
+  onReindex,
 }: {
   source: KBSource
   deleting?: boolean
+  reindexing?: boolean
   onDelete: () => void
+  onReindex: () => void
 }) {
   const Icon = SOURCE_ICONS[source.type]
   const color = SOURCE_COLORS[source.type]
   const bg = SOURCE_BACKGROUNDS[source.type]
   const displayName = source.source_title ?? source.source_url ?? 'Untitled'
   const isUrl = source.type === 'url'
+  const status = STATUS_CONFIG[source.status] ?? STATUS_CONFIG.indexed
+  const warningLabels = source.warning_codes.map((code) => WARNING_LABELS[code] ?? code)
+  const lastIndexed = source.last_indexed_at ?? source.updated_at ?? source.created_at
+  const canReindex =
+    source.source_type === 'url' ||
+    (source.source_type === 'text_note' && typeof source.metadata?.rawText === 'string')
 
   return (
-    <div className="group flex items-start gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-border hover:bg-muted/40">
+    <div className="group flex items-start gap-3 rounded-xl border border-transparent px-3 py-3 transition-colors hover:border-border hover:bg-muted/40">
       <div className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', bg)}>
         <Icon className={cn('size-3.5', color)} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-foreground leading-snug">{displayName}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="truncate text-xs font-medium text-foreground leading-snug">{displayName}</p>
+          <Badge variant="outline" className={cn('h-4 shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wide', status.className)}>
+            {status.label}
+          </Badge>
+        </div>
         {isUrl && source.source_url && (
           <p className="truncate text-[10px] text-muted-foreground font-mono mt-0.5">{source.source_url}</p>
         )}
-        <div className="flex items-center gap-2 mt-1">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
             <ClockIcon className="size-2.5" />
-            {formatDistanceToNow(new Date(source.created_at), { addSuffix: true })}
+            Indexed {formatDistanceToNow(new Date(lastIndexed), { addSuffix: true })}
           </span>
-          <span className="text-muted-foreground/30">·</span>
+          <span className="text-muted-foreground/30">-</span>
           <span className="text-[10px] text-muted-foreground/70">{source.chunk_count} chunks</span>
+          {source.quality_score !== null && (
+            <>
+          <span className="text-muted-foreground/30">-</span>
+              <span className="text-[10px] text-muted-foreground/70">Quality {source.quality_score}%</span>
+            </>
+          )}
         </div>
+        {(warningLabels.length > 0 || source.status !== 'indexed') && (
+          <div className="mt-2 space-y-1">
+            <p className="text-[10px] leading-relaxed text-muted-foreground">{sourceHealthSummary(source)}</p>
+            {warningLabels.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {warningLabels.map((label) => (
+                  <Badge key={label} variant="outline" className="h-4 border-amber-500/20 bg-amber-500/10 px-1.5 text-[9px] text-amber-700 dark:text-amber-300">
+                    {label}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      <Badge variant="outline" className={cn('h-4 px-1.5 text-[9px] font-semibold uppercase tracking-wide shrink-0', color)}>
+      <Badge variant="outline" className={cn('mt-0.5 h-4 px-1.5 text-[9px] font-semibold uppercase tracking-wide shrink-0', color)}>
         {source.type}
       </Badge>
+      {canReindex && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          disabled={reindexing || source.status === 'indexing'}
+          title={source.source_type === 'url' ? 'Re-index / recrawl source' : 'Re-index source'}
+          onClick={onReindex}
+          className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
+        >
+          <RefreshCwIcon className={cn('size-3.5', reindexing && 'animate-spin')} />
+        </Button>
+      )}
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
-        disabled={deleting}
+        disabled={deleting || reindexing}
         title="Delete source"
         onClick={onDelete}
         className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
@@ -187,7 +274,7 @@ function SourceRow({
   )
 }
 
-// ─── KB Card ──────────────────────────────────────────────────────────────────
+// KB card
 
 function KBCard({
   kb, isSelected, onClick, onDelete,
@@ -271,7 +358,7 @@ function KBCard({
   )
 }
 
-// ─── KB Detail Panel ───────────────────────────────────────────────────────────
+// KB detail panel
 
 function KBDetailPanel({
   kb, orgId, onAddSource,
@@ -282,6 +369,7 @@ function KBDetailPanel({
 }) {
   const { sources, chunkCount, loading, refetch } = useKBSources(kb.id, orgId)
   const deleteSource = useDeleteKBSource()
+  const reindexSource = useReindexKBSource()
   const [search, setSearch] = useState('')
   const [sourceToDelete, setSourceToDelete] = useState<KBSource | null>(null)
 
@@ -296,6 +384,7 @@ function KBDetailPanel({
   const urlCount = sources.filter(s => s.type === 'url').length
   const fileCount = sources.filter(s => s.type === 'file').length
   const textCount = sources.filter(s => s.type === 'text').length
+  const attentionCount = sources.filter(s => s.status !== 'indexed' || s.warning_codes.length > 0).length
   const sourceDeleteName =
     sourceToDelete?.source_title ?? sourceToDelete?.source_url ?? 'this source'
 
@@ -303,12 +392,14 @@ function KBDetailPanel({
     if (!sourceToDelete) return
 
     await deleteSource.mutateAsync({
-      kbId: kb.id,
-      sourceUrl: sourceToDelete.source_url,
-      sourceTitle: sourceToDelete.source_title,
-      type: sourceToDelete.type,
+      sourceId: sourceToDelete.id,
     })
     setSourceToDelete(null)
+    await refetch()
+  }
+
+  const handleReindexSource = async (source: KBSource) => {
+    await reindexSource.mutateAsync({ sourceId: source.id })
     await refetch()
   }
 
@@ -347,10 +438,10 @@ function KBDetailPanel({
       {/* Stats Bar */}
       <div className="grid grid-cols-4 border-b bg-muted/20 shrink-0">
         {[
-          { label: 'Total Chunks', value: loading ? '—' : chunkCount.toString(), icon: LayersIcon, color: 'text-primary' },
-          { label: 'URLs', value: loading ? '—' : urlCount.toString(), icon: GlobeIcon, color: 'text-blue-500' },
-          { label: 'Documents', value: loading ? '—' : fileCount.toString(), icon: FileTextIcon, color: 'text-emerald-500' },
-          { label: 'Text Notes', value: loading ? '—' : textCount.toString(), icon: PencilLineIcon, color: 'text-amber-500' },
+          { label: 'Total Chunks', value: loading ? '-' : chunkCount.toString(), icon: LayersIcon, color: 'text-primary' },
+          { label: 'URLs', value: loading ? '-' : urlCount.toString(), icon: GlobeIcon, color: 'text-blue-500' },
+          { label: 'Notes & Docs', value: loading ? '-' : (fileCount + textCount).toString(), icon: FileTextIcon, color: 'text-emerald-500' },
+          { label: 'Need Review', value: loading ? '-' : attentionCount.toString(), icon: PencilLineIcon, color: attentionCount > 0 ? 'text-amber-500' : 'text-emerald-500' },
         ].map((stat, i) => (
           <div key={i} className={cn('flex flex-col items-center justify-center gap-0.5 py-3 px-2 text-center', i < 3 && 'border-r')}>
             <stat.icon className={cn('size-3.5 mb-0.5', stat.color)} />
@@ -378,6 +469,11 @@ function KBDetailPanel({
       {/* Sources List */}
       <ScrollArea className="flex-1">
         <div className="p-3">
+          {reindexSource.isError && (
+            <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {reindexSource.error?.message ?? 'Failed to re-index source.'}
+            </div>
+          )}
           {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -406,12 +502,17 @@ function KBDetailPanel({
               </p>
               {filtered.map((source, i) => (
                 <SourceRow
-                  key={`${source.type}:${source.source_url ?? source.source_title ?? i}`}
+                  key={source.id ?? `${source.type}:${source.source_url ?? source.source_title ?? i}`}
                   source={source}
                   deleting={deleteSource.isPending}
+                  reindexing={reindexSource.isPending && reindexSource.variables?.sourceId === source.id}
                   onDelete={() => {
                     deleteSource.reset()
                     setSourceToDelete(source)
+                  }}
+                  onReindex={() => {
+                    reindexSource.reset()
+                    void handleReindexSource(source)
                   }}
                 />
               ))}
@@ -466,7 +567,7 @@ function KBDetailPanel({
   )
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// Main component
 
 interface Props {
   orgId: string

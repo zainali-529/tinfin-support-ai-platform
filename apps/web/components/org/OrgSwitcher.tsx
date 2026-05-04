@@ -176,7 +176,7 @@ export function CreateOrgDialog({
   }, [open, freeAllowed])
 
   const createOrg = trpc.orgMembership.createOrg.useMutation({
-    onSuccess: async (data) => {
+    onSuccess: async (data, variables) => {
       if (data.requiresCheckout && data.checkoutUrl) {
         window.location.href = data.checkoutUrl
         return
@@ -185,6 +185,7 @@ export function CreateOrgDialog({
       await utils.invalidate()
       onOpenChange(false)
       router.refresh()
+      window.location.assign(variables.successUrl ?? `${window.location.origin}/dashboard?orgCreated=true`)
     },
     onError: (err) => {
       setError(err.message)
