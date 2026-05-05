@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { ingestText, ingestUrl } from '@workspace/ai'
+import {
+  AI_CHANNEL_TONES,
+  DEFAULT_AI_CHANNEL_BEHAVIOR,
+  normalizeAiChannelBehaviorConfig,
+} from '@workspace/types'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requireLimit } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
@@ -17,6 +22,15 @@ import {
 
 const sourceTypeInput = z.enum(['url', 'file', 'text']).optional()
 const aiRatingInput = z.enum(['helpful', 'not_helpful'])
+const aiChannelToneInput = z.enum(AI_CHANNEL_TONES)
+const aiChannelBehaviorInput = z.object({
+  channels: z.object({
+    chat: z.object({ tone: aiChannelToneInput }),
+    email: z.object({ tone: aiChannelToneInput }),
+    whatsapp: z.object({ tone: aiChannelToneInput }),
+    voice: z.object({ tone: aiChannelToneInput }),
+  }),
+})
 const LOW_CONFIDENCE_THRESHOLD = 0.45
 const AI_IMPROVEMENTS_SCAN_LIMIT = 2000
 
@@ -427,6 +441,68 @@ export const knowledgeRouter = router({
       }, { reindexedBy: ctx.user.id })
 
       return result
+    }),
+
+  getAiChannelBehavior: protectedProcedure
+    .query(async ({ ctx }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
+
+      const { data, error } = await ctx.supabase
+        .from('organizations')
+        .select('settings')
+        .eq('id', ctx.userOrgId)
+        .maybeSingle()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load AI behavior settings: ${error.message}`,
+        })
+      }
+
+      const settings = asRecord(data?.settings)
+      return normalizeAiChannelBehaviorConfig(settings.aiChannelBehavior ?? DEFAULT_AI_CHANNEL_BEHAVIOR)
+    }),
+
+  updateAiChannelBehavior: protectedProcedure
+    .input(aiChannelBehaviorInput)
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'knowledge', 'Knowledge Base access is required.')
+
+      const { data, error: loadError } = await ctx.supabase
+        .from('organizations')
+        .select('settings')
+        .eq('id', ctx.userOrgId)
+        .maybeSingle()
+
+      if (loadError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load AI behavior settings: ${loadError.message}`,
+        })
+      }
+
+      const currentSettings = asRecord(data?.settings)
+      const nextBehavior = normalizeAiChannelBehaviorConfig(input)
+
+      const { error: updateError } = await ctx.supabase
+        .from('organizations')
+        .update({
+          settings: {
+            ...currentSettings,
+            aiChannelBehavior: nextBehavior,
+          },
+        })
+        .eq('id', ctx.userOrgId)
+
+      if (updateError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to save AI behavior settings: ${updateError.message}`,
+        })
+      }
+
+      return nextBehavior
     }),
 
   getAiImprovements: protectedProcedure

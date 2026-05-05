@@ -8,6 +8,10 @@
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'
+import {
+  buildAiChannelBehaviorPrompt,
+  normalizeAiChannelBehaviorConfig,
+} from '@workspace/types'
 
 const VAPI_BASE_URL = 'https://api.vapi.ai'
 
@@ -420,6 +424,7 @@ export interface BuildAssistantOptions {
   interruptionsEnabled?: boolean
   recordingEnabled?: boolean
   endCallPhrases?: string[]
+  channelBehavior?: unknown
 }
 
 export function buildOrgAssistantPayload(opts: BuildAssistantOptions): VapiAssistantPayload {
@@ -438,6 +443,10 @@ export function buildOrgAssistantPayload(opts: BuildAssistantOptions): VapiAssis
 
   // Guard: Vapi minimum is 10 seconds
   const safeSilenceTimeout = Math.max(10, silenceTimeoutSeconds)
+  const voiceChannelInstructions = buildAiChannelBehaviorPrompt(
+    'voice',
+    normalizeAiChannelBehaviorConfig(opts.channelBehavior)
+  )
 
   // ── System prompt ─────────────────────────────────────────────────────────
 
@@ -466,7 +475,10 @@ ${kbInstructions}
 - Do not ask which company unless they clearly mean a different third-party company.
 - Put the direct answer first, then ask one helpful follow-up question if needed.`
 
-  const systemPromptContent = opts.systemPrompt?.trim() || defaultSystemPrompt
+  const systemPromptContent = [
+    opts.systemPrompt?.trim() || defaultSystemPrompt,
+    voiceChannelInstructions,
+  ].join('\n\n')
 
   // ── Voice ─────────────────────────────────────────────────────────────────
 

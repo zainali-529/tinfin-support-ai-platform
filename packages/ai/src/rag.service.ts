@@ -1,6 +1,14 @@
 import { getSupabaseAdmin } from './lib/supabase'
 import { createOpenAIClient } from './providers/openai.provider'
 import { generateEmbedding } from './embeddings.service'
+import {
+  aiChannelMaxTokens,
+  buildAiChannelBehaviorPrompt,
+  normalizeAiChannelBehaviorConfig,
+  normalizeAiResponseChannel,
+  type AiChannelBehaviorConfig,
+  type AiResponseChannel,
+} from '@workspace/types'
 
 export interface RAGQuery {
   query: string
@@ -54,6 +62,11 @@ interface MatchedChunk {
   source_title: string | null
   metadata: Record<string, unknown>
   similarity: number
+}
+
+interface OrgAiContext {
+  displayName: string | null
+  channelBehavior: AiChannelBehaviorConfig
 }
 
 const DEFAULT_SEARCH_THRESHOLD = 0.25
@@ -152,12 +165,18 @@ export function isHandoffConfirmation(query: string): boolean {
   return CONFIRM_YES_PATTERNS.some((pattern) => pattern.test(query.trim()))
 }
 
-async function getOrgDisplayName(orgId: string): Promise<string | null> {
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+async function getOrgAiContext(orgId: string): Promise<OrgAiContext> {
   const supabase = getSupabaseAdmin()
   const [orgResult, widgetResult] = await Promise.all([
     supabase
       .from('organizations')
-      .select('name')
+      .select('name, settings')
       .eq('id', orgId)
       .maybeSingle(),
     supabase
@@ -169,7 +188,12 @@ async function getOrgDisplayName(orgId: string): Promise<string | null> {
 
   const widgetName = typeof widgetResult.data?.company_name === 'string' ? widgetResult.data.company_name.trim() : ''
   const orgName = typeof orgResult.data?.name === 'string' ? orgResult.data.name.trim() : ''
-  return widgetName || orgName || null
+  const orgSettings = asRecord(orgResult.data?.settings)
+
+  return {
+    displayName: widgetName || orgName || null,
+    channelBehavior: normalizeAiChannelBehaviorConfig(orgSettings.aiChannelBehavior),
+  }
 }
 
 async function getKnowledgeTopicHints(orgId: string, limit = 6): Promise<string[]> {
@@ -303,7 +327,9 @@ function buildMasterPrompt(
   topicsHint: string,
   hasStrongContext: boolean,
   orgDisplayName: string | null,
-  intent: RAGIntent
+  intent: RAGIntent,
+  channel: AiResponseChannel,
+  channelBehavior: AiChannelBehaviorConfig
 ): string {
   const kbSection = context
     ? `## Knowledge Base Context\n${context}`
@@ -322,6 +348,8 @@ ${identityGuidance}
 ${kbSection}
 
 ${topicsHint ? `## Topics You Have Knowledge On\n${topicsHint}\n` : ''}
+
+${buildAiChannelBehaviorPrompt(channel, channelBehavior)}
 
 ## Response Guidelines
 
@@ -377,7 +405,9 @@ async function generateContextualResponse(
 async function generateNoAnswerMessage(
   client: ReturnType<typeof createOpenAIClient>,
   query: string,
-  orgDisplayName: string | null
+  orgDisplayName: string | null,
+  channel: AiResponseChannel,
+  channelBehavior: AiChannelBehaviorConfig
 ): Promise<{ text: string; tokens: number }> {
   const organizationLine = orgDisplayName
     ? `You represent ${orgDisplayName}.`
@@ -390,11 +420,13 @@ async function generateNoAnswerMessage(
 
 The approved knowledge sources did not contain a verified answer to the customer's question.
 
+${buildAiChannelBehaviorPrompt(channel, channelBehavior)}
+
 Write a concise, natural English response. Do not answer the factual question from general knowledge. Do not mention internal terms like "knowledge base", "RAG", "chunks", or "sources". Offer to connect the customer with a human agent in a natural way, but do not prescribe exact words the customer must reply with.
 
 Avoid sounding like a fixed template. Keep it to 1-2 sentences.`,
       query,
-      120,
+      Math.min(aiChannelMaxTokens(channel), channel === 'email' ? 240 : 140),
       0.4
     )
   } catch {
@@ -410,7 +442,9 @@ async function generateAssistantMetaResponse(
   query: string,
   orgDisplayName: string | null,
   orgId: string,
-  intent: Extract<RAGIntent, 'assistant_identity' | 'assistant_capability'>
+  intent: Extract<RAGIntent, 'assistant_identity' | 'assistant_capability'>,
+  channel: AiResponseChannel,
+  channelBehavior: AiChannelBehaviorConfig
 ): Promise<{ text: string; tokens: number }> {
   const topics = await getKnowledgeTopicHints(orgId)
   const organizationLine = orgDisplayName
@@ -431,6 +465,8 @@ ${organizationLine}
 ${intentLine}
 ${topicLine}
 
+${buildAiChannelBehaviorPrompt(channel, channelBehavior)}
+
 Respond as the assistant, not as the company itself.
 Do not provide a full company or service catalog unless the customer specifically asks about the company/services/products.
 Do not mention internal terms like "knowledge base", "RAG", "chunks", or "sources".
@@ -438,7 +474,7 @@ You may say you can answer questions using approved company information, help th
 Use the available topic hints only as broad examples, not as a long list.
 Keep it natural, not like a fixed template. Use 2-4 short sentences and end with a helpful question.`,
       query,
-      180,
+      Math.min(aiChannelMaxTokens(channel), channel === 'email' ? 260 : 180),
       0.6
     )
   } catch {
@@ -473,15 +509,20 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
 
   const trimmedQuery = query.trim()
   const client = createOpenAIClient(openaiApiKey)
-  const orgDisplayName = await getOrgDisplayName(orgId)
+  const channel = normalizeAiResponseChannel(params.channel)
+  const { displayName: orgDisplayName, channelBehavior } = await getOrgAiContext(orgId)
   const intent = classifyRagIntent(trimmedQuery)
 
   if (intent === 'empty') {
     const { text, tokens } = await generateContextualResponse(
       client,
-      'The user just opened the chat. Greet them warmly as a support assistant and ask how you can help. Keep it to 1-2 sentences.',
+      [
+        'The user just opened the conversation. Greet them warmly as a support assistant and ask how you can help.',
+        buildAiChannelBehaviorPrompt(channel, channelBehavior),
+        'Keep the greeting brief and natural.',
+      ].join('\n\n'),
       '(user opened the chat)',
-      100,
+      Math.min(aiChannelMaxTokens(channel), 120),
       0.7
     )
 
@@ -497,9 +538,13 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   if (intent === 'human_handoff') {
     const { text, tokens } = await generateContextualResponse(
       client,
-      'The user wants to speak to a human agent. Respond warmly and professionally, confirming you are connecting them now. Be reassuring and brief: 1-2 sentences.',
+      [
+        'The user wants to speak to a human agent. Respond warmly and professionally, confirming you are connecting them now.',
+        buildAiChannelBehaviorPrompt(channel, channelBehavior),
+        'Be reassuring and brief.',
+      ].join('\n\n'),
       trimmedQuery,
-      100,
+      Math.min(aiChannelMaxTokens(channel), 120),
       0.5
     )
 
@@ -518,7 +563,9 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
       trimmedQuery,
       orgDisplayName,
       orgId,
-      intent
+      intent,
+      channel,
+      channelBehavior
     )
 
     return withDebug({
@@ -545,7 +592,13 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   }))
 
   if (!hasStrongContext) {
-    const noAnswer = await generateNoAnswerMessage(client, trimmedQuery, orgDisplayName)
+    const noAnswer = await generateNoAnswerMessage(
+      client,
+      trimmedQuery,
+      orgDisplayName,
+      channel,
+      channelBehavior
+    )
     return withDebug({
       type: 'ask_handoff',
       message: noAnswer.text,
@@ -560,7 +613,9 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
     deriveTopicsHint(matchedChunks),
     hasStrongContext,
     orgDisplayName,
-    intent
+    intent,
+    channel,
+    channelBehavior
   )
 
   const mainCompletion = await client.chat.completions.create({
@@ -569,7 +624,7 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: trimmedQuery },
     ],
-    max_tokens: 700,
+    max_tokens: aiChannelMaxTokens(channel),
     temperature: 0.3,
   })
 
@@ -577,7 +632,13 @@ export async function queryRAG(params: RAGQuery): Promise<RAGResult> {
   const tokensUsed = mainCompletion.usage?.total_tokens ?? 0
 
   if (!rawAnswer || rawAnswer === 'OUT_OF_SCOPE' || rawAnswer.includes('OUT_OF_SCOPE')) {
-    const noAnswer = await generateNoAnswerMessage(client, trimmedQuery, orgDisplayName)
+    const noAnswer = await generateNoAnswerMessage(
+      client,
+      trimmedQuery,
+      orgDisplayName,
+      channel,
+      channelBehavior
+    )
     return withDebug({
       type: 'ask_handoff',
       message: noAnswer.text,

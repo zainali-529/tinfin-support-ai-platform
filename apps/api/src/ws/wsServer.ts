@@ -1113,6 +1113,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
           conversationId,
           contactId: contactId ?? undefined,
           conversationHistory: conversationHistory.slice(-10),
+          channel: 'chat',
           threshold: 0.3,
           maxChunks: 5,
         })

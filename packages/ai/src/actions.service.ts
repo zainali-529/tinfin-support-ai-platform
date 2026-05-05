@@ -1,4 +1,12 @@
 import OpenAI from 'openai'
+import {
+  aiChannelMaxTokens,
+  buildAiChannelBehaviorPrompt,
+  normalizeAiChannelBehaviorConfig,
+  normalizeAiResponseChannel,
+  type AiChannelBehaviorConfig,
+  type AiResponseChannel,
+} from '@workspace/types'
 import { getSupabaseAdmin } from './lib/supabase'
 import { createOpenAIClient } from './providers/openai.provider'
 import { queryRAG, type RAGSource } from './rag.service'
@@ -60,6 +68,7 @@ export interface QueryWithActionsParams {
   conversationId?: string
   contactId?: string
   conversationHistory?: Array<{ role: string; content: string }>
+  channel?: string
   threshold?: number
   maxChunks?: number
   openaiApiKey?: string
@@ -130,6 +139,11 @@ interface ActionOutcome {
     status: string
   }
   resultType: 'action' | 'action_confirmation' | 'action_pending_approval'
+}
+
+interface ActionOrgContext {
+  displayName: string | null
+  channelBehavior: AiChannelBehaviorConfig
 }
 
 const TOOL_NAME_SEARCH_KB = 'searchKnowledgeBase'
@@ -984,12 +998,12 @@ async function executeAndLogAction(input: {
   }
 }
 
-async function getActionOrgDisplayName(orgId: string): Promise<string | null> {
+async function getActionOrgContext(orgId: string): Promise<ActionOrgContext> {
   const supabase = getSupabaseAdmin()
   const [orgResult, widgetResult] = await Promise.all([
     supabase
       .from('organizations')
-      .select('name')
+      .select('name, settings')
       .eq('id', orgId)
       .maybeSingle(),
     supabase
@@ -1001,10 +1015,20 @@ async function getActionOrgDisplayName(orgId: string): Promise<string | null> {
 
   const widgetName = typeof widgetResult.data?.company_name === 'string' ? widgetResult.data.company_name.trim() : ''
   const orgName = typeof orgResult.data?.name === 'string' ? orgResult.data.name.trim() : ''
-  return widgetName || orgName || null
+  const settings = asRecord(orgResult.data?.settings)
+
+  return {
+    displayName: widgetName || orgName || null,
+    channelBehavior: normalizeAiChannelBehaviorConfig(settings.aiChannelBehavior),
+  }
 }
 
-function buildSystemPrompt(actions: ActionConfig[], orgDisplayName: string | null): string {
+function buildSystemPrompt(
+  actions: ActionConfig[],
+  orgDisplayName: string | null,
+  channel: AiResponseChannel,
+  channelBehavior: AiChannelBehaviorConfig
+): string {
   const actionSummary = buildActionSummary(actions)
   const organizationLine = orgDisplayName
     ? `You represent the current organization: ${orgDisplayName}.`
@@ -1012,6 +1036,8 @@ function buildSystemPrompt(actions: ActionConfig[], orgDisplayName: string | nul
 
   return `You are a helpful customer support AI assistant.
 ${organizationLine}
+
+${buildAiChannelBehaviorPrompt(channel, channelBehavior)}
 
 ## Available Actions
 ${actionSummary}
@@ -1058,7 +1084,7 @@ async function fallbackToGroundedRag(params: QueryWithActionsParams, tokenOffset
     orgId: params.orgId,
     kbId: params.kbId,
     conversationId: params.conversationId,
-    channel: 'chat',
+    channel: params.channel,
     threshold: params.threshold,
     maxChunks: params.maxChunks,
     openaiApiKey: params.openaiApiKey,
@@ -1077,13 +1103,14 @@ async function callOpenAIWithTools(input: {
   client: OpenAI
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
   tools: OpenAI.Chat.Completions.ChatCompletionTool[]
+  channel: AiResponseChannel
 }): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   return input.client.chat.completions.create({
     model: DEFAULT_MODEL,
     messages: input.messages,
     tools: input.tools,
     tool_choice: 'auto',
-    max_tokens: 700,
+    max_tokens: aiChannelMaxTokens(input.channel),
     temperature: 0.3,
   })
 }
@@ -1094,7 +1121,8 @@ export async function queryWithActions(
   const actions = await getOrgActions(params.orgId)
   const tools = buildOpenAITools(actions)
   const client = createOpenAIClient(params.openaiApiKey)
-  const orgDisplayName = await getActionOrgDisplayName(params.orgId)
+  const channel = normalizeAiResponseChannel(params.channel)
+  const { displayName: orgDisplayName, channelBehavior } = await getActionOrgContext(params.orgId)
 
   async function finish(
     result: QueryWithActionsResult
@@ -1105,7 +1133,7 @@ export async function queryWithActions(
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: buildSystemPrompt(actions, orgDisplayName),
+      content: buildSystemPrompt(actions, orgDisplayName, channel, channelBehavior),
     },
     ...toConversationHistoryMessages(params.conversationHistory),
     {
@@ -1114,7 +1142,7 @@ export async function queryWithActions(
     },
   ]
 
-  const completion = await callOpenAIWithTools({ client, messages, tools })
+  const completion = await callOpenAIWithTools({ client, messages, tools, channel })
   const firstChoice = completion.choices[0]
   const totalTokens = completion.usage?.total_tokens ?? 0
 
@@ -1189,7 +1217,7 @@ export async function queryWithActions(
         orgId: params.orgId,
         kbId: params.kbId,
         conversationId: params.conversationId,
-        channel: 'chat',
+        channel,
         threshold: params.threshold,
         maxChunks: params.maxChunks,
         openaiApiKey: params.openaiApiKey,
@@ -1299,6 +1327,7 @@ export async function queryWithActions(
     client,
     messages: followUpMessages,
     tools,
+    channel,
   })
 
   const secondChoice = secondCompletion.choices[0]

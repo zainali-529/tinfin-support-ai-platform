@@ -49,6 +49,7 @@ import {
   KnowledgeAIImprovementsPanel,
   type AiImprovementDraft,
 } from './KnowledgeAIImprovementsPanel'
+import { KnowledgeAIBehaviorPanel } from './KnowledgeAIBehaviorPanel'
 
 // Source type helpers
 
@@ -591,7 +592,7 @@ interface Props {
 export function KnowledgeBasePage({ orgId }: Props) {
   const { kbs, isLoading, error, createKB, deleteKB, ingestUrl, ingestFile, ingestText } = useKnowledgeBases(orgId)
   const [selectedKBId, setSelectedKBId] = useState<string | null>(null)
-  const [activePanel, setActivePanel] = useState<'sources' | 'improvements'>('sources')
+  const [activePanel, setActivePanel] = useState<'sources' | 'improvements' | 'behavior'>('sources')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [addSourceDialogOpen, setAddSourceDialogOpen] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -676,6 +677,18 @@ export function KnowledgeBasePage({ orgId }: Props) {
               )}
             >
               AI Improvements
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePanel('behavior')}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                activePanel === 'behavior'
+                  ? 'bg-background text-foreground ring-1 ring-border'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              AI Behavior
             </button>
           </div>
           <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5">
@@ -770,7 +783,9 @@ export function KnowledgeBasePage({ orgId }: Props) {
 
         {/* Right: Detail Panel */}
         <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
-          {activePanel === 'improvements' ? (
+          {activePanel === 'behavior' ? (
+            <KnowledgeAIBehaviorPanel />
+          ) : activePanel === 'improvements' ? (
             <KnowledgeAIImprovementsPanel
               selectedKb={selectedKB}
               onDraftNote={handleDraftAiNote}

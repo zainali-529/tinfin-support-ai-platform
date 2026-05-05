@@ -23,6 +23,7 @@ import {
   type VapiModel,
   type VapiTool,
 } from '@workspace/ai'
+import { normalizeAiChannelBehaviorConfig } from '@workspace/types'
 import type { Context } from '../trpc/context'
 import { requireFeature } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
@@ -301,10 +302,12 @@ export const vapiRouter = router({
 
       const { data: org } = await ctx.supabase
         .from('organizations')
-        .select('name')
+        .select('name, settings')
         .eq('id', orgId)
         .single()
       if (!org) throw new TRPCError({ code: 'NOT_FOUND', message: 'Organization not found.' })
+      const orgSettings = (org as { settings?: Record<string, unknown> | null }).settings
+      const channelBehavior = normalizeAiChannelBehaviorConfig(orgSettings?.aiChannelBehavior)
 
       const { data: widgetCfg } = await ctx.supabase
         .from('widget_configs')
@@ -454,6 +457,7 @@ export const vapiRouter = router({
         responseDelaySeconds: finalResponseDelay,
         interruptionsEnabled: finalInterruptions,
         recordingEnabled: finalRecording,
+        channelBehavior,
         endCallPhrases: finalEndCallPhrases,
       })
 
