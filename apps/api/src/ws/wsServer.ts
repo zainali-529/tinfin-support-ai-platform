@@ -649,6 +649,7 @@ function mergeMeta(meta: unknown, identity: Omit<ContactIdentityInput, 'orgId'>)
     ...(identity.traits ? { traits: identity.traits } : {}),
     ...(identity.page ? { lastPage: identity.page } : {}),
     ...(identity.customAttributes ? { customAttributes: identity.customAttributes } : {}),
+    lastSeenAt: new Date().toISOString(),
   }
 }
 
@@ -750,7 +751,7 @@ async function getOrCreateContactForVisitor(orgId: string, visitorId: string): P
       return canonical.id
     }
     const { data: created } = await getSupabase().from('contacts')
-      .insert({ org_id: orgId, meta: { visitorId } }).select('id').maybeSingle()
+      .insert({ org_id: orgId, meta: { visitorId, lastSeenAt: new Date().toISOString() } }).select('id').maybeSingle()
     return created?.id ?? null
   } catch (e) { console.error('[ws] getOrCreateContactForVisitor:', e); return null }
 }
@@ -769,7 +770,7 @@ async function getOrCreateConversation(params: { orgId: string; visitorId: strin
   let contactId = await getOrCreateContactForVisitor(params.orgId, params.visitorId)
   if (!contactId) {
     const { data: newContact } = await supabase.from('contacts')
-      .insert({ org_id: params.orgId, meta: { visitorId: params.visitorId } })
+      .insert({ org_id: params.orgId, meta: { visitorId: params.visitorId, lastSeenAt: new Date().toISOString() } })
       .select('id').maybeSingle()
     contactId = newContact?.id ?? null
   }

@@ -14,21 +14,160 @@
 
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
+import { randomUUID } from 'node:crypto'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 import { safeRecordConversationTimelineEvent } from '../services/conversation-timeline.service'
 
 const VISITOR_TOMBSTONE_LIMIT = 500
 const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
+const CONTACT_NOTE_LIMIT = 80
+const CONTACT_TIMELINE_LIMIT = 120
 
 type VisitorTombstone = {
   visitorId: string
   deletedAt: string
 }
 
+type ContactNote = {
+  id: string
+  body: string
+  createdAt: string
+  authorUserId: string | null
+  authorName: string | null
+}
+
+type ContactTimelineItem = {
+  id: string
+  type:
+    | 'conversation'
+    | 'message'
+    | 'call'
+    | 'email'
+    | 'whatsapp'
+    | 'action'
+    | 'note'
+    | 'rating'
+  title: string
+  body: string | null
+  channel: string | null
+  status: string | null
+  href: string | null
+  createdAt: string
+  metadata: Record<string, unknown>
+}
+
+const contactNoteInput = z.string().trim().min(1).max(2000)
+const tagInput = z.string().trim().min(1).max(40)
+const customFieldKeyInput = z.string().trim().min(1).max(60)
+const customFieldValueInput = z.string().trim().max(500)
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => asString(item))
+        .filter((item): item is string => Boolean(item))
+        .map((item) => item.slice(0, 40))
+    )
+  ).slice(0, 30)
+}
+
+function normalizeCustomFields(value: unknown): Record<string, string> {
+  const input = asRecord(value)
+  const output: Record<string, string> = {}
+
+  for (const [key, rawValue] of Object.entries(input)) {
+    const cleanKey = key.trim().slice(0, 60)
+    if (!cleanKey) continue
+
+    const value = typeof rawValue === 'string'
+      ? rawValue.trim()
+      : rawValue === null || rawValue === undefined
+        ? ''
+        : String(rawValue).trim()
+
+    if (!value) continue
+    output[cleanKey] = value.slice(0, 500)
+  }
+
+  return output
+}
+
+function normalizeContactNotes(value: unknown): ContactNote[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item) => {
+      const note = asRecord(item)
+      const id = asString(note.id)
+      const body = asString(note.body)
+      const createdAt = asString(note.createdAt)
+      if (!id || !body || !createdAt) return null
+
+      return {
+        id,
+        body,
+        createdAt,
+        authorUserId: asString(note.authorUserId),
+        authorName: asString(note.authorName),
+      }
+    })
+    .filter((item): item is ContactNote => Boolean(item))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, CONTACT_NOTE_LIMIT)
+}
+
+function truncateText(value: unknown, max = 140): string {
+  const text = asString(value) ?? ''
+  if (text.length <= max) return text
+  return `${text.slice(0, max - 1)}…`
+}
+
+function timelineItem(input: ContactTimelineItem): ContactTimelineItem {
+  return input
+}
+
+function readAiQualityRating(metadata: unknown): 'helpful' | 'not_helpful' | null {
+  const rating = asString(asRecord(asRecord(metadata).aiQuality).rating)
+  return rating === 'helpful' || rating === 'not_helpful' ? rating : null
+}
+
+function publicMeta(meta: unknown): Record<string, unknown> {
+  const input = asRecord(meta)
+  const allowedKeys = [
+    'visitorId',
+    'externalUserId',
+    'phone',
+    'company',
+    'traits',
+    'lastPage',
+    'customAttributes',
+    'source',
+    'lastSeenAt',
+    'tags',
+    'customFields',
+    'contactNotes',
+  ]
+
+  return Object.fromEntries(
+    allowedKeys
+      .filter((key) => Object.prototype.hasOwnProperty.call(input, key))
+      .map((key) => [key, input[key]])
+  )
 }
 
 function readVisitorId(meta: unknown): string | null {
@@ -216,7 +355,10 @@ export const contactsRouter = router({
           name: contact.name,
           email: contact.email,
           phone: contact.phone,
-          meta,
+          meta: publicMeta(meta),
+          tags: normalizeTags(meta?.tags),
+          lastSeenAt: asString(meta?.lastSeenAt),
+          currentPage: asRecord(meta?.lastPage),
           createdAt: contact.created_at,
           conversationCount: conv?.count ?? 0,
           lastConversationAt: conv?.last_started ?? null,
@@ -255,7 +397,7 @@ export const contactsRouter = router({
       // Fetch conversations
       const { data: conversations } = await ctx.supabase
         .from('conversations')
-        .select('id, status, channel, started_at, assigned_to')
+        .select('id, status, channel, started_at, resolved_at, assigned_to, last_customer_message_at, last_agent_reply_at')
         .eq('org_id', orgId)
         .eq('contact_id', input.id)
         .order('started_at', { ascending: false })
@@ -263,17 +405,27 @@ export const contactsRouter = router({
       // Fetch last message for each conversation
       const convIds = (conversations ?? []).map((c: { id: string }) => c.id)
       let lastMessages: Record<string, string> = {}
+      let messages: Array<{
+        id: string
+        conversation_id: string
+        role: string
+        content: string
+        ai_metadata: Record<string, unknown> | null
+        created_at: string
+      }> = []
 
       if (convIds.length > 0) {
         const { data: msgs } = await ctx.supabase
           .from('messages')
-          .select('conversation_id, content, created_at')
+          .select('id, conversation_id, role, content, ai_metadata, created_at')
           .eq('org_id', orgId)
           .in('conversation_id', convIds)
           .order('created_at', { ascending: false })
+          .limit(300)
 
+        messages = ((msgs ?? []) as typeof messages)
         const seen = new Set<string>()
-        for (const msg of msgs ?? []) {
+        for (const msg of messages) {
           const cid = msg.conversation_id as string
           if (!seen.has(cid)) {
             lastMessages[cid] = (msg.content as string)?.slice(0, 80) ?? ''
@@ -349,6 +501,241 @@ export const contactsRouter = router({
         }
       }
 
+      const { data: actionLogs } = await ctx.supabase
+        .from('ai_action_logs')
+        .select('id, action_id, conversation_id, contact_id, parameters_used, response_parsed, status, error_message, duration_ms, created_at, completed_at, ai_actions(name, display_name)')
+        .eq('org_id', orgId)
+        .or(convIds.length > 0
+          ? `contact_id.eq.${input.id},conversation_id.in.(${convIds.join(',')})`
+          : `contact_id.eq.${input.id}`)
+        .order('created_at', { ascending: false })
+        .limit(80)
+
+      const contactMeta = asRecord(contact.meta)
+      const tags = normalizeTags(contactMeta.tags)
+      const customFields = normalizeCustomFields(contactMeta.customFields)
+      const contactNotes = normalizeContactNotes(contactMeta.contactNotes)
+      const currentPage = asRecord(contactMeta.lastPage)
+      const company = asRecord(contactMeta.company)
+      const traits = asRecord(contactMeta.traits)
+      const customAttributes = asRecord(contactMeta.customAttributes)
+      const lastSeenAt = asString(contactMeta.lastSeenAt)
+      const createdAt = contact.created_at as string
+      const conversationById = new Map(
+        ((conversations ?? []) as Array<{ id: string; channel: string; status: string; started_at: string }>).map((conversation) => [
+          conversation.id,
+          conversation,
+        ])
+      )
+
+      const timeline: ContactTimelineItem[] = []
+
+      for (const conversation of (conversations ?? []) as Array<{
+        id: string
+        status: string
+        channel: string
+        started_at: string
+        resolved_at: string | null
+      }>) {
+        timeline.push(timelineItem({
+          id: `conversation:${conversation.id}`,
+          type: 'conversation',
+          title: `${conversation.channel} conversation started`,
+          body: lastMessages[conversation.id] || null,
+          channel: conversation.channel,
+          status: conversation.status,
+          href: `/inbox?conversation=${conversation.id}`,
+          createdAt: conversation.started_at,
+          metadata: { conversationId: conversation.id },
+        }))
+
+        if (conversation.resolved_at) {
+          timeline.push(timelineItem({
+            id: `conversation:${conversation.id}:resolved`,
+            type: 'conversation',
+            title: 'Conversation resolved',
+            body: null,
+            channel: conversation.channel,
+            status: 'resolved',
+            href: `/inbox?conversation=${conversation.id}`,
+            createdAt: conversation.resolved_at,
+            metadata: { conversationId: conversation.id },
+          }))
+        }
+      }
+
+      for (const message of messages.slice(0, 80)) {
+        const conversation = conversationById.get(message.conversation_id)
+        const rating = readAiQualityRating(message.ai_metadata)
+        timeline.push(timelineItem({
+          id: `message:${message.id}`,
+          type: rating ? 'rating' : 'message',
+          title: rating
+            ? `AI answer marked ${rating === 'helpful' ? 'helpful' : 'not helpful'}`
+            : message.role === 'user'
+              ? 'Customer message'
+              : message.role === 'assistant'
+                ? 'AI response sent'
+                : 'Agent message',
+          body: truncateText(message.content, 180),
+          channel: conversation?.channel ?? null,
+          status: null,
+          href: `/inbox?conversation=${message.conversation_id}`,
+          createdAt: message.created_at,
+          metadata: {
+            conversationId: message.conversation_id,
+            messageId: message.id,
+            role: message.role,
+            ...(rating ? { rating } : {}),
+          },
+        }))
+      }
+
+      for (const call of (calls ?? []) as Array<{
+        id: string
+        status: string
+        type: string
+        duration_seconds: number | null
+        started_at: string | null
+        summary: string | null
+      }>) {
+        timeline.push(timelineItem({
+          id: `call:${call.id}`,
+          type: 'call',
+          title: 'Voice call',
+          body: call.summary ? truncateText(call.summary, 180) : null,
+          channel: 'voice',
+          status: call.status,
+          href: null,
+          createdAt: call.started_at ?? createdAt,
+          metadata: {
+            callId: call.id,
+            durationSeconds: call.duration_seconds,
+            callType: call.type,
+          },
+        }))
+      }
+
+      for (const thread of emailThreadMap.values()) {
+        timeline.push(timelineItem({
+          id: `email:${thread.conversationId}`,
+          type: 'email',
+          title: thread.subject || 'Email thread',
+          body: `Latest ${thread.direction} email from ${thread.fromEmail}`,
+          channel: 'email',
+          status: thread.direction,
+          href: `/inbox?channel=email&conversation=${thread.conversationId}`,
+          createdAt: thread.createdAt,
+          metadata: { conversationId: thread.conversationId },
+        }))
+      }
+
+      for (const thread of whatsappThreadMap.values()) {
+        timeline.push(timelineItem({
+          id: `whatsapp:${thread.conversationId}`,
+          type: 'whatsapp',
+          title: 'WhatsApp message',
+          body: thread.waContactId ? `WhatsApp contact ${thread.waContactId}` : null,
+          channel: 'whatsapp',
+          status: thread.status,
+          href: `/inbox?channel=whatsapp&conversation=${thread.conversationId}`,
+          createdAt: thread.createdAt,
+          metadata: {
+            conversationId: thread.conversationId,
+            messageType: thread.messageType,
+          },
+        }))
+      }
+
+      for (const log of (actionLogs ?? []) as Array<{
+        id: string
+        conversation_id: string | null
+        contact_id: string | null
+        parameters_used: Record<string, unknown> | null
+        response_parsed: string | null
+        status: string
+        error_message: string | null
+        duration_ms: number | null
+        created_at: string
+        completed_at: string | null
+        ai_actions: { name: string | null; display_name: string | null } | Array<{ name: string | null; display_name: string | null }> | null
+      }>) {
+        const action = Array.isArray(log.ai_actions) ? log.ai_actions[0] : log.ai_actions
+        timeline.push(timelineItem({
+          id: `action:${log.id}`,
+          type: 'action',
+          title: action?.display_name || action?.name || 'AI action',
+          body: log.response_parsed || log.error_message || null,
+          channel: log.conversation_id ? (conversationById.get(log.conversation_id)?.channel ?? null) : null,
+          status: log.status,
+          href: log.conversation_id ? `/inbox?conversation=${log.conversation_id}` : '/ai-actions',
+          createdAt: log.completed_at ?? log.created_at,
+          metadata: {
+            actionLogId: log.id,
+            actionName: action?.name,
+            durationMs: log.duration_ms,
+            parameters: log.parameters_used,
+          },
+        }))
+      }
+
+      for (const note of contactNotes) {
+        timeline.push(timelineItem({
+          id: `note:${note.id}`,
+          type: 'note',
+          title: 'Contact note added',
+          body: note.body,
+          channel: null,
+          status: null,
+          href: null,
+          createdAt: note.createdAt,
+          metadata: {
+            noteId: note.id,
+            authorUserId: note.authorUserId,
+            authorName: note.authorName,
+          },
+        }))
+      }
+
+      const satisfactionHistory = messages
+        .map((message) => {
+          const rating = readAiQualityRating(message.ai_metadata)
+          if (!rating) return null
+          return {
+            messageId: message.id,
+            conversationId: message.conversation_id,
+            rating,
+            createdAt: message.created_at,
+            preview: truncateText(message.content, 160),
+          }
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        .slice(0, 30)
+
+      const aiActionsUsed = ((actionLogs ?? []) as Array<{
+        id: string
+        status: string
+        duration_ms: number | null
+        created_at: string
+        completed_at: string | null
+        response_parsed: string | null
+        error_message: string | null
+        ai_actions: { name: string | null; display_name: string | null } | Array<{ name: string | null; display_name: string | null }> | null
+      }>).map((log) => {
+        const action = Array.isArray(log.ai_actions) ? log.ai_actions[0] : log.ai_actions
+        return {
+          id: log.id,
+          name: action?.name ?? 'unknown_action',
+          displayName: action?.display_name ?? action?.name ?? 'AI action',
+          status: log.status,
+          durationMs: log.duration_ms,
+          createdAt: log.completed_at ?? log.created_at,
+          summary: truncateText(log.response_parsed || log.error_message, 180),
+        }
+      })
+
+      timeline.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
       // Stats
       const resolvedCount = (conversations ?? []).filter(
         (c: { status: string }) => c.status === 'resolved' || c.status === 'closed'
@@ -356,25 +743,39 @@ export const contactsRouter = router({
       const chatCount = (conversations ?? []).filter(
         (c: { channel: string }) => c.channel === 'chat'
       ).length
+      const channelCounts = (conversations ?? []).reduce<Record<string, number>>((acc, row: { channel: string }) => {
+        acc[row.channel] = (acc[row.channel] ?? 0) + 1
+        return acc
+      }, {})
 
       return {
         id: contact.id,
         name: contact.name,
         email: contact.email,
         phone: contact.phone,
-        meta: contact.meta as Record<string, unknown> | null,
-        createdAt: contact.created_at,
+        meta: publicMeta(contactMeta),
+        tags,
+        customFields,
+        contactNotes,
+        company,
+        traits,
+        customAttributes,
+        currentPage,
+        lastSeenAt,
+        createdAt,
         conversations: (conversations ?? []).map((c: {
           id: string
           status: string
           channel: string
           started_at: string
+          resolved_at: string | null
           assigned_to: string | null
         }) => ({
           id: c.id,
           status: c.status,
           channel: c.channel,
           startedAt: c.started_at,
+          resolvedAt: c.resolved_at,
           assignedTo: c.assigned_to,
           lastMessagePreview: lastMessages[c.id] ?? '',
         })),
@@ -399,6 +800,9 @@ export const contactsRouter = router({
         })),
         emailThreads: Array.from(emailThreadMap.values()),
         whatsappThreads: Array.from(whatsappThreadMap.values()),
+        timeline: timeline.slice(0, CONTACT_TIMELINE_LIMIT),
+        satisfactionHistory,
+        aiActionsUsed,
         stats: {
           totalConversations: (conversations ?? []).length,
           totalChats: chatCount,
@@ -406,6 +810,9 @@ export const contactsRouter = router({
           totalCalls: (calls ?? []).length,
           totalEmails: emailThreadMap.size,
           totalWhatsApp: whatsappThreadMap.size,
+          channelCounts,
+          satisfactionRatings: satisfactionHistory.length,
+          aiActionsUsed: aiActionsUsed.length,
         },
       }
     }),
@@ -475,6 +882,168 @@ export const contactsRouter = router({
           })
         )
       )
+
+      return data
+    }),
+
+  updateContactIntelligence: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      tags: z.array(tagInput).max(30).optional(),
+      customFields: z.record(customFieldKeyInput, customFieldValueInput).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
+      const orgId = ctx.userOrgId
+
+      const { data: existing, error: existingError } = await ctx.supabase
+        .from('contacts')
+        .select('id, meta')
+        .eq('id', input.id)
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (existingError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load contact: ${existingError.message}`,
+        })
+      }
+
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Contact not found.' })
+      }
+
+      const meta = asRecord((existing as { meta: unknown }).meta)
+      const nextMeta = {
+        ...meta,
+        ...(input.tags !== undefined ? { tags: normalizeTags(input.tags) } : {}),
+        ...(input.customFields !== undefined
+          ? { customFields: normalizeCustomFields(input.customFields) }
+          : {}),
+      }
+
+      const { data, error } = await ctx.supabase
+        .from('contacts')
+        .update({ meta: nextMeta })
+        .eq('id', input.id)
+        .eq('org_id', orgId)
+        .select()
+        .single()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to update contact intelligence: ${error.message}`,
+        })
+      }
+
+      return data
+    }),
+
+  addContactNote: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      body: contactNoteInput,
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
+      const orgId = ctx.userOrgId
+
+      const { data: existing, error: existingError } = await ctx.supabase
+        .from('contacts')
+        .select('id, meta')
+        .eq('id', input.id)
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (existingError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load contact: ${existingError.message}`,
+        })
+      }
+
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Contact not found.' })
+      }
+
+      const meta = asRecord((existing as { meta: unknown }).meta)
+      const note: ContactNote = {
+        id: randomUUID(),
+        body: input.body,
+        createdAt: new Date().toISOString(),
+        authorUserId: ctx.user.id,
+        authorName: null,
+      }
+      const nextMeta = {
+        ...meta,
+        contactNotes: [note, ...normalizeContactNotes(meta.contactNotes)].slice(0, CONTACT_NOTE_LIMIT),
+      }
+
+      const { data, error } = await ctx.supabase
+        .from('contacts')
+        .update({ meta: nextMeta })
+        .eq('id', input.id)
+        .eq('org_id', orgId)
+        .select()
+        .single()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to save contact note: ${error.message}`,
+        })
+      }
+
+      return data
+    }),
+
+  deleteContactNote: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      noteId: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
+      const orgId = ctx.userOrgId
+
+      const { data: existing, error: existingError } = await ctx.supabase
+        .from('contacts')
+        .select('id, meta')
+        .eq('id', input.id)
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (existingError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to load contact: ${existingError.message}`,
+        })
+      }
+
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Contact not found.' })
+      }
+
+      const meta = asRecord((existing as { meta: unknown }).meta)
+      const nextNotes = normalizeContactNotes(meta.contactNotes).filter((note) => note.id !== input.noteId)
+      const nextMeta = { ...meta, contactNotes: nextNotes }
+
+      const { data, error } = await ctx.supabase
+        .from('contacts')
+        .update({ meta: nextMeta })
+        .eq('id', input.id)
+        .eq('org_id', orgId)
+        .select()
+        .single()
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to delete contact note: ${error.message}`,
+        })
+      }
 
       return data
     }),

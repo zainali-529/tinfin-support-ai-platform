@@ -13,6 +13,10 @@ interface ContactRow {
   name: string | null
   email: string | null
   phone: string | null
+  meta?: Record<string, unknown> | null
+  tags?: string[]
+  lastSeenAt?: string | null
+  currentPage?: Record<string, unknown>
   createdAt: string
   conversationCount: number
   lastConversationAt: string | null
@@ -137,6 +141,39 @@ export function useImportContacts() {
 
   return trpc.contacts.importContacts.useMutation({
     onSuccess: () => {
+      void utils.contacts.getContacts.invalidate()
+    },
+  })
+}
+
+export function useUpdateContactIntelligence() {
+  const utils = trpc.useUtils()
+
+  return trpc.contacts.updateContactIntelligence.useMutation({
+    onSuccess: (_, variables) => {
+      void utils.contacts.getContact.invalidate({ id: variables.id })
+      void utils.contacts.getContacts.invalidate()
+    },
+  })
+}
+
+export function useAddContactNote() {
+  const utils = trpc.useUtils()
+
+  return trpc.contacts.addContactNote.useMutation({
+    onSuccess: (_, variables) => {
+      void utils.contacts.getContact.invalidate({ id: variables.id })
+      void utils.contacts.getContacts.invalidate()
+    },
+  })
+}
+
+export function useDeleteContactNote() {
+  const utils = trpc.useUtils()
+
+  return trpc.contacts.deleteContactNote.useMutation({
+    onSuccess: (_, variables) => {
+      void utils.contacts.getContact.invalidate({ id: variables.id })
       void utils.contacts.getContacts.invalidate()
     },
   })

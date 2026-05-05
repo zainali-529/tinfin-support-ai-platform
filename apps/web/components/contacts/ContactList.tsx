@@ -24,6 +24,8 @@ interface Contact {
   name: string | null
   email: string | null
   phone: string | null
+  tags?: string[]
+  lastSeenAt?: string | null
   createdAt: string
   conversationCount: number
   lastConversationAt: string | null
@@ -237,6 +239,15 @@ export function ContactList({
                         </span>
                       )}
                     </div>
+                    {contact.tags && contact.tags.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {contact.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </button>
               )
