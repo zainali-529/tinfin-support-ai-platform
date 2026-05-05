@@ -30,6 +30,12 @@ export interface WidgetConversation {
   lastMessageAt: string
 }
 
+export interface WidgetCsatFeedback {
+  rating: number
+  comment?: string | null
+  submittedAt: string
+}
+
 export interface WidgetSuggestion {
   label: string
   message: string
@@ -144,6 +150,7 @@ export interface StoredChat {
   visitorInfo: VisitorInfo | null
   activeConversationId: string | null
   conversations: WidgetConversation[]
+  csatByConversation?: Record<string, WidgetCsatFeedback>
   messagesByConversation: Record<string, Array<{
     id: string
     role: 'user' | 'assistant' | 'agent'

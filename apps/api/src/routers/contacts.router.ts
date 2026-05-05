@@ -48,6 +48,7 @@ type ContactTimelineItem = {
     | 'action'
     | 'note'
     | 'rating'
+    | 'feedback'
   title: string
   body: string | null
   channel: string | null
@@ -511,6 +512,16 @@ export const contactsRouter = router({
         .order('created_at', { ascending: false })
         .limit(80)
 
+      const { data: feedbackRows } = await ctx.supabase
+        .from('conversation_feedback')
+        .select('id, conversation_id, contact_id, rating, comment, source, channel, handled_by, assigned_to, created_at, updated_at')
+        .eq('org_id', orgId)
+        .or(convIds.length > 0
+          ? `contact_id.eq.${input.id},conversation_id.in.(${convIds.join(',')})`
+          : `contact_id.eq.${input.id}`)
+        .order('created_at', { ascending: false })
+        .limit(80)
+
       const contactMeta = asRecord(contact.meta)
       const tags = normalizeTags(contactMeta.tags)
       const customFields = normalizeCustomFields(contactMeta.customFields)
@@ -697,6 +708,37 @@ export const contactsRouter = router({
         }))
       }
 
+      for (const feedback of (feedbackRows ?? []) as Array<{
+        id: string
+        conversation_id: string
+        rating: number
+        comment: string | null
+        source: string
+        channel: string
+        handled_by: string
+        assigned_to: string | null
+        created_at: string
+      }>) {
+        timeline.push(timelineItem({
+          id: `feedback:${feedback.id}`,
+          type: 'feedback',
+          title: `CSAT ${feedback.rating}/5 received`,
+          body: feedback.comment ? truncateText(feedback.comment, 180) : null,
+          channel: feedback.channel ?? conversationById.get(feedback.conversation_id)?.channel ?? null,
+          status: feedback.handled_by,
+          href: feedback.conversation_id ? `/inbox?conversation=${feedback.conversation_id}` : null,
+          createdAt: feedback.created_at,
+          metadata: {
+            feedbackId: feedback.id,
+            conversationId: feedback.conversation_id,
+            rating: feedback.rating,
+            source: feedback.source,
+            handledBy: feedback.handled_by,
+            assignedTo: feedback.assigned_to,
+          },
+        }))
+      }
+
       const satisfactionHistory = messages
         .map((message) => {
           const rating = readAiQualityRating(message.ai_metadata)
@@ -711,6 +753,26 @@ export const contactsRouter = router({
         })
         .filter((item): item is NonNullable<typeof item> => Boolean(item))
         .slice(0, 30)
+
+      const conversationFeedback = ((feedbackRows ?? []) as Array<{
+        id: string
+        conversation_id: string
+        rating: number
+        comment: string | null
+        source: string
+        channel: string
+        handled_by: string
+        created_at: string
+      }>).map((feedback) => ({
+        id: feedback.id,
+        conversationId: feedback.conversation_id,
+        rating: feedback.rating,
+        comment: feedback.comment,
+        source: feedback.source,
+        channel: feedback.channel,
+        handledBy: feedback.handled_by,
+        createdAt: feedback.created_at,
+      }))
 
       const aiActionsUsed = ((actionLogs ?? []) as Array<{
         id: string
@@ -802,6 +864,7 @@ export const contactsRouter = router({
         whatsappThreads: Array.from(whatsappThreadMap.values()),
         timeline: timeline.slice(0, CONTACT_TIMELINE_LIMIT),
         satisfactionHistory,
+        conversationFeedback,
         aiActionsUsed,
         stats: {
           totalConversations: (conversations ?? []).length,
@@ -811,7 +874,11 @@ export const contactsRouter = router({
           totalEmails: emailThreadMap.size,
           totalWhatsApp: whatsappThreadMap.size,
           channelCounts,
-          satisfactionRatings: satisfactionHistory.length,
+          satisfactionRatings: satisfactionHistory.length + conversationFeedback.length,
+          csatResponses: conversationFeedback.length,
+          avgCsatRating: conversationFeedback.length > 0
+            ? Number((conversationFeedback.reduce((sum, item) => sum + item.rating, 0) / conversationFeedback.length).toFixed(1))
+            : null,
           aiActionsUsed: aiActionsUsed.length,
         },
       }
@@ -1086,6 +1153,15 @@ export const contactsRouter = router({
       if (conversationIds.length > 0) {
         await deleteRows(
           ctx.supabase
+            .from('conversation_feedback')
+            .delete()
+            .eq('org_id', orgId)
+            .in('conversation_id', conversationIds),
+          'Failed to delete conversation feedback linked to this contact'
+        )
+
+        await deleteRows(
+          ctx.supabase
             .from('ai_action_approvals')
             .delete()
             .in('conversation_id', conversationIds),
@@ -1163,6 +1239,15 @@ export const contactsRouter = router({
           .eq('org_id', orgId)
           .eq('contact_id', input.id),
         'Failed to delete remaining action logs linked to this contact'
+      )
+
+      await deleteRows(
+        ctx.supabase
+          .from('conversation_feedback')
+          .delete()
+          .eq('org_id', orgId)
+          .eq('contact_id', input.id),
+        'Failed to delete remaining conversation feedback linked to this contact'
       )
 
       await deleteRows(

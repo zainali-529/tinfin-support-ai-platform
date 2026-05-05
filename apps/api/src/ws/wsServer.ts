@@ -547,6 +547,172 @@ async function persistMessage(params: {
   } catch (e) { console.error('[ws] persistMessage:', e) }
 }
 
+function normalizeCsatRating(value: unknown): number | null {
+  const rating = typeof value === 'number' ? value : Number(value)
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return null
+  return rating
+}
+
+function normalizeCsatComment(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const comment = value.trim().replace(/\s+/g, ' ')
+  if (!comment) return null
+  return comment.slice(0, 1000)
+}
+
+async function getFeedbackConversationContext(orgId: string, conversationId: string): Promise<{
+  contactId: string | null
+  channel: string
+  assignedTo: string | null
+  handledBy: 'ai' | 'human' | 'mixed' | 'unknown'
+} | null> {
+  const supabase = getSupabase()
+
+  const { data: conversation, error: conversationError } = await supabase
+    .from('conversations')
+    .select('id, contact_id, channel, assigned_to')
+    .eq('id', conversationId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (conversationError || !conversation) {
+    if (conversationError) console.error('[ws] getFeedbackConversationContext:', conversationError.message)
+    return null
+  }
+
+  const { data: messages } = await supabase
+    .from('messages')
+    .select('role, ai_metadata')
+    .eq('org_id', orgId)
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(120)
+
+  let hasAiReply = false
+  let hasHumanReply = false
+
+  for (const message of messages ?? []) {
+    const role = (message as { role?: unknown }).role
+    if (role === 'agent') hasHumanReply = true
+    if (role === 'assistant') {
+      const metadata = asRecord((message as { ai_metadata?: unknown }).ai_metadata)
+      if (metadata.system !== true) hasAiReply = true
+    }
+  }
+
+  const handledBy = hasAiReply && hasHumanReply
+    ? 'mixed'
+    : hasHumanReply
+      ? 'human'
+      : hasAiReply
+        ? 'ai'
+        : 'unknown'
+
+  return {
+    contactId: ((conversation as { contact_id?: string | null }).contact_id) ?? null,
+    channel: ((conversation as { channel?: string | null }).channel) ?? 'chat',
+    assignedTo: ((conversation as { assigned_to?: string | null }).assigned_to) ?? null,
+    handledBy,
+  }
+}
+
+async function handleVisitorCsat(socket: TinfinSocket, msg: Record<string, unknown>) {
+  if (socket.isAgent) return
+  const orgId = socket.orgId
+  const visitorId = socket.visitorId
+  const conversationId = typeof msg.conversationId === 'string'
+    ? msg.conversationId.trim()
+    : socket.conversationId
+  const rating = normalizeCsatRating(msg.rating)
+  const comment = normalizeCsatComment(msg.comment)
+
+  if (!orgId || !visitorId || !conversationId) return
+  if (rating === null) {
+    send(socket, { type: 'error', message: 'Please choose a rating between 1 and 5.' })
+    return
+  }
+
+  const ownsConversation = await visitorOwnsConversation(orgId, visitorId, conversationId)
+  if (!ownsConversation) {
+    send(socket, { type: 'error', message: 'Conversation not found.' })
+    return
+  }
+
+  const context = await getFeedbackConversationContext(orgId, conversationId)
+  if (!context) {
+    send(socket, { type: 'error', message: 'Unable to save feedback right now.' })
+    return
+  }
+
+  const createdAt = new Date().toISOString()
+  const { data, error } = await getSupabase()
+    .from('conversation_feedback')
+    .upsert({
+      org_id: orgId,
+      conversation_id: conversationId,
+      contact_id: context.contactId,
+      rating,
+      comment,
+      source: 'widget',
+      channel: context.channel,
+      handled_by: context.handledBy,
+      assigned_to: context.assignedTo,
+      metadata: {
+        visitorId,
+        submittedFrom: 'widget',
+      },
+      updated_at: createdAt,
+    }, { onConflict: 'org_id,conversation_id,source' })
+    .select('id, created_at')
+    .maybeSingle()
+
+  if (error) {
+    console.error('[ws] visitor csat persist failed:', error.message)
+    send(socket, { type: 'error', message: 'Unable to save feedback right now.' })
+    return
+  }
+
+  const feedbackId = (data?.id as string | null | undefined) ?? null
+  const feedbackCreatedAt = (data?.created_at as string | null | undefined) ?? createdAt
+
+  send(socket, {
+    type: 'csat:submitted',
+    conversationId,
+    rating,
+    comment,
+    createdAt: feedbackCreatedAt,
+  })
+
+  broadcastToAgents(orgId, {
+    type: 'conversation:feedback',
+    conversationId,
+    feedbackId,
+    rating,
+    comment,
+    channel: context.channel,
+    handledBy: context.handledBy,
+    assignedTo: context.assignedTo,
+    createdAt: feedbackCreatedAt,
+  })
+
+  await safeRecordConversationTimelineEvent({
+    supabase: getSupabase(),
+    orgId,
+    conversationId,
+    eventType: 'csat_received',
+    title: `CSAT ${rating}/5 received`,
+    body: comment,
+    metadata: {
+      feedbackId,
+      rating,
+      source: 'widget',
+      channel: context.channel,
+      handledBy: context.handledBy,
+      assignedTo: context.assignedTo,
+    },
+  })
+}
+
 async function rejectPendingAction(
   orgId: string,
   logId: string,
@@ -962,7 +1128,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
   if (status === 'resolved' || status === 'closed') {
     send(socket, {
       type: 'conversation:resolved',
-      content: 'This conversation has been resolved. Thank you! ðŸ˜Š',
+      content: 'This conversation has been resolved. Thank you.',
       conversationId, createdAt: new Date().toISOString(),
     })
     return
@@ -1425,7 +1591,7 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
   if (!updated) { send(socket, { type: 'error', message: 'Conversation not found.' }); return }
 
   await sendToVisitor(orgId, conversationId, {
-    type: 'conversation:resolved', content: 'This conversation has been resolved. Thank you! ðŸ˜Š',
+    type: 'conversation:resolved', content: 'This conversation has been resolved. Thank you.',
     conversationId, createdAt: new Date().toISOString(),
   })
   broadcastToAgents(orgId, {
@@ -1578,6 +1744,7 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
     case 'conversations:list': await handleConversationsList(socket); break
     case 'conversation:select': await handleConversationSelect(socket, msg); break
     case 'visitor:message': await handleVisitorMessage(socket, msg); break
+    case 'visitor:csat': await handleVisitorCsat(socket, msg); break
     case 'visitor:identify': await handleVisitorIdentify(socket, msg); break
     case 'conversation:resume': await handleConversationResume(socket, msg); break
     case 'conversation:new': await handleNewChat(socket, msg); break

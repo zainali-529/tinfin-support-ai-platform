@@ -19,6 +19,7 @@ export type ConversationTimelineEventType =
   | 'action_executed'
   | 'contact_updated'
   | 'channel_event'
+  | 'csat_received'
 
 export interface RecordConversationTimelineEventInput {
   supabase: SupabaseLike

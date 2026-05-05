@@ -912,6 +912,109 @@ export const STYLES = `
     flex-shrink: 0;
   }
 
+
+  .csat-card {
+    margin: 10px 14px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--bg);
+    flex-shrink: 0;
+  }
+
+  .csat-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .csat-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .csat-subtitle,
+  .csat-score {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .csat-rating-row {
+    display: flex;
+    gap: 7px;
+    margin-top: 10px;
+  }
+
+  .csat-rating-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    background: var(--bg-muted);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+  }
+
+  .csat-rating-btn:hover,
+  .csat-rating-btn.active {
+    border-color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 12%, var(--bg));
+    color: var(--brand);
+  }
+
+  .csat-comment {
+    width: 100%;
+    min-height: 58px;
+    margin-top: 10px;
+    padding: 10px 11px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-muted);
+    color: var(--text-primary);
+    resize: none;
+    outline: none;
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .csat-comment:focus {
+    border-color: var(--brand);
+  }
+
+  .csat-comment-preview {
+    margin: 8px 0 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .csat-submit {
+    margin-top: 10px;
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 0;
+    background: var(--brand);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .csat-submit:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
   /* ── Pending File Previews ── */
   .pending-files {
     display: flex;

@@ -14,6 +14,7 @@ import {
   PencilLineIcon,
   RefreshCwIcon,
   SendIcon,
+  StarIcon,
   Trash2Icon,
   UserCheckIcon,
   UserIcon,
@@ -110,6 +111,10 @@ const EVENT_STYLES: Record<string, { icon: React.ComponentType<{ className?: str
   channel_event: {
     icon: MessageCircleIcon,
     className: 'bg-muted text-muted-foreground ring-border',
+  },
+  csat_received: {
+    icon: StarIcon,
+    className: 'bg-yellow-50 text-yellow-700 ring-yellow-200 dark:bg-yellow-950/30 dark:text-yellow-300 dark:ring-yellow-900',
   },
 }
 

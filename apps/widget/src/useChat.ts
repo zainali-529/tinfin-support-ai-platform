@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import type { Message, StoredChat, VisitorInfo, WidgetConversation, ConversationStatus, Attachment } from './types'
+import type {
+  Message,
+  StoredChat,
+  VisitorInfo,
+  WidgetConversation,
+  WidgetCsatFeedback,
+  ConversationStatus,
+  Attachment,
+} from './types'
 
 const WS_URL = (import.meta as any).env?.VITE_API_WS_URL || 'ws://localhost:3003'
 const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
@@ -27,6 +35,7 @@ function loadStoredChat(orgId: string): StoredChat {
           visitorInfo: parsed.visitorInfo,
           activeConversationId: legacyConversationId,
           conversations: parsed.conversations ?? [],
+          csatByConversation: parsed.csatByConversation ?? {},
           messagesByConversation: legacyConversationId
             ? { [legacyConversationId]: legacyMessages }
             : {},
@@ -41,6 +50,7 @@ function loadStoredChat(orgId: string): StoredChat {
     visitorInfo: null,
     activeConversationId: null,
     conversations: [],
+    csatByConversation: {},
     messagesByConversation: {},
   }
 }
@@ -65,6 +75,7 @@ export function useChat(orgId: string) {
   const visitorInfoRef = useRef<VisitorInfo | null>(stored.current.visitorInfo)
   const conversationsRef = useRef<WidgetConversation[]>(stored.current.conversations ?? [])
   const activeConversationIdRef = useRef<string | null>(stored.current.activeConversationId)
+  const csatByConversationRef = useRef<Record<string, WidgetCsatFeedback>>(stored.current.csatByConversation ?? {})
   const pendingUserMessagesRef = useRef<Message[]>([])
 
   const normalizeMessages = useCallback((items: Array<{
@@ -101,6 +112,9 @@ export function useChat(orgId: string) {
     sortConversations(stored.current.conversations ?? [])
   )
   const [activeConversationId, setActiveConversationId] = useState<string | null>(stored.current.activeConversationId)
+  const [csatByConversation, setCsatByConversation] = useState<Record<string, WidgetCsatFeedback>>(
+    stored.current.csatByConversation ?? {}
+  )
   const [typing, setTyping] = useState(false)
   const [connected, setConnected] = useState(false)
   const [agentActive, setAgentActive] = useState(false)
@@ -138,6 +152,7 @@ export function useChat(orgId: string) {
       visitorInfo: visitorInfoRef.current,
       activeConversationId: activeConversationIdRef.current,
       conversations: conversationsRef.current,
+      csatByConversation: csatByConversationRef.current,
       messagesByConversation: Object.fromEntries(
         Object.entries(messagesByConversationRef.current).map(([conversationId, list]) => [
           conversationId,
@@ -469,9 +484,31 @@ export function useChat(orgId: string) {
               addMessage(cid, {
                 id: uid(),
                 role: 'assistant',
-                content: (msg.content as string) || '— This conversation has been resolved. Thank you! 😊 —',
+                content: (msg.content as string) || 'This conversation has been resolved. Thank you.',
                 createdAt: new Date(),
                 attachments: [],
+              })
+              break
+            }
+
+            case 'csat:submitted': {
+              const cid = (msg.conversationId as string | undefined) ?? activeConversationIdRef.current
+              const rating = typeof msg.rating === 'number' ? msg.rating : Number(msg.rating)
+              if (!cid || !Number.isFinite(rating)) break
+              const submittedAt = (msg.createdAt as string | undefined) ?? new Date().toISOString()
+              const comment = typeof msg.comment === 'string' ? msg.comment : null
+              setCsatByConversation(prev => {
+                const next = {
+                  ...prev,
+                  [cid]: {
+                    rating,
+                    comment,
+                    submittedAt,
+                  },
+                }
+                csatByConversationRef.current = next
+                persist()
+                return next
               })
               break
             }
@@ -586,6 +623,38 @@ export function useChat(orgId: string) {
     emitVisitorTypingState(false)
   }, [clearVisitorTypingTimer, emitVisitorTypingState])
 
+  const submitCsat = useCallback((rating: number, comment?: string) => {
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId || rating < 1 || rating > 5) return
+    const socket = wsRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+
+    const submittedAt = new Date().toISOString()
+    const cleanComment = comment?.trim() ? comment.trim().slice(0, 1000) : null
+
+    setCsatByConversation(prev => {
+      const next = {
+        ...prev,
+        [conversationId]: {
+          rating,
+          comment: cleanComment,
+          submittedAt,
+        },
+      }
+      csatByConversationRef.current = next
+      persist()
+      return next
+    })
+
+    socket.send(JSON.stringify({
+      type: 'visitor:csat',
+      conversationId,
+      visitorId: visitorIdRef.current,
+      rating,
+      comment: cleanComment,
+    }))
+  }, [persist])
+
   const startNewChat = useCallback(() => {
     activeConversationIdRef.current = null
     setActiveConversationId(null)
@@ -645,6 +714,10 @@ export function useChat(orgId: string) {
     [conversations, activeConversationId]
   )
 
+  const activeConversationCsat = activeConversationId
+    ? csatByConversation[activeConversationId] ?? null
+    : null
+
   return {
     messages,
     conversations,
@@ -656,9 +729,11 @@ export function useChat(orgId: string) {
     visitorId,
     visitorInfo,
     identityResetVersion,
+    activeConversationCsat,
     sendMessage,
     uploadFile,
     sendTyping,
+    submitCsat,
     startNewChat,
     openConversation,
     refreshInbox: requestInbox,

@@ -85,6 +85,20 @@
       "when": 1778572800000,
       "tag": "0012_kb_source_health_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778659200000,
+      "tag": "0013_csat_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778745600000,
+      "tag": "0014_default_sla_policies",
+      "breakpoints": true
     }
   ]
 }

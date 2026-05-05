@@ -160,6 +160,8 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const [emailInput, setEmailInput] = useState('')
   const [formError, setFormError] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [csatDraftRating, setCsatDraftRating] = useState<number | null>(null)
+  const [csatComment, setCsatComment] = useState('')
   const autoOpenDone = useRef(false)
   const identityAppliedRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -167,8 +169,8 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const {
     messages, conversations, activeConversation, activeConversationId,
     typing, connected, agentActive, visitorId, visitorInfo,
-    identityResetVersion,
-    sendMessage, uploadFile, sendTyping, startNewChat, openConversation, refreshInbox, initWithVisitorInfo,
+    identityResetVersion, activeConversationCsat,
+    sendMessage, uploadFile, sendTyping, submitCsat, startNewChat, openConversation, refreshInbox, initWithVisitorInfo,
   } = useChat(config.orgId)
 
   // ── Vapi ──────────────────────────────────────────────────────────────────
@@ -368,6 +370,11 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     if (open && !showPreChat) refreshInbox()
   }, [open, showPreChat, refreshInbox])
 
+  useEffect(() => {
+    setCsatDraftRating(null)
+    setCsatComment('')
+  }, [activeConversationId, activeConversationCsat?.submittedAt])
+
   // ── Revoke object URLs ────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -511,6 +518,11 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setTab('chat')
   }, [activeConversation?.status, activeConversationId, sendMessage, sendTyping])
 
+  const handleSubmitCsat = useCallback(() => {
+    if (!activeConversationId || !csatDraftRating) return
+    submitCsat(csatDraftRating, csatComment)
+  }, [activeConversationId, csatComment, csatDraftRating, submitCsat])
+
   const handleStartChat = useCallback(() => {
     startNewChat()
     setTab('chat')
@@ -605,6 +617,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const showQuickSuggestions = !!activeConversationId && hasAssistantMessage && !hasUserMessage && quickSuggestions.length > 0 && !isResolvedConversation
   const showTalkToHuman = !!activeConversationId && talkToHumanPayload.length > 0 && !isResolvedConversation
   const canSendQuickReply = connected && !!activeConversationId && !isResolvedConversation && !isUploading
+  const showCsatCard = isResolvedConversation && !!activeConversationId
 
   const voiceEnabled = !!(config.voiceEnabled && config.vapiPublicKey && config.vapiAssistantId)
 
@@ -931,7 +944,59 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                 {/* Resolved notice */}
                 {isResolvedConversation && (
                   <div className="resolved-notice">
-                    ✅ This conversation has been resolved
+                    This conversation has been resolved.
+                  </div>
+                )}
+
+                {showCsatCard && (
+                  <div className="csat-card">
+                    {activeConversationCsat ? (
+                      <>
+                        <div className="csat-card-header">
+                          <span className="csat-title">Thanks for your feedback</span>
+                          <span className="csat-score">{activeConversationCsat.rating}/5</span>
+                        </div>
+                        {activeConversationCsat.comment && (
+                          <p className="csat-comment-preview">{activeConversationCsat.comment}</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="csat-card-header">
+                          <span className="csat-title">How was this conversation?</span>
+                          <span className="csat-subtitle">Optional</span>
+                        </div>
+                        <div className="csat-rating-row" aria-label="Rate this conversation">
+                          {[1, 2, 3, 4, 5].map(rating => (
+                            <button
+                              key={rating}
+                              type="button"
+                              className={`csat-rating-btn ${csatDraftRating === rating ? 'active' : ''}`}
+                              onClick={() => setCsatDraftRating(rating)}
+                              aria-pressed={csatDraftRating === rating}
+                            >
+                              {rating}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          className="csat-comment"
+                          rows={2}
+                          maxLength={1000}
+                          placeholder="Add a short comment..."
+                          value={csatComment}
+                          onChange={event => setCsatComment(event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="csat-submit"
+                          disabled={!csatDraftRating || !connected}
+                          onClick={handleSubmitCsat}
+                        >
+                          Send feedback
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 

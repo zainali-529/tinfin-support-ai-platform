@@ -49,6 +49,19 @@ type ActionLogRow = Record<string, unknown> & {
   ai_actions?: unknown
 }
 
+type FeedbackRow = Record<string, unknown> & {
+  id?: string | null
+  conversation_id?: string | null
+  contact_id?: string | null
+  rating?: number | null
+  comment?: string | null
+  source?: string | null
+  channel?: string | null
+  handled_by?: string | null
+  assigned_to?: string | null
+  created_at?: string | null
+}
+
 type UserRow = Record<string, unknown> & {
   id?: string | null
   name?: string | null
@@ -57,36 +70,89 @@ type UserRow = Record<string, unknown> & {
   is_online?: boolean | null
 }
 
+const DEFAULT_ANALYTICS_TIME_ZONE = 'Asia/Karachi'
+
 function periodDays(period: AnalyticsPeriod): number {
   return period === '7d' ? 7 : period === '90d' ? 90 : 30
 }
 
+function analyticsTimeZone(): string {
+  const candidate = process.env.ANALYTICS_TIME_ZONE?.trim() || DEFAULT_ANALYTICS_TIME_ZONE
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date())
+    return candidate
+  } catch {
+    return DEFAULT_ANALYTICS_TIME_ZONE
+  }
+}
+
+function datePartsInTimeZone(value: Date, timeZone: string): Record<string, string> {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(value).map((part) => [part.type, part.value])
+  )
+}
+
+function timeZoneOffsetMs(value: Date, timeZone: string): number {
+  const parts = datePartsInTimeZone(value, timeZone)
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  )
+  return asUtc - value.getTime()
+}
+
+function zonedStartOfDay(value: Date, timeZone = analyticsTimeZone()): Date {
+  const parts = datePartsInTimeZone(value, timeZone)
+  const localMidnightAsUtc = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 0, 0, 0))
+  const firstPass = new Date(localMidnightAsUtc.getTime() - timeZoneOffsetMs(localMidnightAsUtc, timeZone))
+  return new Date(localMidnightAsUtc.getTime() - timeZoneOffsetMs(firstPass, timeZone))
+}
+
+function addDays(value: Date, days: number): Date {
+  const next = new Date(value)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next
+}
+
 function startOfToday(): Date {
-  const value = new Date()
-  value.setHours(0, 0, 0, 0)
-  return value
+  return zonedStartOfDay(new Date())
 }
 
 function getWindow(period: AnalyticsPeriod) {
   const days = periodDays(period)
   const currentStart = startOfToday()
-  currentStart.setDate(currentStart.getDate() - days + 1)
-  const previousStart = new Date(currentStart)
-  previousStart.setDate(previousStart.getDate() - days)
-  const previousEnd = new Date(currentStart)
-  return { days, currentStart, previousStart, previousEnd, now: new Date() }
+  const windowStart = addDays(currentStart, -days + 1)
+  const previousStart = addDays(windowStart, -days)
+  const previousEnd = new Date(windowStart)
+  return { days, currentStart: windowStart, previousStart, previousEnd, now: new Date() }
 }
 
 function dateKey(value: string | null | undefined): string {
-  return value?.split('T')[0] ?? ''
+  if (!value) return ''
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
+  const parts = datePartsInTimeZone(date, analyticsTimeZone())
+  return `${parts.year}-${parts.month}-${parts.day}`
 }
 
 function buildDateMap<T>(days: number, init: () => T): Record<string, T> {
   const output: Record<string, T> = {}
   const base = startOfToday()
   for (let i = days - 1; i >= 0; i--) {
-    const next = new Date(base)
-    next.setDate(next.getDate() - i)
+    const next = addDays(base, -i)
     output[dateKey(next.toISOString())] = init()
   }
   return output
@@ -116,6 +182,41 @@ function toMs(value: unknown): number | null {
   if (typeof value !== 'string') return null
   const ms = new Date(value).getTime()
   return Number.isFinite(ms) ? ms : null
+}
+
+function latestIso(...values: Array<unknown>): string | null {
+  let bestIso: string | null = null
+  let bestMs = Number.NEGATIVE_INFINITY
+
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const ms = toMs(value)
+    if (ms === null || ms < bestMs) continue
+    bestIso = value
+    bestMs = ms
+  }
+
+  return bestIso
+}
+
+function conversationActivityAt(row: ConversationRow): string | null {
+  return latestIso(
+    row.last_customer_message_at,
+    row.last_agent_reply_at,
+    row.resolved_at,
+    row.queue_entered_at,
+    row.started_at
+  )
+}
+
+function conversationIsActive(row: ConversationRow): boolean {
+  const status = normalizeStatus(row.status)
+  return status !== 'resolved' && status !== 'closed'
+}
+
+function rowFallsInWindow(row: ConversationRow, start: Date, end: Date): boolean {
+  const activityMs = toMs(conversationActivityAt(row))
+  return activityMs !== null && activityMs >= start.getTime() && activityMs < end.getTime()
 }
 
 function secondsBetween(start: unknown, end: unknown): number | null {
@@ -311,6 +412,7 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
     callsResult,
     previousCallsResult,
     actionLogsResult,
+    feedbackResult,
     actionsResult,
     usersResult,
     slaPoliciesResult,
@@ -335,8 +437,8 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
         'contacts(name, email)',
       ].join(','))
       .eq('org_id', orgId)
-      .gte('started_at', currentStart.toISOString())
-      .order('started_at', { ascending: true }),
+      .order('started_at', { ascending: false })
+      .limit(5000),
     ctx.supabase
       .from('conversations')
       .select('id,status,started_at')
@@ -391,19 +493,37 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
       .eq('org_id', orgId)
       .gte('created_at', currentStart.toISOString())
       .order('created_at', { ascending: true }),
+    ctx.supabase
+      .from('conversation_feedback')
+      .select('id, conversation_id, contact_id, rating, comment, source, channel, handled_by, assigned_to, created_at')
+      .eq('org_id', orgId)
+      .gte('created_at', currentStart.toISOString())
+      .order('created_at', { ascending: true }),
     ctx.supabase.from('ai_actions').select('id, name, display_name, is_active').eq('org_id', orgId),
     ctx.supabase.from('users').select('id, name, email, role, is_online').eq('org_id', orgId),
     ctx.supabase.from('inbox_sla_policies').select('id, channel, is_default').eq('org_id', orgId),
   ])
 
-  const conversations = (conversationsResult.data ?? []) as ConversationRow[]
-  const previousConversations = (previousConversationsResult.data ?? []) as ConversationRow[]
+  const allConversations = (conversationsResult.data ?? []) as ConversationRow[]
+  const currentWindowEnd = addDays(startOfToday(), 1)
+  const conversations = allConversations.filter((row) =>
+    rowFallsInWindow(row, currentStart, currentWindowEnd) || conversationIsActive(row)
+  )
+  const previousConversationsByActivity = allConversations.filter((row) =>
+    rowFallsInWindow(row, previousStart, previousEnd)
+  )
+  const previousConversations = previousConversationsByActivity.length > 0
+    ? previousConversationsByActivity
+    : (previousConversationsResult.data ?? []) as ConversationRow[]
   const messages = (messagesResult.data ?? []) as MessageRow[]
   const calls = (callsResult.data ?? []) as Array<Record<string, unknown>>
   const actionLogs = (actionLogsResult.data ?? []) as ActionLogRow[]
+  const feedbackRows = (feedbackResult.data ?? []) as FeedbackRow[]
   const actions = (actionsResult.data ?? []) as Array<Record<string, unknown>>
   const users = (usersResult.data ?? []) as UserRow[]
   const slaPolicies = (slaPoliciesResult.data ?? []) as Array<Record<string, unknown>>
+  const conversationById = new Map(allConversations.map((row) => [row.id, row]))
+  const todayKey = dateKey(now.toISOString())
 
   const timeline = buildDateMap(days, () => ({
     conversations: 0,
@@ -420,6 +540,9 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
     actionSuccess: 0,
     actionFailed: 0,
     avgActionLatencyMs: 0,
+    csatResponses: 0,
+    csatRatingTotal: 0,
+    avgCsatRating: 0,
     _latencies: [] as number[],
   }))
 
@@ -467,7 +590,8 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
   for (const row of conversations) {
     const status = normalizeStatus(row.status)
     const channel = asString(row.channel) ?? 'chat'
-    const day = timeline[dateKey(row.started_at)]
+    const activityAt = conversationActivityAt(row) ?? row.started_at
+    const day = timeline[dateKey(activityAt)] ?? timeline[todayKey]
     if (day) {
       day.conversations += 1
       if (status === 'resolved') day.resolved += 1
@@ -555,7 +679,7 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
   }
 
   for (const message of messages) {
-    const day = timeline[dateKey(message.created_at)]
+    const day = timeline[dateKey(message.created_at)] ?? timeline[todayKey]
     if (!day) continue
     day.messages += 1
     if (message.role === 'user') day.userMessages += 1
@@ -606,7 +730,7 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
     const displayName = action.displayName ?? action.name ?? 'Unknown action'
     const duration = actionDurationMs(log)
     const retries = actionRetryCount(log)
-    const day = timeline[dateKey(log.created_at)]
+    const day = timeline[dateKey(log.created_at)] ?? timeline[todayKey]
 
     if (day) {
       day.actions += 1
@@ -676,6 +800,124 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
   }
 
   const usersById = new Map(users.filter((user) => user.id).map((user) => [user.id as string, user]))
+  const csatByChannel = new Map<string, {
+    channel: string
+    count: number
+    ratingTotal: number
+    positive: number
+    negative: number
+  }>()
+  const csatByHandling = new Map<string, {
+    handledBy: string
+    count: number
+    ratingTotal: number
+    positive: number
+    negative: number
+  }>()
+  const csatByAgent = new Map<string, {
+    id: string
+    name: string
+    email: string
+    count: number
+    ratingTotal: number
+    positive: number
+    negative: number
+  }>()
+  const recentFeedbackComments: Array<{
+    id: string | null
+    conversationId: string | null
+    rating: number
+    comment: string | null
+    channel: string
+    handledBy: string
+    agentName: string | null
+    createdAt: string | null
+  }> = []
+  let csatRatingTotal = 0
+  let csatPositive = 0
+  let csatNegative = 0
+
+  for (const feedback of feedbackRows) {
+    const rating = asNumber(feedback.rating)
+    if (rating === null || rating < 1 || rating > 5) continue
+
+    const conversation = feedback.conversation_id ? conversationById.get(feedback.conversation_id) : null
+    const channel = asString(feedback.channel) ?? asString(conversation?.channel) ?? 'chat'
+    const handledBy = asString(feedback.handled_by) ?? 'unknown'
+    const assignedTo = asString(feedback.assigned_to) ?? asString(conversation?.assigned_to)
+    const user = assignedTo ? usersById.get(assignedTo) : undefined
+    const day = timeline[dateKey(feedback.created_at)] ?? timeline[todayKey]
+    if (day) {
+      day.csatResponses += 1
+      day.csatRatingTotal += rating
+    }
+
+    csatRatingTotal += rating
+    if (rating >= 4) csatPositive += 1
+    if (rating <= 2) csatNegative += 1
+
+    const channelStat = csatByChannel.get(channel) ?? {
+      channel,
+      count: 0,
+      ratingTotal: 0,
+      positive: 0,
+      negative: 0,
+    }
+    channelStat.count += 1
+    channelStat.ratingTotal += rating
+    if (rating >= 4) channelStat.positive += 1
+    if (rating <= 2) channelStat.negative += 1
+    csatByChannel.set(channel, channelStat)
+
+    const handlingStat = csatByHandling.get(handledBy) ?? {
+      handledBy,
+      count: 0,
+      ratingTotal: 0,
+      positive: 0,
+      negative: 0,
+    }
+    handlingStat.count += 1
+    handlingStat.ratingTotal += rating
+    if (rating >= 4) handlingStat.positive += 1
+    if (rating <= 2) handlingStat.negative += 1
+    csatByHandling.set(handledBy, handlingStat)
+
+    const agentKey = assignedTo ?? 'unassigned'
+    const agentStat = csatByAgent.get(agentKey) ?? {
+      id: agentKey,
+      name: agentKey === 'unassigned' ? 'Unassigned' : (user?.name ?? user?.email ?? 'Unknown agent'),
+      email: agentKey === 'unassigned' ? '' : (user?.email ?? ''),
+      count: 0,
+      ratingTotal: 0,
+      positive: 0,
+      negative: 0,
+    }
+    agentStat.count += 1
+    agentStat.ratingTotal += rating
+    if (rating >= 4) agentStat.positive += 1
+    if (rating <= 2) agentStat.negative += 1
+    csatByAgent.set(agentKey, agentStat)
+
+    if (asString(feedback.comment)) {
+      recentFeedbackComments.push({
+        id: feedback.id ?? null,
+        conversationId: feedback.conversation_id ?? null,
+        rating,
+        comment: asString(feedback.comment),
+        channel,
+        handledBy,
+        agentName: agentStat.name,
+        createdAt: feedback.created_at ?? null,
+      })
+    }
+  }
+
+  for (const day of Object.values(timeline)) {
+    day.avgCsatRating = day.csatResponses > 0
+      ? Number((day.csatRatingTotal / day.csatResponses).toFixed(2))
+      : 0
+  }
+
   const agentMessageCounts = new Map<string, number>()
   for (const message of messages) {
     if (message.role !== 'agent') continue
@@ -765,6 +1007,13 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
     avgLatencyMs: average(actionDurations),
     p95LatencyMs: percentile(actionDurations, 95),
     activeActions: actions.filter((action) => action.is_active !== false).length,
+  }
+  const csatOverview = {
+    total: feedbackRows.length,
+    avgRating: feedbackRows.length > 0 ? Number((csatRatingTotal / feedbackRows.length).toFixed(2)) : null,
+    positiveRate: percent(csatPositive, feedbackRows.length, 1),
+    negativeRate: percent(csatNegative, feedbackRows.length, 1),
+    responseRate: percent(feedbackRows.length, Math.max(totalResolved, 1), 1),
   }
   const slaOverview = {
     total: totalConversations,
@@ -870,6 +1119,7 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
     generatedAt: now.toISOString(),
     range: {
       days,
+      timeZone: analyticsTimeZone(),
       currentStart: currentStart.toISOString(),
       previousStart: previousStart.toISOString(),
       previousEnd: previousEnd.toISOString(),
@@ -890,6 +1140,12 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
       calls: { value: calls.length, change: pctChange(calls.length, previousCallsResult.count ?? 0) },
       voiceMinutes: Math.ceil(voiceSeconds / 60),
       pendingConversations: statusCounts.get('pending') ?? 0,
+      csat: {
+        avgRating: csatOverview.avgRating,
+        responses: csatOverview.total,
+        positiveRate: csatOverview.positiveRate,
+        responseRate: csatOverview.responseRate,
+      },
       slaBreachRate: slaOverview.breachRate,
       avgFirstResponseSeconds: slaOverview.avgFirstResponseSeconds,
       actionSuccessRate: actionOverview.successRate,
@@ -912,12 +1168,43 @@ async function buildReportingDashboard(ctx: any, period: AnalyticsPeriod) {
       actionSuccess: value.actionSuccess,
       actionFailed: value.actionFailed,
       avgActionLatencyMs: value.avgActionLatencyMs,
+      csatResponses: value.csatResponses,
+      avgCsatRating: value.avgCsatRating,
     })),
     statusBreakdown: Array.from(statusCounts.entries()).map(([status, count]) => ({ status, count })),
     handlingBreakdown: [
       { label: 'AI Automated', value: Math.max(totalConversations - humanConversationIds.size, 0), color: '#22c55e' },
       { label: 'Human Handled', value: humanConversationIds.size, color: '#f59e0b' },
     ],
+    csat: {
+      overview: csatOverview,
+      byChannel: Array.from(csatByChannel.values()).map((stat) => ({
+        channel: stat.channel,
+        count: stat.count,
+        avgRating: Number((stat.ratingTotal / stat.count).toFixed(2)),
+        positiveRate: percent(stat.positive, stat.count, 1),
+        negativeRate: percent(stat.negative, stat.count, 1),
+      })).sort((a, b) => b.count - a.count || b.avgRating - a.avgRating),
+      byAgent: Array.from(csatByAgent.values()).map((stat) => ({
+        id: stat.id,
+        name: stat.name,
+        email: stat.email,
+        count: stat.count,
+        avgRating: Number((stat.ratingTotal / stat.count).toFixed(2)),
+        positiveRate: percent(stat.positive, stat.count, 1),
+        negativeRate: percent(stat.negative, stat.count, 1),
+      })).sort((a, b) => b.count - a.count || b.avgRating - a.avgRating).slice(0, 8),
+      byHandling: Array.from(csatByHandling.values()).map((stat) => ({
+        handledBy: stat.handledBy,
+        count: stat.count,
+        avgRating: Number((stat.ratingTotal / stat.count).toFixed(2)),
+        positiveRate: percent(stat.positive, stat.count, 1),
+        negativeRate: percent(stat.negative, stat.count, 1),
+      })).sort((a, b) => b.count - a.count),
+      recentComments: recentFeedbackComments
+        .sort((a, b) => (toMs(b.createdAt) ?? 0) - (toMs(a.createdAt) ?? 0))
+        .slice(0, 8),
+    },
     sla: {
       overview: slaOverview,
       byChannel: Array.from(channelStats.values()).map((stat) => ({
@@ -1014,6 +1301,7 @@ export const analyticsRouter = router({
         calls: report.executiveSummary.calls,
         voiceMinutes: report.executiveSummary.voiceMinutes,
         pendingConversations: report.executiveSummary.pendingConversations,
+        csat: report.executiveSummary.csat,
       }
     }),
 

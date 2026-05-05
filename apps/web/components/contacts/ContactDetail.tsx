@@ -99,7 +99,7 @@ interface ContactNote {
 
 interface TimelineItem {
   id: string
-  type: 'conversation' | 'message' | 'call' | 'email' | 'whatsapp' | 'action' | 'note' | 'rating'
+  type: 'conversation' | 'message' | 'call' | 'email' | 'whatsapp' | 'action' | 'note' | 'rating' | 'feedback'
   title: string
   body: string | null
   channel: string | null
@@ -158,6 +158,16 @@ interface ContactProfile {
     createdAt: string
     preview: string
   }>
+  conversationFeedback: Array<{
+    id: string
+    conversationId: string
+    rating: number
+    comment: string | null
+    source: string
+    channel: string
+    handledBy: string
+    createdAt: string
+  }>
   aiActionsUsed: Array<{
     id: string
     name: string
@@ -176,6 +186,8 @@ interface ContactProfile {
     totalWhatsApp: number
     channelCounts: Record<string, number>
     satisfactionRatings: number
+    csatResponses: number
+    avgCsatRating: number | null
     aiActionsUsed: number
   }
 }
@@ -309,7 +321,7 @@ function TimelineIcon({ type, channel }: { type: TimelineItem['type']; channel: 
             ? MessageCircleIcon
             : type === 'note'
               ? FileTextIcon
-              : type === 'rating'
+              : type === 'rating' || type === 'feedback'
                 ? StarIcon
                 : channel && CHANNEL_META[channel]
                   ? CHANNEL_META[channel].icon
@@ -546,7 +558,12 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
         <StatTile label="Conversations" value={contact.stats.totalConversations} icon={MessageSquareIcon} helper={`${contact.stats.resolvedConversations} resolved`} />
         <StatTile label="Channels" value={channelRows.length} icon={InboxIcon} helper={channelRows.map(([channel]) => CHANNEL_META[channel]?.label ?? channel).join(', ') || 'No activity yet'} />
         <StatTile label="AI Actions" value={contact.stats.aiActionsUsed} icon={WorkflowIcon} helper="Executed or requested" />
-        <StatTile label="Satisfaction" value={contact.stats.satisfactionRatings} icon={StarIcon} helper="Agent AI ratings" />
+        <StatTile
+          label="CSAT"
+          value={contact.stats.avgCsatRating ? `${contact.stats.avgCsatRating}/5` : 'n/a'}
+          icon={StarIcon}
+          helper={`${contact.stats.csatResponses ?? 0} customer responses`}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -689,11 +706,31 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
                       <StarIcon className="size-4 text-muted-foreground" />
                       <h3 className="text-sm font-semibold">Satisfaction history</h3>
                     </div>
-                    {contact.satisfactionHistory.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No satisfaction or AI quality ratings captured yet.</p>
+                    {contact.conversationFeedback.length === 0 && contact.satisfactionHistory.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No CSAT or AI quality signals captured yet.</p>
                     ) : (
-                      <div className="space-y-2">
-                        {contact.satisfactionHistory.slice(0, 5).map((item) => (
+                      <div className="space-y-3">
+                        {contact.conversationFeedback.length > 0 && (
+                          <div className="space-y-2">
+                            {contact.conversationFeedback.slice(0, 4).map((item) => (
+                              <button
+                                key={item.id}
+                                className="w-full rounded-xl border bg-muted/15 px-3 py-2 text-left hover:bg-muted/35"
+                                onClick={() => router.push(`/inbox?conversation=${item.conversationId}`)}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <StatusBadge status={item.rating >= 4 ? 'success' : item.rating <= 2 ? 'failed' : 'pending'} />
+                                  <span className="text-xs font-semibold">CSAT {item.rating}/5</span>
+                                  <span className="text-[10px] text-muted-foreground">{formatDateTime(item.createdAt)}</span>
+                                </div>
+                                {item.comment && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.comment}</p>}
+                                <p className="mt-1 text-[10px] text-muted-foreground capitalize">{item.channel} - {item.handledBy}</p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {contact.satisfactionHistory.slice(0, 3).map((item) => (
                           <button
                             key={item.messageId}
                             className="w-full rounded-xl border bg-muted/15 px-3 py-2 text-left hover:bg-muted/35"

@@ -31,20 +31,16 @@ import { LaunchErrorState } from '@/components/launch/LaunchState'
 import {
   ActivityIcon,
   AlertTriangleIcon,
-  BotIcon,
   CheckCircle2Icon,
   Clock3Icon,
-  GaugeIcon,
   HeadphonesIcon,
   Loader2Icon,
   MessageSquareIcon,
   RefreshCwIcon,
-  RouteIcon,
   ShieldCheckIcon,
-  SparklesIcon,
+  StarIcon,
   UsersIcon,
   WorkflowIcon,
-  ZapIcon,
 } from 'lucide-react'
 
 const PERIOD_OPTIONS: Array<{ label: string; value: AnalyticsPeriod }> = [
@@ -52,15 +48,6 @@ const PERIOD_OPTIONS: Array<{ label: string; value: AnalyticsPeriod }> = [
   { label: '30D', value: '30d' },
   { label: '90D', value: '90d' },
 ]
-
-const STATUS_COLORS: Record<string, string> = {
-  bot: '#10b981',
-  pending: '#f59e0b',
-  open: '#0ea5e9',
-  resolved: '#64748b',
-  closed: '#64748b',
-  unknown: '#94a3b8',
-}
 
 const SLA_COLORS: Record<string, string> = {
   on_track: '#10b981',
@@ -105,11 +92,8 @@ function formatPercent(value: number | null | undefined) {
   return `${next.toFixed(Number.isInteger(next) ? 0 : 1)}%`
 }
 
-function formatDuration(seconds: number | null | undefined) {
-  if (!seconds) return 'n/a'
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-  return `${(seconds / 3600).toFixed(1)}h`
+function formatRating(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? `${value.toFixed(1)}/5` : 'n/a'
 }
 
 function formatLatency(ms: number | null | undefined) {
@@ -248,8 +232,6 @@ export function AnalyticsDashboard() {
     period,
     setPeriod,
     report,
-    contactGrowth,
-    callAnalytics,
     isLoading,
     isFetching,
     isError,
@@ -270,39 +252,6 @@ export function AnalyticsDashboard() {
     [report?.timeline]
   )
 
-  const growthTimeline = useMemo(() => {
-    const callByDate = new Map(callAnalytics.map((row) => [row.date, row]))
-    const contactByDate = new Map(contactGrowth.map((row) => [row.date, row]))
-    const dates = new Set<string>([
-      ...contactGrowth.map((row) => row.date),
-      ...callAnalytics.map((row) => row.date),
-    ])
-
-    return Array.from(dates)
-      .sort()
-      .map((date) => {
-        const contact = contactByDate.get(date)
-        const call = callByDate.get(date)
-        return {
-          date,
-          label: formatShortDate(date),
-          newContacts: contact?.new ?? 0,
-          cumulativeContacts: contact?.cumulative ?? 0,
-          calls: call?.count ?? 0,
-          voiceMinutes: call?.minutes ?? 0,
-        }
-      })
-  }, [callAnalytics, contactGrowth])
-
-  const statusData = useMemo(
-    () => (report?.statusBreakdown ?? []).map((item) => ({
-      ...item,
-      color: STATUS_COLORS[item.status] ?? STATUS_COLORS.unknown,
-      label: labelize(item.status),
-    })),
-    [report?.statusBreakdown]
-  )
-
   const slaDonutData = useMemo(() => [
     { name: 'On track', value: report?.sla.overview.onTrack ?? 0, color: SLA_COLORS.on_track },
     { name: 'At risk', value: report?.sla.overview.atRisk ?? 0, color: SLA_COLORS.at_risk },
@@ -311,7 +260,7 @@ export function AnalyticsDashboard() {
   ], [report?.sla.overview.atRisk, report?.sla.overview.breached, report?.sla.overview.met, report?.sla.overview.onTrack])
 
   const channelResponseData = useMemo(
-    () => (report?.sla.byChannel ?? []).slice(0, 8).map((channel) => ({
+    () => (report?.sla.byChannel ?? []).slice(0, 6).map((channel) => ({
       channel: labelize(channel.channel),
       total: channel.total,
       breachRate: channel.breachRate,
@@ -321,56 +270,44 @@ export function AnalyticsDashboard() {
     [report?.sla.byChannel]
   )
 
-  const assigneeLoadData = useMemo(
-    () => (report?.assignees ?? []).slice(0, 8).map((agent) => ({
-      name: agent.name.length > 18 ? `${agent.name.slice(0, 18)}...` : agent.name,
-      active: agent.activeAssigned,
-      breached: agent.breached,
-      replies: agent.agentMessages,
-      loadScore: agent.loadScore,
+  const csatByChannelData = useMemo(
+    () => (report?.csat.byChannel ?? []).slice(0, 6).map((item) => ({
+      channel: labelize(item.channel),
+      count: item.count,
+      avgRating: item.avgRating,
+      positiveRate: item.positiveRate,
+      negativeRate: item.negativeRate,
     })),
-    [report?.assignees]
+    [report?.csat.byChannel]
   )
 
-  const actionLeaderboardData = useMemo(
-    () => (report?.actions.byAction ?? []).slice(0, 8).map((action) => ({
-      name: action.displayName.length > 20 ? `${action.displayName.slice(0, 20)}...` : action.displayName,
-      successRate: action.successRate,
-      failures: action.failed + action.timeout,
-      retryCount: action.retryCount,
-      p95Seconds: Number(((action.p95LatencyMs ?? 0) / 1000).toFixed(1)),
+  const csatTrendData = useMemo(
+    () => timeline.map((row) => ({
+      ...row,
+      avgCsatRatingForChart: row.csatResponses > 0 ? row.avgCsatRating : null,
     })),
-    [report?.actions.byAction]
-  )
-
-  const queueBacklogData = useMemo(
-    () => (report?.sla.queueBacklog ?? []).map((queue) => ({
-      state: labelize(queue.state),
-      count: queue.count,
-      avgBacklogMinutes: queue.avgBacklogMinutes,
-      critical: queue.critical,
-      stale: queue.stale,
-    })),
-    [report?.sla.queueBacklog]
+    [timeline]
   )
 
   const summary = report?.executiveSummary
+  const csat = report?.csat
   const launch = report?.launch
-  const hasTimeline = timeline.some((row) => row.conversations > 0 || row.messages > 0 || row.actions > 0)
-  const tickInterval = period === '90d' ? 13 : period === '30d' ? 5 : 0
+  const hasTimeline = timeline.some((row) => row.conversations > 0 || row.messages > 0 || row.actions > 0 || row.csatResponses > 0)
+    || (summary?.conversations.value ?? 0) > 0
+  const tickInterval = 'preserveStartEnd' as const
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 pb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 pb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
       <section className="rounded-2xl border bg-card p-4 shadow-none md:p-5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="rounded-lg">Analytics Studio</Badge>
-              <Badge variant="outline" className="rounded-lg">Realtime reporting</Badge>
+              <Badge variant="outline" className="rounded-lg">CSAT ready</Badge>
             </div>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">Performance analytics</h1>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">Performance and satisfaction</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Track demand, SLA pressure, automation quality, channel health, action reliability, and team load with graph-first reporting.
+              A focused reporting view for demand, SLA pressure, customer satisfaction, AI/action reliability, and launch signals.
             </p>
           </div>
 
@@ -406,18 +343,18 @@ export function AnalyticsDashboard() {
           icon={MessageSquareIcon}
         />
         <InsightPill
+          label="Customer satisfaction"
+          value={formatRating(summary?.csat.avgRating)}
+          detail={`${summary?.csat.responses ?? 0} responses - ${formatPercent(summary?.csat.positiveRate)} positive`}
+          icon={StarIcon}
+          tone={(summary?.csat.avgRating ?? 0) >= 4 ? 'good' : (summary?.csat.responses ?? 0) > 0 ? 'warn' : 'neutral'}
+        />
+        <InsightPill
           label="SLA pressure"
           value={formatPercent(summary?.slaBreachRate)}
           detail={`${report?.sla.overview.activeBreaches ?? 0} active breaches`}
           icon={Clock3Icon}
           tone={(summary?.slaBreachRate ?? 0) > 0 ? 'danger' : 'good'}
-        />
-        <InsightPill
-          label="AI automation"
-          value={formatPercent(summary?.aiAutomationRate.value)}
-          detail={`${formatCompact(summary?.messages.ai)} AI replies tracked`}
-          icon={BotIcon}
-          tone="good"
         />
         <InsightPill
           label="Action quality"
@@ -428,7 +365,7 @@ export function AnalyticsDashboard() {
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.45fr_0.9fr]">
+      <section className="grid gap-5 xl:grid-cols-[1.25fr_1fr]">
         <GraphPanel
           title="Operations pulse"
           description="Conversation intake, resolutions, message volume, and SLA breach spikes over time."
@@ -437,20 +374,16 @@ export function AnalyticsDashboard() {
           contentClassName="pt-5"
         >
           {isLoading ? (
-            <ChartSkeleton height="h-[380px]" />
+            <ChartSkeleton height="h-[360px]" />
           ) : !hasTimeline ? (
             <EmptyChart />
           ) : (
-            <ResponsiveContainer width="100%" height={380}>
+            <ResponsiveContainer width="100%" height={360}>
               <ComposedChart data={timeline} margin={{ top: 12, right: 18, left: -18, bottom: 0 }}>
                 <defs>
                   <linearGradient id="analyticsConversationArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.28} />
+                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.25} />
                     <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} />
-                  </linearGradient>
-                  <linearGradient id="analyticsMessageArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.22} />
-                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
@@ -460,303 +393,171 @@ export function AnalyticsDashboard() {
                 <Tooltip {...TOOLTIP_PROPS} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                 <Area yAxisId="left" type="monotone" dataKey="conversations" name="Conversations" stroke="#0ea5e9" fill="url(#analyticsConversationArea)" strokeWidth={2.5} />
-                <Area yAxisId="right" type="monotone" dataKey="messages" name="Messages" stroke="#8b5cf6" fill="url(#analyticsMessageArea)" strokeWidth={2} />
                 <Line yAxisId="left" type="monotone" dataKey="resolved" name="Resolved" stroke="#10b981" strokeWidth={2.5} dot={false} />
-                <Bar yAxisId="left" dataKey="slaBreaches" name="SLA breaches" fill="#ef4444" radius={[8, 8, 0, 0]} maxBarSize={18} />
+                <Bar yAxisId="right" dataKey="messages" name="Messages" fill="#8b5cf6" radius={[8, 8, 0, 0]} maxBarSize={18} />
+                <Bar yAxisId="left" dataKey="slaBreaches" name="SLA breaches" fill="#ef4444" radius={[8, 8, 0, 0]} maxBarSize={14} />
               </ComposedChart>
             </ResponsiveContainer>
           )}
         </GraphPanel>
 
-        <GraphPanel title="SLA posture" description="Live SLA state distribution for the selected period." icon={ShieldCheckIcon}>
+        <GraphPanel title="CSAT trend" description="Customer ratings after resolved widget conversations." icon={StarIcon}>
           {isLoading ? (
-            <ChartSkeleton height="h-[380px]" />
+            <ChartSkeleton height="h-[360px]" />
+          ) : (csat?.overview.total ?? 0) === 0 ? (
+            <EmptyChart message="No customer satisfaction responses yet. Resolved widget conversations will ask for feedback." />
           ) : (
-            <div className="grid gap-5">
-              <div className="relative h-[220px]">
+            <ResponsiveContainer width="100%" height={360}>
+              <ComposedChart data={csatTrendData} margin={{ top: 12, right: 16, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={AXIS_TICK} />
+                <YAxis yAxisId="count" tickLine={false} axisLine={false} tick={AXIS_TICK} />
+                <YAxis yAxisId="rating" orientation="right" domain={[0, 5]} tickLine={false} axisLine={false} tick={AXIS_TICK} />
+                <Tooltip {...TOOLTIP_PROPS} formatter={(value, name) => [name === 'Avg rating' ? formatRating(typeof value === 'number' ? value : null) : value, name]} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                <Bar yAxisId="count" dataKey="csatResponses" name="Responses" fill="#f59e0b" radius={[8, 8, 0, 0]} maxBarSize={22} />
+                <Line
+                  yAxisId="rating"
+                  type="monotone"
+                  dataKey="avgCsatRatingForChart"
+                  name="Avg rating"
+                  stroke="#10b981"
+                  strokeWidth={2.8}
+                  dot={{ r: 3 }}
+                  connectNulls={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </GraphPanel>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <GraphPanel title="CSAT breakdown" description="Ratings by channel, handling mode, and recent customer comments." icon={StarIcon}>
+          {isLoading ? (
+            <ChartSkeleton />
+          ) : (csat?.overview.total ?? 0) === 0 ? (
+            <EmptyChart message="No CSAT breakdown yet." />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[1fr_0.85fr]">
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={csatByChannelData} margin={{ top: 12, right: 14, left: -18, bottom: 0 }}>
+                  <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="channel" tickLine={false} axisLine={false} tick={AXIS_TICK} />
+                  <YAxis yAxisId="rating" domain={[0, 5]} tickLine={false} axisLine={false} tick={AXIS_TICK} />
+                  <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(value) => `${value}%`} />
+                  <Tooltip {...TOOLTIP_PROPS} formatter={(value, name) => [name === 'Avg rating' ? formatRating(Number(value)) : name === 'Positive %' ? `${value}%` : value, name]} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                  <Bar yAxisId="rating" dataKey="avgRating" name="Avg rating" fill="#10b981" radius={[8, 8, 0, 0]} />
+                  <Line yAxisId="rate" type="monotone" dataKey="positiveRate" name="Positive %" stroke="#0ea5e9" strokeWidth={2.5} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {(csat?.byHandling ?? []).map((item) => (
+                    <div key={item.handledBy} className="rounded-xl border bg-muted/15 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{labelize(item.handledBy)}</p>
+                      <p className="mt-1 text-xl font-semibold">{formatRating(item.avgRating)}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.count} responses</p>
+                    </div>
+                  ))}
+                </div>
+                <ScrollArea className="h-[188px] pr-2">
+                  <div className="space-y-2">
+                    {(csat?.recentComments ?? []).length === 0 ? (
+                      <p className="rounded-xl border border-dashed bg-muted/15 p-3 text-xs text-muted-foreground">No rating comments yet.</p>
+                    ) : (
+                      csat?.recentComments.map((comment) => (
+                        <div key={`${comment.id}-${comment.createdAt}`} className="rounded-xl border bg-background/70 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold">CSAT {comment.rating}/5</p>
+                            <Badge variant="outline" className="h-5 text-[10px] capitalize">{comment.channel}</Badge>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{comment.comment ?? 'No comment.'}</p>
+                          <p className="mt-1 text-[10px] text-muted-foreground capitalize">{comment.handledBy} - {comment.agentName ?? 'No assignee'}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
+        </GraphPanel>
+
+        <GraphPanel title="SLA and channel quality" description="Conversation volume, SLA distribution, and response speed by channel." icon={HeadphonesIcon}>
+          {isLoading ? (
+            <ChartSkeleton />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[210px_1fr]">
+              <div className="relative h-[230px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={slaDonutData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={98} paddingAngle={3}>
+                    <Pie data={slaDonutData} dataKey="value" nameKey="name" innerRadius={64} outerRadius={92} paddingAngle={3}>
                       {slaDonutData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                     </Pie>
                     <Tooltip {...TOOLTIP_PROPS} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-semibold tracking-tight">{formatPercent(report?.sla.overview.breachRate)}</span>
+                  <span className="text-2xl font-semibold tracking-tight">{formatPercent(report?.sla.overview.breachRate)}</span>
                   <span className="text-xs text-muted-foreground">breach rate</span>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {slaDonutData.map((item) => (
-                  <div key={item.name} className="rounded-xl border bg-background/70 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />
-                      <span className="text-xs text-muted-foreground">{item.name}</span>
-                    </div>
-                    <p className="mt-1 text-xl font-semibold tabular-nums">{item.value}</p>
-                  </div>
-                ))}
-              </div>
+              {channelResponseData.length === 0 ? (
+                <EmptyChart />
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={channelResponseData} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}>
+                    <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="channel" tickLine={false} axisLine={false} tick={AXIS_TICK} />
+                    <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={AXIS_TICK} />
+                    <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(value) => `${value}%`} />
+                    <Tooltip {...TOOLTIP_PROPS} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                    <Bar yAxisId="left" dataKey="total" name="Conversations" fill="#14b8a6" radius={[8, 8, 0, 0]} maxBarSize={22} />
+                    <Bar yAxisId="left" dataKey="firstResponseMinutes" name="First response (m)" fill="#0ea5e9" radius={[8, 8, 0, 0]} maxBarSize={18} />
+                    <Line yAxisId="right" type="monotone" dataKey="breachRate" name="Breach %" stroke="#ef4444" strokeWidth={2.5} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
             </div>
           )}
         </GraphPanel>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <GraphPanel title="Conversation state flow" description="Stacked state mix by day: bot, pending, open, resolved." icon={RouteIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : !hasTimeline ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={310}>
-              <AreaChart data={timeline} margin={{ top: 12, right: 16, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={AXIS_TICK} />
-                <YAxis tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <Tooltip {...TOOLTIP_PROPS} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="bot" name="Bot" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.35} />
-                <Area type="monotone" dataKey="pending" name="Pending" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.35} />
-                <Area type="monotone" dataKey="open" name="Open" stackId="1" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.35} />
-                <Area type="monotone" dataKey="resolved" name="Resolved" stackId="1" stroke="#64748b" fill="#64748b" fillOpacity={0.35} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-
-        <GraphPanel title="Message mix and automation" description="User, AI, and agent messages with automation-rate trend." icon={SparklesIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : !hasTimeline ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={310}>
-              <ComposedChart data={timeline} margin={{ top: 12, right: 16, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={AXIS_TICK} />
-                <YAxis yAxisId="count" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(value) => `${value}%`} />
-                <Tooltip {...TOOLTIP_PROPS} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="count" dataKey="userMessages" name="User" stackId="messages" fill="#0ea5e9" radius={[0, 0, 0, 0]} />
-                <Bar yAxisId="count" dataKey="aiMessages" name="AI" stackId="messages" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar yAxisId="count" dataKey="agentMessages" name="Agent" stackId="messages" fill="#f59e0b" radius={[8, 8, 0, 0]} />
-                <Line yAxisId="rate" type="monotone" dataKey="automationRate" name="Automation %" stroke="#111827" strokeWidth={2.5} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-2">
-        <GraphPanel title="Channel response quality" description="Breach rate, first response, and resolution speed by channel." icon={HeadphonesIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : channelResponseData.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart data={channelResponseData} margin={{ top: 12, right: 16, left: -10, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="channel" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(value) => `${value}%`} />
-                <Tooltip {...TOOLTIP_PROPS} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="left" dataKey="firstResponseMinutes" name="First response (m)" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="breachRate" name="Breach %" stroke="#ef4444" strokeWidth={2.5} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-
-        <GraphPanel title="Contact and voice growth" description="New contacts, cumulative audience, call volume, and voice minutes." icon={UsersIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : growthTimeline.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart data={growthTimeline} margin={{ top: 12, right: 16, left: -18, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="contactCumulativeArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.24} />
-                    <stop offset="95%" stopColor="#14b8a6" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={AXIS_TICK} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <Tooltip {...TOOLTIP_PROPS} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Area yAxisId="right" type="monotone" dataKey="cumulativeContacts" name="Total contacts" stroke="#14b8a6" fill="url(#contactCumulativeArea)" strokeWidth={2} />
-                <Bar yAxisId="left" dataKey="newContacts" name="New contacts" fill="#0ea5e9" radius={[8, 8, 0, 0]} maxBarSize={18} />
-                <Line yAxisId="left" type="monotone" dataKey="voiceMinutes" name="Voice minutes" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <GraphPanel title="AI action reliability" description="Daily action successes, failures, and latency trend." icon={WorkflowIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : (report?.actions.overview.total ?? 0) === 0 ? (
-            <EmptyChart message="No AI action executions in this period." />
-          ) : (
-            <ResponsiveContainer width="100%" height={330}>
-              <ComposedChart data={timeline} margin={{ top: 12, right: 16, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={tickInterval} tick={AXIS_TICK} />
-                <YAxis yAxisId="count" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="latency" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(value) => `${Number(value) / 1000}s`} />
-                <Tooltip {...TOOLTIP_PROPS} formatter={(value, name) => [name === 'Avg latency' ? formatLatency(Number(value)) : value, name]} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="count" dataKey="actionSuccess" name="Success" stackId="actions" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar yAxisId="count" dataKey="actionFailed" name="Failed" stackId="actions" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                <Line yAxisId="latency" type="monotone" dataKey="avgActionLatencyMs" name="Avg latency" stroke="#0ea5e9" strokeWidth={2.5} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-
-        <GraphPanel title="Action leaderboard" description="Success rate, retries, and p95 latency by action." icon={ZapIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : actionLeaderboardData.length === 0 ? (
-            <EmptyChart message="No action leaderboard yet." />
-          ) : (
-            <ResponsiveContainer width="100%" height={330}>
-              <BarChart data={actionLeaderboardData} layout="vertical" margin={{ top: 8, right: 18, left: 18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(value) => `${value}%`} />
-                <YAxis dataKey="name" type="category" width={104} tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <Tooltip {...TOOLTIP_PROPS} formatter={(value, name) => [name === 'successRate' ? `${value}%` : value, labelize(String(name))]} />
-                <Bar dataKey="successRate" name="Success rate" fill="#10b981" radius={[0, 8, 8, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-2">
-        <GraphPanel title="Assignee load matrix" description="Active workload, breached conversations, and replies by assignee." icon={GaugeIcon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : assigneeLoadData.length === 0 ? (
-            <EmptyChart message="No assignee workload data yet." />
-          ) : (
-            <ResponsiveContainer width="100%" height={330}>
-              <BarChart data={assigneeLoadData} layout="vertical" margin={{ top: 8, right: 18, left: 18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis dataKey="name" type="category" width={110} tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <Tooltip {...TOOLTIP_PROPS} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="active" name="Active" stackId="load" fill="#0ea5e9" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="breached" name="Breached" stackId="load" fill="#ef4444" radius={[0, 8, 8, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-
-        <GraphPanel title="Queue backlog pressure" description="Average backlog minutes and critical queue pockets." icon={Clock3Icon}>
-          {isLoading ? (
-            <ChartSkeleton />
-          ) : queueBacklogData.length === 0 ? (
-            <EmptyChart message="No active backlog in this period." />
-          ) : (
-            <ResponsiveContainer width="100%" height={330}>
-              <ComposedChart data={queueBacklogData} margin={{ top: 12, right: 16, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="state" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="minutes" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <YAxis yAxisId="count" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-                <Tooltip {...TOOLTIP_PROPS} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="minutes" dataKey="avgBacklogMinutes" name="Avg backlog (m)" fill="#f59e0b" radius={[8, 8, 0, 0]} />
-                <Line yAxisId="count" type="monotone" dataKey="critical" name="Critical" stroke="#ef4444" strokeWidth={2.5} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </GraphPanel>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <GraphPanel title="Status composition" description="Current conversation distribution for the selected period." icon={RouteIcon}>
+      <section className="grid gap-5 xl:grid-cols-3">
+        <GraphPanel title="Agent CSAT" description="Customer satisfaction by assigned teammate." icon={UsersIcon}>
           {isLoading ? (
             <ChartSkeleton height="h-72" />
-          ) : statusData.length === 0 ? (
-            <EmptyChart />
+          ) : (csat?.byAgent.length ?? 0) === 0 ? (
+            <EmptyChart message="No agent CSAT yet." />
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[210px_1fr]">
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={statusData} dataKey="count" nameKey="label" innerRadius={62} outerRadius={92} paddingAngle={3}>
-                    {statusData.map((entry) => <Cell key={entry.status} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip {...TOOLTIP_PROPS} />
-                </PieChart>
-              </ResponsiveContainer>
+            <ScrollArea className="h-72 pr-2">
               <div className="space-y-2">
-                {statusData.map((item) => (
-                  <div key={item.status} className="flex items-center gap-3 rounded-xl border bg-background/70 px-3 py-2">
-                    <span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="flex-1 text-sm font-medium">{item.label}</span>
-                    <span className="font-semibold tabular-nums">{item.count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </GraphPanel>
-
-        <GraphPanel title="Active SLA risk queue" description="Highest-risk conversations that need operational attention." icon={AlertTriangleIcon}>
-          {isLoading ? (
-            <ChartSkeleton height="h-72" />
-          ) : (report?.sla.activeRiskQueue.length ?? 0) === 0 ? (
-            <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-center text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-              <CheckCircle2Icon className="mb-3 size-8" />
-              <p className="text-sm font-semibold">No active SLA risks</p>
-              <p className="mt-1 text-xs opacity-80">The live queue is healthy for this window.</p>
-            </div>
-          ) : (
-            <ScrollArea className="h-72 pr-3">
-              <div className="space-y-2">
-                {report?.sla.activeRiskQueue.map((item) => (
-                  <div key={item.id} className="rounded-2xl border bg-background/70 p-3">
+                {csat?.byAgent.map((agent) => (
+                  <div key={agent.id} className="rounded-2xl border bg-background/70 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{item.contactName || item.contactEmail || 'Unknown visitor'}</p>
-                        <p className="mt-1 text-xs text-muted-foreground capitalize">
-                          {item.channel} - {item.status} - backlog {item.backlogMinutes ?? 0}m
-                        </p>
+                        <p className="truncate text-sm font-semibold">{agent.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{agent.count} responses - {formatPercent(agent.positiveRate)} positive</p>
                       </div>
-                      <Badge variant={item.slaState === 'breached' ? 'destructive' : 'secondary'}>
-                        {labelize(item.slaState)}
+                      <Badge variant={agent.avgRating >= 4 ? 'outline' : agent.avgRating <= 2 ? 'destructive' : 'secondary'}>
+                        {formatRating(agent.avgRating)}
                       </Badge>
                     </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Target {item.slaTargetAt ? format(parseISO(item.slaTargetAt), 'MMM d, h:mm a') : 'not configured'}
-                    </p>
                   </div>
                 ))}
               </div>
             </ScrollArea>
           )}
         </GraphPanel>
-      </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <GraphPanel title="Launch readiness signals" description="Operational gates still visible, but no longer dominating the page." icon={ShieldCheckIcon}>
+        <GraphPanel title="Launch readiness" description="Compact QA gates, kept visible but not dominating analytics." icon={ShieldCheckIcon}>
           {isLoading ? (
             <ChartSkeleton height="h-72" />
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[190px_1fr]">
+            <div className="grid gap-4">
               <div className="rounded-2xl border bg-background/70 p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">Readiness</p>
@@ -764,23 +565,17 @@ export function AnalyticsDashboard() {
                     {launch?.status ?? 'watch'}
                   </Badge>
                 </div>
-                <p className="mt-5 text-5xl font-semibold tracking-tight">{launch?.score ?? 0}</p>
-                <Progress value={launch?.score ?? 0} className="mt-4 h-2" />
-                <p className="mt-3 text-xs text-muted-foreground">Score combines SLA, actions, and manual QA gates.</p>
+                <p className="mt-4 text-4xl font-semibold tracking-tight">{launch?.score ?? 0}</p>
+                <Progress value={launch?.score ?? 0} className="mt-3 h-2" />
               </div>
-              <ScrollArea className="h-72 pr-3">
+              <ScrollArea className="h-40 pr-2">
                 <div className="space-y-2">
-                  {(launch?.checks ?? []).map((check) => (
-                    <div key={check.id} className="rounded-2xl border bg-background/70 p-3">
-                      <div className="flex items-start gap-3">
-                        <CheckStatusIcon status={check.status} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold">{check.title}</p>
-                            <Badge variant="outline" className="h-5 text-[10px]">{check.category}</Badge>
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
-                        </div>
+                  {(launch?.checks ?? []).slice(0, 5).map((check) => (
+                    <div key={check.id} className="flex items-start gap-3 rounded-xl border bg-background/70 p-3">
+                      <CheckStatusIcon status={check.status} />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold">{check.title}</p>
+                        <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">{check.detail}</p>
                       </div>
                     </div>
                   ))}
@@ -790,32 +585,52 @@ export function AnalyticsDashboard() {
           )}
         </GraphPanel>
 
-        <GraphPanel title="Recent action failures" description="External API failures that can reduce AI trust." icon={WorkflowIcon}>
+        <GraphPanel title="Action and queue watch" description="Only the items that need attention right now." icon={WorkflowIcon}>
           {isLoading ? (
             <ChartSkeleton height="h-72" />
-          ) : (report?.actions.recentFailures.length ?? 0) === 0 ? (
-            <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-center text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-              <CheckCircle2Icon className="mb-3 size-8" />
-              <p className="text-sm font-semibold">No recent action failures</p>
-              <p className="mt-1 text-xs opacity-80">Action logs look clean for this selected period.</p>
-            </div>
           ) : (
-            <ScrollArea className="h-72 pr-3">
-              <div className="space-y-2">
-                {report?.actions.recentFailures.map((failure) => (
-                  <div key={`${failure.id}-${failure.createdAt}`} className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3 text-rose-950 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-100">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-semibold">{failure.actionName}</p>
-                      <Badge variant="destructive">{failure.status}</Badge>
+            <ScrollArea className="h-72 pr-2">
+              <div className="space-y-3">
+                {(report?.actions.recentFailures.length ?? 0) === 0 ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/25 dark:text-emerald-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2Icon className="size-4" />
+                      <p className="text-sm font-semibold">No recent action failures</p>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-xs opacity-80">{failure.errorMessage ?? 'No error message captured.'}</p>
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] opacity-80">
-                      <span>Latency {formatLatency(failure.durationMs)}</span>
-                      <span>Status {failure.statusCode ?? 'n/a'}</span>
-                      <span>Retries {failure.retryCount}</span>
-                    </div>
+                    <p className="mt-1 text-xs opacity-80">Action logs look healthy for this period.</p>
                   </div>
-                ))}
+                ) : (
+                  report?.actions.recentFailures.slice(0, 4).map((failure) => (
+                    <div key={`${failure.id}-${failure.createdAt}`} className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3 text-rose-950 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-100">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-sm font-semibold">{failure.actionName}</p>
+                        <Badge variant="destructive">{failure.status}</Badge>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs opacity-80">{failure.errorMessage ?? 'No error message captured.'}</p>
+                    </div>
+                  ))
+                )}
+
+                {(report?.sla.activeRiskQueue.length ?? 0) > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground">SLA risk queue</p>
+                    {report?.sla.activeRiskQueue.slice(0, 4).map((item) => (
+                      <div key={item.id} className="rounded-2xl border bg-background/70 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{item.contactName || item.contactEmail || 'Unknown visitor'}</p>
+                            <p className="mt-1 text-xs text-muted-foreground capitalize">
+                              {item.channel} - backlog {item.backlogMinutes ?? 0}m
+                            </p>
+                          </div>
+                          <Badge variant={item.slaState === 'breached' ? 'destructive' : 'secondary'}>
+                            {labelize(item.slaState)}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </ScrollArea>
           )}

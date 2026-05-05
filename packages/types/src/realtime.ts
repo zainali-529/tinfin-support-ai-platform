@@ -183,6 +183,17 @@ export type AgentRealtimeEvent =
       createdAt?: string
     }
   | {
+      type: 'conversation:feedback'
+      conversationId: string
+      feedbackId?: string | null
+      rating: number
+      comment?: string | null
+      channel?: string | null
+      handledBy?: 'ai' | 'human' | 'mixed' | 'unknown' | string
+      assignedTo?: string | null
+      createdAt?: string
+    }
+  | {
       type: 'message:sent' | 'takeover:success' | 'connected' | 'pong' | 'error'
       conversationId?: string | null
       message?: string

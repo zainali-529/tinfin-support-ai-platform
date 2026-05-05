@@ -124,6 +124,39 @@ export const conversations = pgTable('conversations', {
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 })
 
+export const conversationFeedback = pgTable(
+  'conversation_feedback',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    conversationId: uuid('conversation_id')
+      .references(() => conversations.id, { onDelete: 'cascade' })
+      .notNull(),
+    contactId: uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
+    rating: integer('rating').notNull(),
+    comment: text('comment'),
+    source: text('source').default('widget').notNull(),
+    channel: text('channel').default('chat').notNull(),
+    handledBy: text('handled_by').default('unknown').notNull(),
+    assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgConversationSourceUnique: uniqueIndex('conversation_feedback_org_conversation_source_unique').on(
+      table.orgId,
+      table.conversationId,
+      table.source
+    ),
+    orgCreatedIndex: index('idx_conversation_feedback_org_created').on(table.orgId, table.createdAt),
+    conversationIndex: index('idx_conversation_feedback_conversation').on(table.orgId, table.conversationId),
+    contactIndex: index('idx_conversation_feedback_contact').on(table.orgId, table.contactId, table.createdAt),
+    channelIndex: index('idx_conversation_feedback_channel_created').on(table.orgId, table.channel, table.createdAt),
+    assigneeIndex: index('idx_conversation_feedback_assigned_created').on(table.orgId, table.assignedTo, table.createdAt),
+  })
+)
+
 export const inboxSlaPolicies = pgTable(
   'inbox_sla_policies',
   {
