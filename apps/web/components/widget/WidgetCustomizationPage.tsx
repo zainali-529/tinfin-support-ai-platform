@@ -413,7 +413,7 @@ function ThemeColorEditor({
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {fields.map(field => (
           <div key={field.key} className="space-y-1.5">
             <Label className="text-[11px] text-muted-foreground">{field.label}</Label>
@@ -427,12 +427,12 @@ function ThemeColorEditor({
 
 function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3">
+    <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-foreground">{label}</div>
         {description && <div className="text-xs text-muted-foreground mt-0.5 leading-snug">{description}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="sm:shrink-0">{children}</div>
     </div>
   )
 }
@@ -449,6 +449,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   const [saved, setSaved] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [activeTab, setActiveTab] = useState('style')
+  const [activeWorkspacePanel, setActiveWorkspacePanel] = useState<'settings' | 'preview'>('settings')
   const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
   const deferredSettings = useDeferredValue(settings)
   const { planId } = usePlan()
@@ -666,10 +667,10 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="flex h-[calc(100svh-5.25rem)] max-h-[calc(100svh-5.25rem)] min-h-0 flex-1 flex-col gap-3 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500 sm:h-[calc(100svh-6rem)] sm:max-h-[calc(100svh-6rem)] sm:gap-4">
 
       {/* ── Page Header ── */}
-      <div className="flex items-center justify-between gap-4 shrink-0">
+      <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
             <ZapIcon className="size-5 text-primary" />
@@ -679,7 +680,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
             Customize your chat widget appearance, content, and behavior.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {isDirty && !saved && (
             <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-900/20">
               Unsaved changes
@@ -691,12 +692,12 @@ export function WidgetCustomizationPage({ orgId }: Props) {
             </Badge>
           )}
           {isReadOnly ? (
-            <Button size="sm" onClick={openUpgradeDialog} className="gap-1.5" variant="outline">
+            <Button size="sm" onClick={openUpgradeDialog} className="h-8 gap-1.5 text-xs sm:h-9" variant="outline">
               <LockIcon className="size-3.5" />
               Unlock Editing
             </Button>
           ) : (
-            <Button size="sm" onClick={handleSave} disabled={saving || !isDirty} className="gap-1.5">
+            <Button size="sm" onClick={handleSave} disabled={saving || !isDirty} className="h-8 gap-1.5 text-xs sm:h-9">
               <SaveIcon className="size-3.5" />
               {saving ? 'Saving...' : 'Save Changes'}
             </Button>
@@ -728,14 +729,38 @@ export function WidgetCustomizationPage({ orgId }: Props) {
         />
       )}
 
-      <div className="flex gap-0 overflow-hidden rounded-xl border bg-background shadow-sm" style={{ height: 'calc(100vh - 11rem)' }}>
+      <div className="grid shrink-0 grid-cols-2 rounded-xl border bg-muted/30 p-1 xl:hidden">
+        {([
+          { value: 'settings', label: 'Settings' },
+          { value: 'preview', label: 'Preview' },
+        ] as const).map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => setActiveWorkspacePanel(item.value)}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+              activeWorkspacePanel === item.value
+                ? 'bg-background text-foreground ring-1 ring-border'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm xl:flex">
 
         {/* ── Left: Settings (50%) ── */}
-        <div className="w-1/2 shrink-0 border-r flex flex-col overflow-hidden transition-all">
+        <div
+          className={`min-h-0 flex-col overflow-hidden transition-all xl:flex xl:w-[48%] xl:shrink-0 xl:border-r 2xl:w-[46%] ${
+            activeWorkspacePanel === 'settings' ? 'flex h-full w-full' : 'hidden xl:flex'
+          }`}
+        >
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
             {/* Tab triggers */}
-            <div className="border-b px-4 pt-3 pb-0 shrink-0 bg-card/50">
-              <TabsList className="h-8 gap-0 bg-transparent p-0 border-0">
+            <div className="shrink-0 overflow-x-auto border-b bg-card/50 px-3 pb-0 pt-3 sm:px-4">
+              <TabsList className="h-8 min-w-max gap-0 border-0 bg-transparent p-0">
                 {[
                   { value: 'style',    icon: PaletteIcon,          label: 'Style' },
                   { value: 'content',  icon: MessageSquareIcon,    label: 'Content' },
@@ -744,7 +769,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   <button key={value}
                     data-free-allow="true"
                     onClick={() => setActiveTab(value)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                    className={`inline-flex shrink-0 items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
                       activeTab === value
                         ? 'border-primary text-primary'
                         : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -760,7 +785,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
             <div className="flex-1 overflow-y-auto" onPointerDownCapture={handleRestrictedInteractCapture}>
 
               {/* ── STYLE TAB ── */}
-              <TabsContent value="style" className="m-0 p-4 space-y-4">
+              <TabsContent value="style" className="m-0 space-y-4 p-3 sm:p-4">
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Brand Color</CardTitle>
@@ -886,7 +911,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                         <div className="text-sm font-medium mb-1">Launcher Size</div>
                         <div className="text-xs text-muted-foreground mb-3">Size of the chat button in the corner.</div>
                       </div>
-                      <div className="flex gap-3">
+                      <div className="grid grid-cols-3 gap-2 sm:gap-3">
                         {(['sm', 'md', 'lg'] as const).map((size) => {
                           const px = LAUNCHER_SIZES[size]
                           return (
@@ -920,7 +945,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                 <Card>
                   <CardContent className="pt-4">
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <div className="text-sm font-medium">Border Radius</div>
                           <div className="text-xs text-muted-foreground">Roundness of the widget panel.</div>
@@ -939,7 +964,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                 <Card>
                   <CardContent className="pt-4">
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <div className="text-sm font-medium">Widget Width</div>
                           <div className="text-xs text-muted-foreground">Width of the chat panel window.</div>
@@ -959,7 +984,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                   <CardContent className="pt-4">
                     <div className="space-y-5">
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <div className="text-sm font-medium">Widget Height</div>
                             <div className="text-xs text-muted-foreground">Compact panel height before visitor expands it.</div>
@@ -970,7 +995,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                           onValueChange={([v]) => update({ widgetHeight: v! })} />
                       </div>
                       <div className="space-y-3 border-t pt-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <div className="text-sm font-medium">Expanded Size</div>
                             <div className="text-xs text-muted-foreground">Size used when the visitor clicks the expand icon.</div>
@@ -990,7 +1015,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               </TabsContent>
 
               {/* ── CONTENT TAB ── */}
-              <TabsContent value="content" className="m-0 p-4 space-y-4">
+              <TabsContent value="content" className="m-0 space-y-4 p-3 sm:p-4">
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm">Brand Identity</CardTitle>
@@ -1236,7 +1261,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               </TabsContent>
 
               {/* ── BEHAVIOR TAB ── */}
-              <TabsContent value="behavior" className="m-0 p-4 space-y-4">
+              <TabsContent value="behavior" className="m-0 space-y-4 p-3 sm:p-4">
                 <Card>
                   <CardHeader className="pb-3"><CardTitle className="text-sm">Display</CardTitle></CardHeader>
                   <CardContent className="divide-y divide-border">
@@ -1283,15 +1308,19 @@ export function WidgetCustomizationPage({ orgId }: Props) {
         </div>
 
         {/* ── Right: Live Preview (50%) ── */}
-        <div className="w-1/2 flex flex-col overflow-hidden bg-muted/20">
-          <div className="flex items-center justify-between px-5 py-3 border-b bg-card/50 shrink-0">
+        <div
+          className={`min-h-0 flex-col overflow-hidden bg-muted/20 xl:flex xl:flex-1 ${
+            activeWorkspacePanel === 'preview' ? 'flex h-full w-full' : 'hidden xl:flex'
+          }`}
+        >
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-card/50 px-3 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-sm font-medium">Live Preview</span>
             </div>
             <Badge variant="outline" className="text-[10px]">Updates instantly</Badge>
           </div>
-          <div className="flex-1 overflow-hidden p-4 flex items-stretch">
+          <div className="flex min-h-0 flex-1 items-stretch overflow-hidden p-2 sm:p-4">
             <WidgetPreview config={previewConfig} />
           </div>
           <div className="text-center py-2 text-xs text-muted-foreground shrink-0 border-t bg-card/30">

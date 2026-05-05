@@ -33,6 +33,7 @@ import { toast } from '@workspace/ui/components/sonner'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   ActivityIcon,
+  ArrowLeftIcon,
   BotIcon,
   CheckCircleIcon,
   ClockIcon,
@@ -195,6 +196,7 @@ interface ContactProfile {
 interface Props {
   contactId: string
   onDeleted?: () => void
+  onBack?: () => void
 }
 
 function safeDate(value: string | null | undefined): Date | null {
@@ -277,12 +279,12 @@ function StatTile({
   helper?: string
 }) {
   return (
-    <div className="rounded-2xl border bg-muted/15 px-4 py-3">
+    <div className="rounded-2xl border bg-muted/15 px-3 py-3 sm:px-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
         <Icon className="size-4 text-muted-foreground" />
       </div>
-      <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">{value}</p>
       {helper && <p className="mt-1 text-xs text-muted-foreground">{helper}</p>}
     </div>
   )
@@ -350,7 +352,20 @@ export function ContactDetailEmpty() {
   )
 }
 
-export function ContactDetail({ contactId, onDeleted }: Props) {
+function MobileContactBackButton({ onBack }: { onBack?: () => void }) {
+  if (!onBack) return null
+
+  return (
+    <div className="flex shrink-0 items-center border-b px-3 py-2 lg:hidden">
+      <Button variant="ghost" size="sm" onClick={onBack} className="h-8 gap-1.5 px-2 text-xs">
+        <ArrowLeftIcon className="size-3.5" />
+        Contacts
+      </Button>
+    </div>
+  )
+}
+
+export function ContactDetail({ contactId, onDeleted, onBack }: Props) {
   const { contact: rawContact, isLoading } = useContact(contactId)
   const contact = rawContact as ContactProfile | undefined
   const canManageContacts = useHasOrgPermission('contacts')
@@ -393,20 +408,23 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col gap-4 p-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="size-14 shrink-0 rounded-full" />
-          <div className="space-y-2 flex-1">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-4 w-56" />
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <MobileContactBackButton onBack={onBack} />
+        <div className="flex flex-col gap-4 p-4 sm:p-6">
+          <div className="flex items-center gap-4">
+            <Skeleton className="size-14 shrink-0 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-56 max-w-full" />
+            </div>
           </div>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="h-24 rounded-2xl" />
+            ))}
+          </div>
+          <Skeleton className="h-80 rounded-2xl" />
         </div>
-        <div className="grid grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-24 rounded-2xl" />
-          ))}
-        </div>
-        <Skeleton className="h-80 rounded-2xl" />
       </div>
     )
   }
@@ -488,9 +506,11 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="shrink-0 border-b px-6 py-4">
-        <div className="flex items-start gap-4">
-          <Avatar className="size-14 shrink-0">
+      <MobileContactBackButton onBack={onBack} />
+
+      <div className="shrink-0 border-b px-4 py-4 sm:px-6">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <Avatar className="size-12 shrink-0 sm:size-14">
             <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
               {initials}
             </AvatarFallback>
@@ -532,10 +552,10 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
               </a>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <Button size="sm" variant="outline" onClick={() => setEditOpen(true)} className="h-8 gap-1.5 text-xs">
               <EditIcon className="size-3.5" />
-              Edit
+              <span className="hidden sm:inline">Edit</span>
             </Button>
             {canManageContacts && (
               <Button
@@ -554,7 +574,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
         </div>
       </div>
 
-      <div className="grid shrink-0 grid-cols-2 gap-3 border-b px-6 py-4 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-2 border-b px-3 py-3 sm:gap-3 sm:px-6 sm:py-4 lg:grid-cols-4">
         <StatTile label="Conversations" value={contact.stats.totalConversations} icon={MessageSquareIcon} helper={`${contact.stats.resolvedConversations} resolved`} />
         <StatTile label="Channels" value={channelRows.length} icon={InboxIcon} helper={channelRows.map(([channel]) => CHANNEL_META[channel]?.label ?? channel).join(', ') || 'No activity yet'} />
         <StatTile label="AI Actions" value={contact.stats.aiActionsUsed} icon={WorkflowIcon} helper="Executed or requested" />
@@ -568,8 +588,8 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         <Tabs defaultValue="overview" className="flex h-full flex-col">
-          <div className="shrink-0 border-b px-6 pt-3">
-            <TabsList className="h-9 bg-muted/40 p-1">
+          <div className="shrink-0 overflow-x-auto border-b px-3 pt-3 sm:px-6">
+            <TabsList className="h-9 min-w-max bg-muted/40 p-1">
               <TabsTrigger value="overview" className="h-7 text-xs">Overview</TabsTrigger>
               <TabsTrigger value="timeline" className="h-7 text-xs">Timeline</TabsTrigger>
               <TabsTrigger value="conversations" className="h-7 text-xs">Conversations</TabsTrigger>
@@ -579,7 +599,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
           <TabsContent value="overview" className="m-0 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <div className="grid gap-4 p-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="grid gap-4 p-3 sm:p-6 xl:grid-cols-[1.1fr_0.9fr]">
                 <section className="space-y-4">
                   <div className="rounded-2xl border p-4">
                     <div className="flex items-center justify-between gap-3">
@@ -753,7 +773,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
           <TabsContent value="timeline" className="m-0 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <div className="p-6">
+              <div className="p-3 sm:p-6">
                 {contact.timeline.length === 0 ? (
                   <EmptyTabState icon={ActivityIcon} title="No timeline yet" description="Messages, calls, notes, and AI actions will appear here as this customer interacts with support." />
                 ) : (
@@ -788,7 +808,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
           <TabsContent value="conversations" className="m-0 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <div className="space-y-4 p-6">
+              <div className="space-y-4 p-3 sm:p-6">
                 <div className="grid gap-3 md:grid-cols-4">
                   <ChannelSummary channel="chat" count={contact.stats.totalChats} />
                   <ChannelSummary channel="email" count={contact.stats.totalEmails} />
@@ -841,7 +861,7 @@ export function ContactDetail({ contactId, onDeleted }: Props) {
 
           <TabsContent value="notes" className="m-0 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <div className="grid gap-4 p-6 lg:grid-cols-[0.9fr_1.1fr]">
+              <div className="grid gap-4 p-3 sm:p-6 lg:grid-cols-[0.9fr_1.1fr]">
                 <section className="rounded-2xl border p-4">
                   <div className="mb-3 flex items-center gap-2">
                     <FileTextIcon className="size-4 text-muted-foreground" />

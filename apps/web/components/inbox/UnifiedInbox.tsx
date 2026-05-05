@@ -6,6 +6,7 @@ import { Input } from '@workspace/ui/components/input'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Button } from '@workspace/ui/components/button'
 import { Spinner } from '@workspace/ui/components/spinner'
+import { Sheet, SheetContent } from '@workspace/ui/components/sheet'
 import {
   Select,
   SelectContent,
@@ -30,7 +31,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@workspace/ui/components/dropdown-menu'
-import { SearchIcon, ShieldAlertIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
+import {
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SearchIcon,
+  ShieldAlertIcon,
+  SlidersHorizontalIcon,
+  XIcon,
+} from 'lucide-react'
+import { cn } from '@workspace/ui/lib/utils'
 import { useConversations } from '@/hooks/useConversations'
 import { useAgentRealtimeListener } from '@/components/realtime/AgentRealtimeProvider'
 import { useActiveOrg } from '@/components/org/OrgContext'
@@ -115,6 +124,8 @@ export function UnifiedInbox() {
   const [approvalsOpen, setApprovalsOpen] = useState(false)
   const [approvingLogId, setApprovingLogId] = useState<string | null>(null)
   const [rejectingLogId, setRejectingLogId] = useState<string | null>(null)
+  const [conversationListOpen, setConversationListOpen] = useState(true)
+  const [mobileListOpen, setMobileListOpen] = useState(false)
 
   const previousOrgId = useRef(orgId)
 
@@ -328,6 +339,7 @@ export function UnifiedInbox() {
   useEffect(() => {
     if (previousOrgId.current !== orgId) {
       setSelectedId(null)
+      setMobileListOpen(false)
       previousOrgId.current = orgId
     }
   }, [orgId])
@@ -399,6 +411,7 @@ export function UnifiedInbox() {
   const handleSelectConversation = useCallback(
     (conversationId: string) => {
       setSelectedId(conversationId)
+      setMobileListOpen(false)
       pushQueryState(channelFilter, conversationId, savedView)
     },
     [channelFilter, pushQueryState, savedView]
@@ -481,19 +494,23 @@ export function UnifiedInbox() {
   }
 
   const hasManualFilters = statusFilter !== 'all'
+  const renderConversationListPanel = (mode: 'desktop' | 'mobile' | 'sheet') => {
+    const canClose = mode !== 'mobile'
+    const closePanel = () => {
+      if (mode === 'desktop') setConversationListOpen(false)
+      else setMobileListOpen(false)
+    }
 
-  return (
-    <>
-      <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
-      <div className="flex w-[320px] shrink-0 flex-col border-r">
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-background">
         <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold">Unified Inbox</h2>
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold">Unified Inbox</h2>
             <p className="text-xs text-muted-foreground">
               {loading && conversations.length === 0 ? 'Loading...' : `${totalCount} conversations`}
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             <Button
               type="button"
               size="sm"
@@ -517,6 +534,22 @@ export function UnifiedInbox() {
               Approvals
               {pendingApprovalItems.length > 0 ? ` (${pendingApprovalItems.length})` : ''}
             </Button>
+            {canClose && (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                className="size-7 text-muted-foreground"
+                onClick={closePanel}
+                aria-label="Close conversation list"
+              >
+                {mode === 'desktop' ? (
+                  <PanelLeftCloseIcon className="size-4" />
+                ) : (
+                  <XIcon className="size-4" />
+                )}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -654,14 +687,42 @@ export function UnifiedInbox() {
           )}
         </div>
       </div>
+    )
+  }
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+  return (
+    <>
+      <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
+      {conversationListOpen ? (
+        <div className="hidden w-[320px] shrink-0 flex-col border-r lg:flex">
+          {renderConversationListPanel('desktop')}
+        </div>
+      ) : (
+        <div className="hidden w-11 shrink-0 items-start justify-center border-r bg-muted/10 pt-3 lg:flex">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-8 text-muted-foreground"
+            onClick={() => setConversationListOpen(true)}
+            aria-label="Open conversation list"
+          >
+            <PanelLeftOpenIcon className="size-4" />
+          </Button>
+        </div>
+      )}
+
+      <div className={cn(
+        'min-h-0 min-w-0 flex-1 overflow-hidden',
+        selectedConversation || selectedId ? 'flex' : 'hidden lg:flex'
+      )}>
         {selectedConversation ? (
           <ConversationRenderer
             conversation={selectedConversation}
             orgId={orgId}
             agentId={agentId}
             onStatusChange={handleStatusMutation}
+            onOpenConversationList={() => setMobileListOpen(true)}
           />
         ) : selectedId && deepLinkedConversationQuery.isError ? (
           <div className="flex h-full items-center justify-center p-6">
@@ -682,7 +743,24 @@ export function UnifiedInbox() {
           <EmptyState />
         )}
       </div>
+
+      <div className={cn(
+        'min-h-0 min-w-0 flex-1 overflow-hidden lg:hidden',
+        selectedConversation || selectedId ? 'hidden' : 'flex'
+      )}>
+        {renderConversationListPanel('mobile')}
       </div>
+      </div>
+
+      <Sheet open={mobileListOpen} onOpenChange={setMobileListOpen}>
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="w-[min(100vw,360px)] max-w-none gap-0 p-0 sm:max-w-[360px]"
+        >
+          {renderConversationListPanel('sheet')}
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={approvalsOpen} onOpenChange={setApprovalsOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">

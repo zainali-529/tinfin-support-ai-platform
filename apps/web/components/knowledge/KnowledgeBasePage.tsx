@@ -32,6 +32,7 @@ import {
   PencilLineIcon, MoreHorizontalIcon, Trash2Icon, ZapIcon,
   LayersIcon, ClockIcon, CheckCircleIcon, ChevronRightIcon,
   InboxIcon, SparklesIcon, RefreshCwIcon, DatabaseIcon,
+  ArrowLeftIcon,
 } from 'lucide-react'
 import { toast } from '@workspace/ui/components/sonner'
 import {
@@ -207,12 +208,12 @@ function SourceRow({
     (source.source_type === 'text_note' && typeof source.metadata?.rawText === 'string')
 
   return (
-    <div className="group flex items-start gap-3 rounded-xl border border-transparent px-3 py-3 transition-colors hover:border-border hover:bg-muted/40">
+    <div className="group flex items-start gap-2 rounded-xl border border-transparent px-2 py-3 transition-colors hover:border-border hover:bg-muted/40 sm:gap-3 sm:px-3">
       <div className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', bg)}>
         <Icon className={cn('size-3.5', color)} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
           <p className="truncate text-xs font-medium text-foreground leading-snug">{displayName}</p>
           <Badge variant="outline" className={cn('h-4 shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wide', status.className)}>
             {status.label}
@@ -250,7 +251,7 @@ function SourceRow({
           </div>
         )}
       </div>
-      <Badge variant="outline" className={cn('mt-0.5 h-4 px-1.5 text-[9px] font-semibold uppercase tracking-wide shrink-0', color)}>
+      <Badge variant="outline" className={cn('mt-0.5 hidden h-4 shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wide sm:inline-flex', color)}>
         {source.type}
       </Badge>
       {canReindex && (
@@ -261,7 +262,7 @@ function SourceRow({
           disabled={reindexing || source.status === 'indexing'}
           title={source.source_type === 'url' ? 'Re-index / recrawl source' : 'Re-index source'}
           onClick={onReindex}
-          className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
+          className="size-7 shrink-0 text-muted-foreground opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary sm:opacity-0 sm:group-hover:opacity-100"
         >
           <RefreshCwIcon className={cn('size-3.5', reindexing && 'animate-spin')} />
         </Button>
@@ -273,7 +274,7 @@ function SourceRow({
         disabled={deleting || reindexing}
         title="Delete source"
         onClick={onDelete}
-        className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        className="size-7 shrink-0 text-muted-foreground opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"
       >
         <Trash2Icon className="size-3.5" />
       </Button>
@@ -368,11 +369,12 @@ function KBCard({
 // KB detail panel
 
 function KBDetailPanel({
-  kb, orgId, onAddSource,
+  kb, orgId, onAddSource, onBack,
 }: {
   kb: KnowledgeBase
   orgId: string
   onAddSource: () => void
+  onBack?: () => void
 }) {
   const { sources, chunkCount, loading, isError, error, refetch } = useKBSources(kb.id, orgId)
   const deleteSource = useDeleteKBSource()
@@ -418,8 +420,17 @@ function KBDetailPanel({
 
   return (
     <div className="flex h-full flex-col">
+      {onBack && (
+        <div className="flex shrink-0 items-center border-b px-3 py-2 lg:hidden">
+          <Button variant="ghost" size="sm" onClick={onBack} className="h-8 gap-1.5 px-2 text-xs">
+            <ArrowLeftIcon className="size-3.5" />
+            Knowledge bases
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 border-b bg-card/50 px-6 py-4 shrink-0">
+      <div className="flex shrink-0 flex-col gap-3 border-b bg-card/50 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-sm font-semibold truncate">{kb.name}</h2>
@@ -437,11 +448,11 @@ function KBDetailPanel({
             Created {format(new Date(kb.created_at), 'MMMM d, yyyy')}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" variant="outline" onClick={refetch} className="h-7 px-2 gap-1">
             <RefreshCwIcon className="size-3" />
           </Button>
-          <Button size="sm" onClick={onAddSource} className="h-7 gap-1.5 text-xs">
+          <Button size="sm" onClick={onAddSource} className="h-7 flex-1 gap-1.5 text-xs sm:flex-none">
             <PlusIcon className="size-3.5" />
             Add Source
           </Button>
@@ -449,14 +460,14 @@ function KBDetailPanel({
       </div>
 
       {/* Stats Bar */}
-      <div className="grid grid-cols-4 border-b bg-muted/20 shrink-0">
+      <div className="grid shrink-0 grid-cols-2 border-b bg-muted/20 sm:grid-cols-4">
         {[
           { label: 'Total Chunks', value: loading ? '-' : chunkCount.toString(), icon: LayersIcon, color: 'text-primary' },
           { label: 'URLs', value: loading ? '-' : urlCount.toString(), icon: GlobeIcon, color: 'text-blue-500' },
           { label: 'Notes & Docs', value: loading ? '-' : (fileCount + textCount).toString(), icon: FileTextIcon, color: 'text-emerald-500' },
           { label: 'Need Review', value: loading ? '-' : attentionCount.toString(), icon: PencilLineIcon, color: attentionCount > 0 ? 'text-amber-500' : 'text-emerald-500' },
         ].map((stat, i) => (
-          <div key={i} className={cn('flex flex-col items-center justify-center gap-0.5 py-3 px-2 text-center', i < 3 && 'border-r')}>
+          <div key={i} className={cn('flex flex-col items-center justify-center gap-0.5 px-2 py-3 text-center', i % 2 === 0 && 'border-r sm:border-r', i < 2 && 'border-b sm:border-b-0', i < 3 && 'sm:border-r')}>
             <stat.icon className={cn('size-3.5 mb-0.5', stat.color)} />
             <span className="text-sm font-bold tabular-nums">{stat.value}</span>
             <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground">{stat.label}</span>
@@ -601,6 +612,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
   const [aiDraft, setAiDraft] = useState<AiImprovementDraft | null>(null)
 
   const selectedKB = kbs.find(kb => kb.id === selectedKBId) ?? null
+  const showContentOnMobile = activePanel !== 'sources' || Boolean(selectedKB)
 
   const filteredKBs = kbs.filter(kb =>
     kb.name.toLowerCase().includes(search.toLowerCase())
@@ -639,12 +651,17 @@ export function KnowledgeBasePage({ orgId }: Props) {
     setAddSourceDialogOpen(true)
   }, [selectedKB])
 
+  const handleBackToKnowledgeList = useCallback(() => {
+    setActivePanel('sources')
+    setSelectedKBId(null)
+  }, [])
+
   return (
-    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="flex h-[calc(100svh-5.25rem)] max-h-[calc(100svh-5.25rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500 sm:h-[calc(100svh-6rem)] sm:max-h-[calc(100svh-6rem)]">
       {/* Page Header */}
-      <div className="flex items-center justify-between gap-4 mb-5">
+      <div className="mb-3 flex shrink-0 flex-col gap-3 sm:mb-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
             <BookOpenIcon className="size-5 text-primary" />
             Knowledge Base
           </h1>
@@ -652,13 +669,13 @@ export function KnowledgeBasePage({ orgId }: Props) {
             Manage knowledge sources that power your AI assistant
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <div className="flex rounded-xl border bg-muted/30 p-1">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex max-w-full overflow-x-auto rounded-xl border bg-muted/30 p-1">
             <button
               type="button"
               onClick={() => setActivePanel('sources')}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
                 activePanel === 'sources'
                   ? 'bg-background text-foreground ring-1 ring-border'
                   : 'text-muted-foreground hover:text-foreground'
@@ -670,7 +687,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
               type="button"
               onClick={() => setActivePanel('improvements')}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
                 activePanel === 'improvements'
                   ? 'bg-background text-foreground ring-1 ring-border'
                   : 'text-muted-foreground hover:text-foreground'
@@ -682,7 +699,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
               type="button"
               onClick={() => setActivePanel('behavior')}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
                 activePanel === 'behavior'
                   ? 'bg-background text-foreground ring-1 ring-border'
                   : 'text-muted-foreground hover:text-foreground'
@@ -691,7 +708,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
               AI Behavior
             </button>
           </div>
-          <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5">
+          <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="h-8 gap-1.5 text-xs sm:h-9">
             <PlusIcon className="size-3.5" />
             New Knowledge Base
           </Button>
@@ -710,7 +727,12 @@ export function KnowledgeBasePage({ orgId }: Props) {
       {/* Main Layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
         {/* Left: KB List */}
-        <div className="w-[280px] xl:w-[320px] shrink-0 min-h-0 border-r flex flex-col overflow-hidden bg-card">
+        <div
+          className={cn(
+            'min-h-0 flex-1 flex-col overflow-hidden bg-card lg:flex lg:w-[300px] lg:flex-none lg:border-r xl:w-[340px]',
+            showContentOnMobile ? 'hidden lg:flex' : 'flex'
+          )}
+        >
           {/* List Header */}
           <div className="flex items-center justify-between border-b px-4 py-3.5 shrink-0">
             <div>
@@ -782,13 +804,19 @@ export function KnowledgeBasePage({ orgId }: Props) {
         </div>
 
         {/* Right: Detail Panel */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
+        <div
+          className={cn(
+            'min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex',
+            showContentOnMobile ? 'flex' : 'hidden'
+          )}
+        >
           {activePanel === 'behavior' ? (
-            <KnowledgeAIBehaviorPanel />
+            <KnowledgeAIBehaviorPanel onBack={handleBackToKnowledgeList} />
           ) : activePanel === 'improvements' ? (
             <KnowledgeAIImprovementsPanel
               selectedKb={selectedKB}
               onDraftNote={handleDraftAiNote}
+              onBack={handleBackToKnowledgeList}
             />
           ) : selectedKB ? (
             <KBDetailPanel
@@ -796,6 +824,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
               kb={selectedKB}
               orgId={orgId}
               onAddSource={() => setAddSourceDialogOpen(true)}
+              onBack={handleBackToKnowledgeList}
             />
           ) : (
             <EmptySelectState />

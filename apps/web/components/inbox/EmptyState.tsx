@@ -10,7 +10,7 @@ import { MailIcon, MessageSquareIcon, InboxIcon, MessageCircleIcon } from 'lucid
 
 export function EmptyState() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+    <div className="flex h-full w-full flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
       <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/60">
         <InboxIcon className="size-8 text-muted-foreground/40" />
       </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from 'react'
 import {
+  ArrowLeftIcon,
   BotIcon,
   CheckCircle2Icon,
   MailIcon,
@@ -118,7 +119,7 @@ function ChannelCard({
           </div>
 
           <Select value={tone} onValueChange={(value) => onToneChange(value as AiChannelTone)}>
-            <SelectTrigger size="sm" className="w-[210px]">
+            <SelectTrigger size="sm" className="w-full sm:w-[210px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -156,7 +157,7 @@ function ChannelCard({
   )
 }
 
-export function KnowledgeAIBehaviorPanel() {
+export function KnowledgeAIBehaviorPanel({ onBack }: { onBack?: () => void }) {
   const utils = trpc.useUtils()
   const behaviorQuery = trpc.knowledge.getAiChannelBehavior.useQuery(undefined, {
     staleTime: 60_000,
@@ -207,7 +208,16 @@ export function KnowledgeAIBehaviorPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-card/50 px-6 py-4">
+      {onBack && (
+        <div className="flex shrink-0 items-center border-b px-3 py-2 lg:hidden">
+          <Button variant="ghost" size="sm" onClick={onBack} className="h-8 gap-1.5 px-2 text-xs">
+            <ArrowLeftIcon className="size-3.5" />
+            Knowledge bases
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 border-b bg-card/50 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:px-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">AI Behavior</h2>
@@ -218,7 +228,7 @@ export function KnowledgeAIBehaviorPanel() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -227,7 +237,7 @@ export function KnowledgeAIBehaviorPanel() {
             className="h-8 gap-1.5"
           >
             <RefreshCwIcon className={cn('size-3.5', behaviorQuery.isFetching && 'animate-spin')} />
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
           <Button
             size="sm"
@@ -237,7 +247,7 @@ export function KnowledgeAIBehaviorPanel() {
             className="h-8 gap-1.5"
           >
             <RotateCcwIcon className="size-3.5" />
-            Defaults
+            <span className="hidden sm:inline">Defaults</span>
           </Button>
           <Button
             size="sm"

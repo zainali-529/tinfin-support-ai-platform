@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import {
   AlertTriangleIcon,
+  ArrowLeftIcon,
   ArrowUpRightIcon,
   BotIcon,
   CheckCircle2Icon,
@@ -178,7 +179,7 @@ function ImprovementRow({
               {item.handoffReason && <span>Reason: {item.handoffReason}</span>}
             </div>
           </div>
-          <Button size="sm" variant="outline" asChild className="h-8 gap-1.5">
+          <Button size="sm" variant="outline" asChild className="h-8 w-full gap-1.5 sm:w-auto">
             <Link href={item.conversationHref}>
               Open conversation
               <ArrowUpRightIcon className="size-3.5" />
@@ -204,7 +205,7 @@ function ImprovementRow({
             </div>
             <Button
               size="sm"
-              className="h-8 gap-1.5"
+              className="h-8 w-full gap-1.5 sm:w-auto"
               disabled={!selectedKb}
               onClick={() => onDraft({ title: item.suggestedTitle, content: item.suggestedNote })}
             >
@@ -254,9 +255,11 @@ function ImprovementRow({
 export function KnowledgeAIImprovementsPanel({
   selectedKb,
   onDraftNote,
+  onBack,
 }: {
   selectedKb: KnowledgeBase | null
   onDraftNote: (draft: AiImprovementDraft) => void
+  onBack?: () => void
 }) {
   const utils = trpc.useUtils()
   const improvementsQuery = trpc.knowledge.getAiImprovements.useQuery(
@@ -275,7 +278,16 @@ export function KnowledgeAIImprovementsPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-card/50 px-6 py-4">
+      {onBack && (
+        <div className="flex shrink-0 items-center border-b px-3 py-2 lg:hidden">
+          <Button variant="ghost" size="sm" onClick={onBack} className="h-8 gap-1.5 px-2 text-xs">
+            <ArrowLeftIcon className="size-3.5" />
+            Knowledge bases
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 border-b bg-card/50 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:px-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">AI Improvements</h2>
@@ -290,10 +302,10 @@ export function KnowledgeAIImprovementsPanel({
           variant="outline"
           onClick={() => void improvementsQuery.refetch()}
           disabled={improvementsQuery.isFetching}
-          className="h-8 gap-1.5"
+          className="h-8 w-full gap-1.5 sm:w-auto"
         >
           <RefreshCwIcon className={cn('size-3.5', improvementsQuery.isFetching && 'animate-spin')} />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
       </div>
 
@@ -322,8 +334,8 @@ export function KnowledgeAIImprovementsPanel({
         </div>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-4 p-4">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="space-y-4 p-3 sm:p-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard label="Unanswered" value={data?.summary.unansweredCount ?? 0} icon={MessageSquareWarningIcon} tone="danger" />
               <StatCard label="Low confidence" value={data?.summary.lowConfidenceCount ?? 0} icon={AlertTriangleIcon} tone="warn" />
               <StatCard label="Handoffs" value={data?.summary.handoffCount ?? 0} icon={UserRoundIcon} tone="warn" />

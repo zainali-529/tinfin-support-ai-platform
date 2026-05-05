@@ -252,7 +252,7 @@ export function AddSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base">Add Knowledge Source</DialogTitle>
           <DialogDescription className="text-sm">
@@ -261,18 +261,21 @@ export function AddSourceDialog({
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList className="grid grid-cols-3 w-full h-9">
-            <TabsTrigger value="url" className="gap-1.5 text-xs">
+          <TabsList className="grid h-9 w-full grid-cols-3">
+            <TabsTrigger value="url" className="gap-1 text-[11px] sm:gap-1.5 sm:text-xs">
               <GlobeIcon className="size-3.5" />
-              Web URL
+              <span className="hidden min-[380px]:inline">Web URL</span>
+              <span className="min-[380px]:hidden">URL</span>
             </TabsTrigger>
-            <TabsTrigger value="file" className="gap-1.5 text-xs">
+            <TabsTrigger value="file" className="gap-1 text-[11px] sm:gap-1.5 sm:text-xs">
               <FileTextIcon className="size-3.5" />
-              Document
+              <span className="hidden min-[380px]:inline">Document</span>
+              <span className="min-[380px]:hidden">Doc</span>
             </TabsTrigger>
-            <TabsTrigger value="text" className="gap-1.5 text-xs">
+            <TabsTrigger value="text" className="gap-1 text-[11px] sm:gap-1.5 sm:text-xs">
               <PencilLineIcon className="size-3.5" />
-              Text Note
+              <span className="hidden min-[380px]:inline">Text Note</span>
+              <span className="min-[380px]:hidden">Text</span>
             </TabsTrigger>
           </TabsList>
 
@@ -282,7 +285,7 @@ export function AddSourceDialog({
               <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">
                 Enter a URL to crawl
               </Label>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <div className="relative flex-1">
                   <LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
                   <Input
@@ -298,6 +301,7 @@ export function AddSourceDialog({
                   variant="outline"
                   onClick={addUrl}
                   disabled={!urlInput.trim() || !isValidUrl(urlInput.trim()) || urlAlreadyIndexed || duplicateQueuedUrl}
+                  className="sm:w-auto"
                 >
                   Add
                 </Button>
@@ -352,7 +356,7 @@ export function AddSourceDialog({
               </div>
             )}
 
-            <div className="flex justify-between items-center pt-1">
+            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[11px] text-muted-foreground">
                 {urlPending > 0 ? `${urlPending} URL${urlPending > 1 ? 's' : ''} ready to process` : ''}
               </p>

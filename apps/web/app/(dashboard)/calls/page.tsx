@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useActiveOrg, useHasOrgPermission } from '@/components/org/OrgContext'
 import { useCalls, useVapiAssistantConfig } from '@/hooks/useCalls'
 import { CallLogList, CallDetailPanel } from '@/components/calls/CallLogList'
@@ -17,6 +17,7 @@ import {
   TrendingUpIcon,
 } from 'lucide-react'
 import Link from 'next/link'
+import { cn } from '@workspace/ui/lib/utils'
 
 function formatCallDuration(seconds: number | null | undefined): string {
   if (!seconds || seconds <= 0) return '0:00'
@@ -39,14 +40,14 @@ function StatCard({
   loading?: boolean
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl border bg-card px-4 py-4 ring-1 ring-foreground/10">
+    <div className="flex flex-col gap-2 rounded-xl border bg-card px-3 py-3 ring-1 ring-foreground/10 sm:px-4 sm:py-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         <div className="flex size-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
           <Icon className="size-3.5" />
         </div>
       </div>
-      {loading ? <Skeleton className="h-8 w-20" /> : <p className="text-3xl font-bold tabular-nums tracking-tight">{value}</p>}
+      {loading ? <Skeleton className="h-7 w-20 sm:h-8" /> : <p className="text-2xl font-bold tabular-nums tracking-tight sm:text-3xl">{value}</p>}
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   )
@@ -85,6 +86,14 @@ export default function CallsPage() {
     return () => clearTimeout(timeout)
   }, [searchInput])
 
+  const handleSelectCall = useCallback((callId: string) => {
+    setSelectedCallId(callId)
+  }, [])
+
+  const handleBackToCalls = useCallback(() => {
+    setSelectedCallId(null)
+  }, [])
+
   if (!canAccessCalls) {
     return (
       <div className="mx-auto w-full max-w-2xl py-10">
@@ -102,23 +111,23 @@ export default function CallsPage() {
     !assistantLoading && Boolean(assistantConfig?.vapi_assistant_id && assistantConfig?.is_active)
 
   return (
-    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-6 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
-      <div className="flex items-start justify-between gap-4">
+    <div className="flex h-[calc(100svh-5.25rem)] max-h-[calc(100svh-5.25rem)] min-h-0 flex-1 flex-col gap-3 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500 sm:h-[calc(100svh-6rem)] sm:max-h-[calc(100svh-6rem)] sm:gap-5">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <PhoneCallIcon className="size-6 text-primary" />
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
+            <PhoneCallIcon className="size-5 text-primary sm:size-6" />
             Voice Calls
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">AI voice call logs, transcripts, and recordings</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground sm:text-sm">AI voice call logs, transcripts, and recordings</p>
         </div>
         {canManageVoice && (
-          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
+          <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 text-xs sm:h-9" asChild>
             <Link href="/voice-assistant">Configure Voice</Link>
           </Button>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         <StatCard
           label="Calls Today"
           value={statsLoading ? '...' : (stats?.today.count ?? 0)}
@@ -157,7 +166,7 @@ export default function CallsPage() {
               : 'border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/10'
           }
         >
-          <CardContent className="flex items-center gap-3 p-4">
+          <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:p-4">
             {voiceIsConfigured ? (
               <CheckCircleIcon className="size-5 shrink-0 text-emerald-600" />
             ) : (
@@ -188,12 +197,12 @@ export default function CallsPage() {
               </p>
             </div>
             {!voiceIsConfigured && canManageVoice && (
-              <Button size="sm" variant="outline" className="shrink-0 border-amber-300" asChild>
+              <Button size="sm" variant="outline" className="w-full shrink-0 border-amber-300 sm:w-auto" asChild>
                 <Link href="/voice-assistant">Set Up Voice</Link>
               </Button>
             )}
             {voiceIsConfigured && (
-              <Badge variant="outline" className="shrink-0 border-emerald-300 text-emerald-700">
+              <Badge variant="outline" className="w-fit shrink-0 border-emerald-300 text-emerald-700">
                 <CheckCircleIcon className="mr-1 size-3" /> Active
               </Badge>
             )}
@@ -202,13 +211,18 @@ export default function CallsPage() {
       )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
-        <div className="flex min-h-0 w-[300px] shrink-0 flex-col overflow-hidden border-r xl:w-[340px]">
+        <div
+          className={cn(
+            'min-h-0 flex-1 flex-col overflow-hidden lg:flex lg:w-[320px] lg:flex-none lg:border-r xl:w-[360px]',
+            selectedCallId ? 'hidden lg:flex' : 'flex'
+          )}
+        >
           <CallLogList
             calls={calls}
             totalCount={totalCount}
             loading={isLoading}
             selectedId={selectedCallId}
-            onSelect={setSelectedCallId}
+            onSelect={handleSelectCall}
             search={searchInput}
             onSearchChange={setSearchInput}
             hasMore={hasMore}
@@ -219,8 +233,13 @@ export default function CallsPage() {
           />
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <CallDetailPanel callId={selectedCallId} orgId={activeOrg.id} />
+        <div
+          className={cn(
+            'min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex',
+            selectedCallId ? 'flex' : 'hidden'
+          )}
+        >
+          <CallDetailPanel callId={selectedCallId} orgId={activeOrg.id} onBack={handleBackToCalls} />
         </div>
       </div>
     </div>

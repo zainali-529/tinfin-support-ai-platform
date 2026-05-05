@@ -20,6 +20,7 @@ import { Label } from '@workspace/ui/components/label'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { Spinner } from '@workspace/ui/components/spinner'
 import { toast } from '@workspace/ui/components/sonner'
+import { cn } from '@workspace/ui/lib/utils'
 import { OctagonXIcon, UsersIcon } from 'lucide-react'
 import { LaunchErrorState } from '@/components/launch/LaunchState'
 
@@ -123,13 +124,17 @@ export function ContactsPage() {
     return () => clearTimeout(timer)
   }, [search])
 
-  const handleDeleted = useCallback(() => {
+  const clearSelectedContact = useCallback(() => {
     setSelectedId(null)
     const params = new URLSearchParams(searchParams.toString())
     params.delete('contact')
     const query = params.toString()
     router.replace(query ? `${pathname}?${query}` : pathname)
   }, [pathname, router, searchParams])
+
+  const handleDeleted = useCallback(() => {
+    clearSelectedContact()
+  }, [clearSelectedContact])
 
   useEffect(() => {
     const contactId = searchParams.get('contact')
@@ -144,16 +149,16 @@ export function ContactsPage() {
   }, [pathname, router, searchParams])
 
   return (
-    <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+    <div className="flex h-[calc(100svh-5.25rem)] max-h-[calc(100svh-5.25rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500 sm:h-[calc(100svh-6rem)] sm:max-h-[calc(100svh-6rem)]">
 
       {/* Page Header */}
-      <div className="flex items-start justify-between gap-4 mb-4 shrink-0">
+      <div className="mb-3 flex shrink-0 items-start justify-between gap-3 sm:mb-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <UsersIcon className="size-6 text-primary" />
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
+            <UsersIcon className="size-5 text-primary sm:size-6" />
             Contacts
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground sm:text-sm">
             Manage your customer contacts and communication history.
           </p>
         </div>
@@ -172,7 +177,12 @@ export function ContactsPage() {
       {/* Two-panel layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">
         {/* Left Panel */}
-        <div className="w-[300px] xl:w-[380px] shrink-0 min-h-0 border-r overflow-hidden flex flex-col">
+        <div
+          className={cn(
+            'min-h-0 flex-1 flex-col overflow-hidden lg:flex lg:w-[320px] lg:flex-none lg:border-r xl:w-[380px]',
+            selectedId ? 'hidden lg:flex' : 'flex'
+          )}
+        >
           <ContactList
             contacts={contacts}
             loading={isLoading}
@@ -190,11 +200,17 @@ export function ContactsPage() {
         </div>
 
         {/* Right Panel */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
+        <div
+          className={cn(
+            'min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex',
+            selectedId ? 'flex' : 'hidden'
+          )}
+        >
           {selectedId ? (
             <ContactDetail
               contactId={selectedId}
               onDeleted={handleDeleted}
+              onBack={clearSelectedContact}
             />
           ) : (
             <ContactDetailEmpty />

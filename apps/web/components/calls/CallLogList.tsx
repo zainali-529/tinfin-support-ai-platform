@@ -15,6 +15,7 @@ import { Button } from '@workspace/ui/components/button'
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar'
 import { cn } from '@workspace/ui/lib/utils'
 import {
+  ArrowLeftIcon,
   PhoneIcon,
   PhoneCallIcon,
   PhoneOffIcon,
@@ -383,9 +384,23 @@ export function CallLogList({
 interface CallDetailProps {
   callId: string | null
   orgId: string
+  onBack?: () => void
 }
 
-export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
+function MobileCallBackButton({ onBack }: { onBack?: () => void }) {
+  if (!onBack) return null
+
+  return (
+    <div className="flex shrink-0 items-center border-b px-3 py-2 lg:hidden">
+      <Button variant="ghost" size="sm" onClick={onBack} className="h-8 gap-1.5 px-2 text-xs">
+        <ArrowLeftIcon className="size-3.5" />
+        Calls
+      </Button>
+    </div>
+  )
+}
+
+export function CallDetailPanel({ callId, orgId: _orgId, onBack }: CallDetailProps) {
   const { data: call, isLoading } = trpc.vapi.getCall.useQuery(
     { id: callId ?? '' },
     { enabled: !!callId }
@@ -409,11 +424,14 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col gap-4 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <MobileCallBackButton onBack={onBack} />
+        <div className="flex flex-col gap-4 p-4 sm:p-6">
+          <Skeleton className="h-8 w-48 max-w-full" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
       </div>
     )
   }
@@ -440,16 +458,18 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <MobileCallBackButton onBack={onBack} />
+
       {/* Call Header */}
-      <div className="flex items-start gap-4 border-b bg-card/50 px-6 py-4 shrink-0">
-        <Avatar className="size-12">
+      <div className="flex shrink-0 items-start gap-3 border-b bg-card/50 px-4 py-4 sm:gap-4 sm:px-6">
+        <Avatar className="size-11 sm:size-12">
           <AvatarFallback className="text-sm font-bold bg-primary/10 text-primary">
             {label === 'Unknown Caller' ? '?' : label.slice(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold">{label}</h2>
+            <h2 className="min-w-0 max-w-full truncate text-sm font-semibold">{label}</h2>
             <span className={cn(
               'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
               cfg.color
@@ -497,7 +517,7 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
 
       {/* Body */}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-4 p-6">
+        <div className="flex flex-col gap-4 p-3 sm:p-6">
           {/* Summary */}
           {call.summary && (
             <div className="rounded-xl border bg-card p-4">
@@ -570,9 +590,9 @@ export function CallDetailPanel({ callId, orgId: _orgId }: CallDetailProps) {
                 { label: 'Started',        value: call.started_at ? format(new Date(call.started_at as string), 'PPpp') : null },
                 { label: 'Ended',          value: call.ended_at ? format(new Date(call.ended_at as string), 'PPpp') : null },
               ].filter(r => r.value).map(row => (
-                <div key={row.label} className="flex items-start justify-between gap-4 text-xs">
-                  <span className="text-muted-foreground shrink-0">{row.label}</span>
-                  <span className="text-foreground font-mono text-right break-all">{row.value as string}</span>
+                <div key={row.label} className="grid gap-1 text-xs sm:grid-cols-[140px_1fr] sm:gap-4">
+                  <span className="shrink-0 text-muted-foreground">{row.label}</span>
+                  <span className="break-all font-mono text-foreground sm:text-right">{row.value as string}</span>
                 </div>
               ))}
             </div>

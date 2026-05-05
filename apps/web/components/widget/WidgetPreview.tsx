@@ -135,14 +135,14 @@ export function WidgetPreview({ config }: Props) {
   }, [])
 
   const launcherStyle: CSSProperties = config.position === 'bottom-left'
-    ? { bottom: 20, left: 20 }
-    : { bottom: 20, right: 20 }
+    ? { bottom: 16, left: 16 }
+    : { bottom: 16, right: 16 }
   const panelStyle: CSSProperties = config.position === 'bottom-left'
-    ? { bottom: 84, left: 20 }
-    : { bottom: 84, right: 20 }
+    ? { bottom: 78, left: 16 }
+    : { bottom: 78, right: 16 }
 
   return (
-    <div className="relative h-[520px] w-full overflow-hidden rounded-xl border border-border bg-slate-50 dark:bg-zinc-950">
+    <div className="relative h-full min-h-0 w-full overflow-hidden rounded-xl border border-border bg-slate-50 dark:bg-zinc-950">
       <div className="pointer-events-none absolute inset-0 select-none overflow-hidden">
         <div
           className="absolute inset-0 opacity-80"
@@ -185,8 +185,8 @@ export function WidgetPreview({ config }: Props) {
           className="absolute z-40 flex flex-col overflow-hidden border"
           style={{
             ...panelStyle,
-            width: widgetWidth,
-            height: widgetHeight,
+            width: `min(${widgetWidth}px, calc(100% - 32px))`,
+            height: `min(${widgetHeight}px, calc(100% - 106px))`,
             borderRadius,
             background: activeTheme.surfaceColor,
             borderColor: activeTheme.borderColor,
