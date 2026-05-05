@@ -45,6 +45,10 @@ import {
 import { CreateKBDialog } from './CreateKBDialog'
 import { AddSourceDialog } from './AddSourceDialog'
 import { LaunchErrorState, LaunchInlineError } from '@/components/launch/LaunchState'
+import {
+  KnowledgeAIImprovementsPanel,
+  type AiImprovementDraft,
+} from './KnowledgeAIImprovementsPanel'
 
 // Source type helpers
 
@@ -587,11 +591,13 @@ interface Props {
 export function KnowledgeBasePage({ orgId }: Props) {
   const { kbs, isLoading, error, createKB, deleteKB, ingestUrl, ingestFile, ingestText } = useKnowledgeBases(orgId)
   const [selectedKBId, setSelectedKBId] = useState<string | null>(null)
+  const [activePanel, setActivePanel] = useState<'sources' | 'improvements'>('sources')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [addSourceDialogOpen, setAddSourceDialogOpen] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [sourcesKey, setSourcesKey] = useState(0) // forces KBDetail remount on source add
+  const [aiDraft, setAiDraft] = useState<AiImprovementDraft | null>(null)
 
   const selectedKB = kbs.find(kb => kb.id === selectedKBId) ?? null
 
@@ -617,7 +623,20 @@ export function KnowledgeBasePage({ orgId }: Props) {
 
   const handleSourceSuccess = useCallback(() => {
     setSourcesKey(k => k + 1)
+    setAiDraft(null)
   }, [])
+
+  const handleDraftAiNote = useCallback((draft: AiImprovementDraft) => {
+    if (!selectedKB) {
+      toast.warning('Select a knowledge base first', {
+        description: 'Choose where this AI improvement note should be saved.',
+      })
+      return
+    }
+
+    setAiDraft(draft)
+    setAddSourceDialogOpen(true)
+  }, [selectedKB])
 
   return (
     <div className="flex h-[calc(100svh-6rem)] max-h-[calc(100svh-6rem)] min-h-0 flex-1 flex-col gap-0 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
@@ -632,10 +651,38 @@ export function KnowledgeBasePage({ orgId }: Props) {
             Manage knowledge sources that power your AI assistant
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5 shrink-0">
-          <PlusIcon className="size-3.5" />
-          New Knowledge Base
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex rounded-xl border bg-muted/30 p-1">
+            <button
+              type="button"
+              onClick={() => setActivePanel('sources')}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                activePanel === 'sources'
+                  ? 'bg-background text-foreground ring-1 ring-border'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Sources
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePanel('improvements')}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                activePanel === 'improvements'
+                  ? 'bg-background text-foreground ring-1 ring-border'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              AI Improvements
+            </button>
+          </div>
+          <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5">
+            <PlusIcon className="size-3.5" />
+            New Knowledge Base
+          </Button>
+        </div>
       </div>
 
       {error && !isLoading && (
@@ -723,7 +770,12 @@ export function KnowledgeBasePage({ orgId }: Props) {
 
         {/* Right: Detail Panel */}
         <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
-          {selectedKB ? (
+          {activePanel === 'improvements' ? (
+            <KnowledgeAIImprovementsPanel
+              selectedKb={selectedKB}
+              onDraftNote={handleDraftAiNote}
+            />
+          ) : selectedKB ? (
             <KBDetailPanel
               key={`${selectedKB.id}-${sourcesKey}`}
               kb={selectedKB}
@@ -747,7 +799,10 @@ export function KnowledgeBasePage({ orgId }: Props) {
         <AddSourceDialog
           key={selectedKB.id}
           open={addSourceDialogOpen}
-          onOpenChange={setAddSourceDialogOpen}
+          onOpenChange={(open) => {
+            setAddSourceDialogOpen(open)
+            if (!open) setAiDraft(null)
+          }}
           kbId={selectedKB.id}
           orgId={orgId}
           kbName={selectedKB.name}
@@ -767,6 +822,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
               error: result?.error,
             }
           }}
+          initialTextDraft={aiDraft}
           onSuccess={handleSourceSuccess}
         />
       )}

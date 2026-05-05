@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -44,6 +44,10 @@ interface Props {
     content: string
     title?: string
   }) => Promise<{ chunksStored: number; success?: boolean; error?: string }>
+  initialTextDraft?: {
+    title: string
+    content: string
+  } | null
   onSuccess: () => void
 }
 
@@ -86,7 +90,7 @@ function normalizeUrlForCompare(url: string) {
 }
 
 export function AddSourceDialog({
-  open, onOpenChange, kbId, orgId, kbName, onIngestUrl, onIngestFile, onIngestText, onSuccess,
+  open, onOpenChange, kbId, orgId, kbName, onIngestUrl, onIngestFile, onIngestText, initialTextDraft, onSuccess,
 }: Props) {
   const [tab, setTab] = useState<'url' | 'file' | 'text'>('url')
 
@@ -110,6 +114,15 @@ export function AddSourceDialog({
     { kbId },
     { enabled: open && !!kbId, staleTime: 10_000 }
   )
+
+  useEffect(() => {
+    if (!open || !initialTextDraft) return
+    setTab('text')
+    setTextTitle(initialTextDraft.title)
+    setTextContent(initialTextDraft.content)
+    setTextStatus('idle')
+    setTextError('')
+  }, [initialTextDraft, open])
 
   const normalizedExistingUrls = new Set(
     existingSources
