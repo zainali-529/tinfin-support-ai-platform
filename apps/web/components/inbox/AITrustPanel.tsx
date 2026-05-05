@@ -138,7 +138,7 @@ export function AITrustPanel({
   const confidence = readNumber(metadata.confidence)
   const type = answerType(metadata)
 
-  if (type === 'casual') return null
+  if (type === 'casual' || type === 'action_clarification') return null
 
   const hasTrustMetadata =
     confidence !== null ||

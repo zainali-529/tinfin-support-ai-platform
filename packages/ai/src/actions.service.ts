@@ -78,6 +78,7 @@ export interface QueryWithActionsParams {
 export type QueryWithActionsType =
   | 'answer'
   | 'action'
+  | 'action_clarification'
   | 'action_confirmation'
   | 'action_pending_approval'
   | 'handoff'
@@ -147,10 +148,21 @@ interface ActionOrgContext {
 }
 
 const TOOL_NAME_SEARCH_KB = 'searchKnowledgeBase'
+const TOOL_NAME_ASK_ACTION_DETAILS = 'askActionDetails'
 const TOOL_NAME_REQUEST_HUMAN = 'requestHumanAgent'
 const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_TIMEOUT_SECONDS = 10
 const ACTIONS_ENABLED_PLANS = new Set(['pro', 'scale'])
+
+interface ActionIntentPlan {
+  actionName: string | null
+  confidence: number
+  parameters: Record<string, unknown>
+  missingRequiredParameters: string[]
+  clarifyingQuestion: string | null
+  reason: string | null
+  tokensUsed?: number
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -190,6 +202,57 @@ function findCaseInsensitiveKey(
   }
 
   return match
+}
+
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+
+  return trimmed
+}
+
+function isValidHeaderName(value: string): boolean {
+  return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(value)
+}
+
+function normalizeHeaderTemplateRecord(
+  value: unknown
+): Record<string, string> {
+  const input = asRecord(value)
+  const headers: Record<string, string> = {}
+
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    const keyWithPossibleValue = stripWrappingQuotes(rawKey)
+    let headerName = keyWithPossibleValue
+    let headerValue =
+      typeof rawValue === 'string'
+        ? rawValue.trim()
+        : rawValue === null || rawValue === undefined
+          ? ''
+          : String(rawValue).trim()
+
+    const colonIndex = keyWithPossibleValue.indexOf(':')
+    if (colonIndex > 0) {
+      headerName = keyWithPossibleValue.slice(0, colonIndex).trim()
+      if (!headerValue) {
+        headerValue = keyWithPossibleValue.slice(colonIndex + 1).trim()
+      }
+    }
+
+    headerName = stripWrappingQuotes(headerName)
+    headerValue = stripWrappingQuotes(headerValue).replace(/[\r\n]+/g, ' ')
+
+    if (!headerName || !isValidHeaderName(headerName)) continue
+
+    headers[headerName] = headerValue
+  }
+
+  return headers
 }
 
 function getPathValue(input: unknown, path: string | null): unknown {
@@ -352,6 +415,20 @@ function getExecutionStatus(
   return 'failed'
 }
 
+function buildParameterSummary(parameter: ActionParameter): string {
+  const parts = [
+    parameter.required ? 'required' : 'optional',
+    parameter.type,
+    parameter.description ? `description="${parameter.description}"` : null,
+    parameter.extractionHint ? `extraction_hint="${parameter.extractionHint}"` : null,
+    parameter.enumValues && parameter.enumValues.length > 0
+      ? `allowed=${parameter.enumValues.join('|')}`
+      : null,
+  ].filter(Boolean)
+
+  return `${parameter.name} (${parts.join(', ')})`
+}
+
 function buildActionSummary(actions: ActionConfig[]): string {
   if (actions.length === 0) {
     return 'No custom actions are configured for this organization.'
@@ -365,8 +442,11 @@ function buildActionSummary(actions: ActionConfig[]): string {
       ]
         .filter(Boolean)
         .join(', ')
+      const params = action.parameters.length > 0
+        ? ` parameters: ${action.parameters.map(buildParameterSummary).join('; ')}`
+        : ' parameters: none'
 
-      return `- ${action.name}: ${action.description}${flags ? ` (${flags})` : ''}`
+      return `- ${action.name}: ${action.displayName}. ${action.description}.${params}${flags ? ` (${flags})` : ''}`
     })
     .join('\n')
 }
@@ -536,7 +616,7 @@ async function fetchActionById(actionId: string): Promise<ActionConfig | null> {
     description: actionRow.description as string,
     method: actionRow.method as string,
     urlTemplate: actionRow.url_template as string,
-    headersTemplate: asRecord(actionRow.headers_template) as Record<string, string>,
+    headersTemplate: normalizeHeaderTemplateRecord(actionRow.headers_template),
     bodyTemplate: asString(actionRow.body_template),
     responseTemplate: asString(actionRow.response_template),
     responsePath: asString(actionRow.response_path),
@@ -612,7 +692,7 @@ export async function getOrgActions(orgId: string): Promise<ActionConfig[]> {
     description: row.description as string,
     method: row.method as string,
     urlTemplate: row.url_template as string,
-    headersTemplate: asRecord(row.headers_template) as Record<string, string>,
+    headersTemplate: normalizeHeaderTemplateRecord(row.headers_template),
     bodyTemplate: asString(row.body_template),
     responseTemplate: asString(row.response_template),
     responsePath: asString(row.response_path),
@@ -657,8 +737,36 @@ export function buildOpenAITools(
     {
       type: 'function',
       function: {
+        name: TOOL_NAME_ASK_ACTION_DETAILS,
+        description:
+          'Use this when the customer is asking for a configured action but required details are missing and cannot be inferred from the recent conversation.',
+        parameters: {
+          type: 'object',
+          properties: {
+            actionName: {
+              type: 'string',
+              description: 'The configured action name the customer is trying to use.',
+            },
+            missingParameters: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Required parameter names that are still missing.',
+            },
+            question: {
+              type: 'string',
+              description: 'A concise, natural follow-up question for the customer.',
+            },
+          },
+          required: ['actionName', 'missingParameters', 'question'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: TOOL_NAME_REQUEST_HUMAN,
-        description: 'Use this when the customer needs a human agent handoff.',
+        description:
+          'Use this only when the customer explicitly asks for a human agent or no configured action/knowledge flow can reasonably help.',
         parameters: {
           type: 'object',
           properties: {
@@ -750,7 +858,7 @@ export async function executeAction(
 
     const headers = Object.fromEntries(
       await Promise.all(
-        Object.entries(action.headersTemplate ?? {}).map(async ([key, value]) => [
+        Object.entries(normalizeHeaderTemplateRecord(action.headersTemplate)).map(async ([key, value]) => [
           key,
           await resolveTemplate(String(value), parameters, action.secrets),
         ])
@@ -914,13 +1022,13 @@ async function executeAndLogAction(input: {
       status: 'pending_confirmation',
     })
 
-    const summary = Object.keys(parameters).length
-      ? JSON.stringify(parameters)
-      : 'the provided details'
+    const summary = formatActionParameterSummary(parameters)
 
     return {
       resultType: 'action_confirmation',
-      resultText: `I can ${action.displayName} using ${summary}. Should I proceed?`,
+      resultText: summary
+        ? `I can ${action.displayName} with ${summary}. Should I proceed?`
+        : `I can ${action.displayName}. Should I proceed?`,
       actionLog: {
         logId,
         actionName: action.name,
@@ -1023,6 +1131,490 @@ async function getActionOrgContext(orgId: string): Promise<ActionOrgContext> {
   }
 }
 
+const ACTION_PLANNING_STOPWORDS = new Set([
+  'about',
+  'action',
+  'actions',
+  'and',
+  'api',
+  'can',
+  'could',
+  'customer',
+  'details',
+  'for',
+  'from',
+  'help',
+  'into',
+  'please',
+  'request',
+  'status',
+  'that',
+  'the',
+  'this',
+  'with',
+  'your',
+])
+
+function normalizePlanningText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractPlanningKeywords(value: string): string[] {
+  return normalizePlanningText(value)
+    .split(' ')
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 4 && !ACTION_PLANNING_STOPWORDS.has(word))
+}
+
+function couldNeedActionPlanning(
+  query: string,
+  actions: ActionConfig[]
+): boolean {
+  if (actions.length === 0 || isCasualInput(query)) return false
+
+  const normalizedQuery = normalizePlanningText(query)
+  if (!normalizedQuery) return false
+
+  const operationalPattern =
+    /\b(check|lookup|look up|find|track|status|cancel|update|change|create|book|schedule|send|refund|return|order|appointment|reservation|ticket|invoice|payment|subscription|account|profile|customer|delivery|shipping|tracking)\b/i
+
+  if (operationalPattern.test(query)) return true
+
+  const actionKeywords = new Set<string>()
+  for (const action of actions) {
+    for (const keyword of extractPlanningKeywords(
+      [
+        action.name,
+        action.displayName,
+        action.description,
+        action.category,
+        ...action.parameters.map((parameter) => `${parameter.name} ${parameter.description} ${parameter.extractionHint ?? ''}`),
+      ].join(' ')
+    )) {
+      actionKeywords.add(keyword)
+    }
+  }
+
+  return [...actionKeywords].some((keyword) => normalizedQuery.includes(keyword))
+}
+
+function actionPlanningHistory(
+  history?: Array<{ role: string; content: string }>
+): string {
+  if (!history || history.length === 0) return '(no previous messages)'
+
+  return history
+    .slice(-8)
+    .map((message) => {
+      const role = message.role === 'assistant' || message.role === 'user'
+        ? message.role
+        : 'user'
+      const content = message.content.trim().replace(/\s+/g, ' ').slice(0, 700)
+      return `${role}: ${content}`
+    })
+    .join('\n')
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => asString(item))
+      .filter((item): item is string => Boolean(item))
+  }
+
+  const single = asString(value)
+  if (!single) return []
+
+  return single
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function parseActionPlanJson(value: string): Record<string, unknown> {
+  try {
+    return asRecord(JSON.parse(value) as unknown)
+  } catch {
+    return {}
+  }
+}
+
+function normalizeConfidence(value: unknown): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0
+  return Math.max(0, Math.min(1, value))
+}
+
+function normalizeActionParameterValue(
+  parameter: ActionParameter,
+  value: unknown
+): { value: unknown; valid: boolean; missing: boolean } {
+  if (value === null || value === undefined) {
+    return { value: undefined, valid: true, missing: true }
+  }
+
+  if (typeof value === 'string' && value.trim().length === 0) {
+    return { value: undefined, valid: true, missing: true }
+  }
+
+  if (parameter.type === 'number') {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return { value, valid: true, missing: false }
+    }
+
+    if (typeof value === 'string') {
+      const numeric = Number(value.trim())
+      return Number.isFinite(numeric)
+        ? { value: numeric, valid: true, missing: false }
+        : { value, valid: false, missing: false }
+    }
+
+    return { value, valid: false, missing: false }
+  }
+
+  if (parameter.type === 'boolean') {
+    if (typeof value === 'boolean') {
+      return { value, valid: true, missing: false }
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (['true', 'yes', 'y', '1'].includes(normalized)) {
+        return { value: true, valid: true, missing: false }
+      }
+      if (['false', 'no', 'n', '0'].includes(normalized)) {
+        return { value: false, valid: true, missing: false }
+      }
+    }
+
+    return { value, valid: false, missing: false }
+  }
+
+  if (parameter.type === 'enum') {
+    const stringValue = String(value).trim()
+    if (!parameter.enumValues || parameter.enumValues.length === 0) {
+      return { value: stringValue, valid: true, missing: false }
+    }
+
+    const match = parameter.enumValues.find(
+      (candidate) => candidate.toLowerCase() === stringValue.toLowerCase()
+    )
+
+    return match
+      ? { value: match, valid: true, missing: false }
+      : { value: stringValue, valid: false, missing: false }
+  }
+
+  return { value: String(value).trim(), valid: true, missing: false }
+}
+
+function validateActionParameters(
+  action: ActionConfig,
+  rawParameters: Record<string, unknown>
+): {
+  parameters: Record<string, unknown>
+  missing: string[]
+  invalid: string[]
+} {
+  const parameters: Record<string, unknown> = { ...rawParameters }
+  const missing: string[] = []
+  const invalid: string[] = []
+
+  for (const parameter of action.parameters) {
+    const rawKey = Object.prototype.hasOwnProperty.call(rawParameters, parameter.name)
+      ? parameter.name
+      : findCaseInsensitiveKey(rawParameters, parameter.name)
+    const normalized = normalizeActionParameterValue(
+      parameter,
+      rawKey ? rawParameters[rawKey] : undefined
+    )
+
+    if (normalized.missing) {
+      if (parameter.required) missing.push(parameter.name)
+      delete parameters[parameter.name]
+      continue
+    }
+
+    if (!normalized.valid) {
+      invalid.push(parameter.name)
+      continue
+    }
+
+    parameters[parameter.name] = normalized.value
+  }
+
+  return {
+    parameters,
+    missing: [...new Set(missing)],
+    invalid: [...new Set(invalid)],
+  }
+}
+
+function normalizeParameterEvidenceText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s@.]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function conversationEvidenceText(
+  query: string,
+  history?: Array<{ role: string; content: string }>
+): string {
+  const parts = [
+    ...(history ?? []).slice(-8).map((entry) => entry.content),
+    query,
+  ]
+
+  return normalizeParameterEvidenceText(parts.join('\n'))
+}
+
+function parameterValueHasEvidence(value: unknown, evidenceText: string): boolean {
+  if (value === null || value === undefined) return false
+
+  const rawValue = String(value).trim()
+  if (!rawValue) return false
+
+  const normalizedValue = normalizeParameterEvidenceText(rawValue)
+  if (!normalizedValue) return false
+
+  if (evidenceText.includes(normalizedValue)) return true
+
+  const compactNeedle = normalizedValue.replace(/\s+/g, '')
+  const compactHaystack = evidenceText.replace(/\s+/g, '')
+  return compactNeedle.length >= 4 && compactHaystack.includes(compactNeedle)
+}
+
+function findUngroundedRequiredParameters(input: {
+  action: ActionConfig
+  parameters: Record<string, unknown>
+  query: string
+  conversationHistory?: Array<{ role: string; content: string }>
+}): string[] {
+  const evidenceText = conversationEvidenceText(
+    input.query,
+    input.conversationHistory
+  )
+  const ungrounded: string[] = []
+
+  for (const parameter of input.action.parameters) {
+    if (!parameter.required || parameter.type === 'boolean') continue
+
+    const value = input.parameters[parameter.name]
+    if (!parameterValueHasEvidence(value, evidenceText)) {
+      ungrounded.push(parameter.name)
+    }
+  }
+
+  return ungrounded
+}
+
+function friendlyParameterName(parameterName: string): string {
+  return parameterName
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+}
+
+function formatActionParameterSummary(parameters: Record<string, unknown>): string {
+  const entries = Object.entries(parameters)
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim().length > 0)
+    .slice(0, 6)
+
+  if (entries.length === 0) return ''
+
+  return entries
+    .map(([key, value]) => `${friendlyParameterName(key)}: ${String(value)}`)
+    .join(', ')
+}
+
+function buildActionClarificationMessage(
+  action: ActionConfig,
+  missingParameters: string[],
+  plannerQuestion?: string | null
+): string {
+  const question = plannerQuestion?.trim()
+  if (question) return question
+
+  const missingText = missingParameters
+    .map(friendlyParameterName)
+    .join(missingParameters.length === 2 ? ' and ' : ', ')
+
+  return `I can help with ${action.displayName}. Could you share ${missingText || 'the required details'} so I can continue?`
+}
+
+async function inferActionIntentPlan(input: {
+  client: OpenAI
+  actions: ActionConfig[]
+  query: string
+  conversationHistory?: Array<{ role: string; content: string }>
+}): Promise<ActionIntentPlan | null> {
+  const { actions, client, query, conversationHistory } = input
+  if (!couldNeedActionPlanning(query, actions)) return null
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: DEFAULT_MODEL,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You are an action intent router for a customer support AI.
+
+Return one JSON object only.
+
+Available configured actions:
+${buildActionSummary(actions)}
+
+Routing rules:
+- Select an action only when the customer is asking to perform, check, retrieve, update, cancel, create, book, send, or manage something that matches a configured action.
+- Do not select an action for general company questions, policies, educational questions, or casual chat.
+- Reuse unambiguous identifiers and details from recent conversation history for follow-up requests like "this order", "that booking", or "cancel it".
+- Never invent identifiers, amounts, dates, emails, or other parameter values.
+- If a matching action exists but a required parameter is missing and cannot be inferred, return that action with missingRequiredParameters and a natural clarifyingQuestion.
+- If required parameters are available, return them in parameters exactly using the configured parameter names.
+
+JSON schema:
+{
+  "actionName": "configured_action_name or null",
+  "confidence": 0.0,
+  "parameters": {},
+  "missingRequiredParameters": [],
+  "clarifyingQuestion": "string or null",
+  "reason": "short internal reason"
+}`,
+        },
+        {
+          role: 'user',
+          content: `Recent conversation:
+${actionPlanningHistory(conversationHistory)}
+
+Current customer message:
+${query}`,
+        },
+      ],
+      max_tokens: 500,
+      temperature: 0,
+    })
+
+    const raw = completion.choices[0]?.message?.content ?? '{}'
+    const parsed = parseActionPlanJson(raw)
+    const plan: ActionIntentPlan = {
+      actionName: asString(parsed.actionName),
+      confidence: normalizeConfidence(parsed.confidence),
+      parameters: asRecord(parsed.parameters),
+      missingRequiredParameters: parseStringArray(parsed.missingRequiredParameters),
+      clarifyingQuestion: asString(parsed.clarifyingQuestion),
+      reason: asString(parsed.reason),
+      tokensUsed: completion.usage?.total_tokens ?? 0,
+    }
+
+    if (!plan.actionName) return null
+    return plan
+  } catch (error) {
+    console.warn(
+      '[actions] action intent planner failed:',
+      error instanceof Error ? error.message : error
+    )
+    return null
+  }
+}
+
+async function executePlannedAction(input: {
+  action: ActionConfig
+  parameters: Record<string, unknown>
+  orgId: string
+  conversationId?: string
+  contactId?: string
+  tokensUsed?: number
+}): Promise<QueryWithActionsResult> {
+  const outcome = await executeAndLogAction({
+    action: input.action,
+    parameters: input.parameters,
+    orgId: input.orgId,
+    conversationId: input.conversationId,
+    contactId: input.contactId,
+  })
+
+  return {
+    type: outcome.resultType,
+    message: outcome.resultText,
+    confidence: 0.9,
+    sources: [],
+    actionLog: outcome.actionLog,
+    tokensUsed: input.tokensUsed ?? 0,
+  }
+}
+
+async function maybeResolveActionBeforeRag(input: {
+  client: OpenAI
+  actions: ActionConfig[]
+  query: string
+  orgId: string
+  conversationId?: string
+  contactId?: string
+  conversationHistory?: Array<{ role: string; content: string }>
+}): Promise<QueryWithActionsResult | null> {
+  const plan = await inferActionIntentPlan({
+    client: input.client,
+    actions: input.actions,
+    query: input.query,
+    conversationHistory: input.conversationHistory,
+  })
+
+  if (!plan || plan.confidence < 0.55) return null
+
+  const action = input.actions.find(
+    (candidate) => candidate.name.toLowerCase() === plan.actionName?.toLowerCase()
+  )
+  if (!action) return null
+
+  const validation = validateActionParameters(action, plan.parameters)
+  const ungrounded = findUngroundedRequiredParameters({
+    action,
+    parameters: validation.parameters,
+    query: input.query,
+    conversationHistory: input.conversationHistory,
+  })
+  const missingOrInvalid = [
+    ...validation.missing,
+    ...validation.invalid,
+    ...plan.missingRequiredParameters,
+    ...ungrounded,
+  ].filter((value, index, values) => values.indexOf(value) === index)
+
+  if (missingOrInvalid.length > 0) {
+    return {
+      type: 'action_clarification',
+      message: buildActionClarificationMessage(
+        action,
+        missingOrInvalid,
+        plan.clarifyingQuestion
+      ),
+      confidence: Math.max(0.6, Math.min(plan.confidence, 0.9)),
+      sources: [],
+      tokensUsed: plan.tokensUsed ?? 0,
+    }
+  }
+
+  if (plan.confidence < 0.65) return null
+
+  return executePlannedAction({
+    action,
+    parameters: validation.parameters,
+    orgId: input.orgId,
+    conversationId: input.conversationId,
+    contactId: input.contactId,
+    tokensUsed: plan.tokensUsed,
+  })
+}
+
 function buildSystemPrompt(
   actions: ActionConfig[],
   orgDisplayName: string | null,
@@ -1047,7 +1639,7 @@ ${actionSummary}
 2. Use actions for operational requests only when the relevant action is configured.
 3. If an action needs confirmation or approval, ask clearly before execution and do not bypass the safety gate.
 4. After action execution, report the result clearly.
-5. If you cannot help, use requestHumanAgent.
+5. Before using requestHumanAgent, check whether a configured action can help. If an action matches but required details are missing, use askActionDetails instead of handoff.
 6. Never fabricate data. Use tools for real information.
 7. Respond in English by default.
 8. Put the direct answer first. Use bullets only when they make the answer easier to scan.
@@ -1055,7 +1647,9 @@ ${actionSummary}
 10. Never send a long answer as one giant paragraph. Do not wrap step titles or code fences in quotation marks.
 11. When the customer asks "who are you", "what can you do", "how can you help", or "what do you do" without explicitly asking about the company/services/products, answer as the AI support assistant for the current organization. Do not turn that into a company service catalog.
 12. When the customer asks about "your company", "your services", "your products", company overview, pricing, policies, or factual business details, use searchKnowledgeBase first. Do not ask "which company?" unless they clearly mean an unrelated third-party company.
-13. For factual questions, use searchKnowledgeBase before answering. If no verified answer is available, do not answer from general model knowledge.`
+13. For factual questions, use searchKnowledgeBase before answering. If no verified answer is available, do not answer from general model knowledge.
+14. Reuse clear identifiers and details from recent conversation for follow-up actions like "cancel this", "check it", or "send that again". Do not ask again when the detail is unambiguous.
+15. Do not route operational action requests to a human agent just because a parameter is missing; ask one concise follow-up question for the missing detail.`
 }
 
 function isCasualInput(query: string): boolean {
@@ -1123,6 +1717,15 @@ export async function queryWithActions(
   const client = createOpenAIClient(params.openaiApiKey)
   const channel = normalizeAiResponseChannel(params.channel)
   const { displayName: orgDisplayName, channelBehavior } = await getActionOrgContext(params.orgId)
+  const trimmedQuery = params.query.trim()
+  const conversationHistory = (params.conversationHistory ?? []).filter((entry, index, history) => {
+    const isLast = index === history.length - 1
+    return !(
+      isLast &&
+      entry.role === 'user' &&
+      entry.content.trim() === trimmedQuery
+    )
+  })
 
   async function finish(
     result: QueryWithActionsResult
@@ -1130,15 +1733,28 @@ export async function queryWithActions(
     return result
   }
 
+  const plannedActionResult = await maybeResolveActionBeforeRag({
+    client,
+    actions,
+    query: trimmedQuery,
+    orgId: params.orgId,
+    conversationId: params.conversationId,
+    contactId: params.contactId,
+    conversationHistory,
+  })
+  if (plannedActionResult) {
+    return finish(plannedActionResult)
+  }
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
       content: buildSystemPrompt(actions, orgDisplayName, channel, channelBehavior),
     },
-    ...toConversationHistoryMessages(params.conversationHistory),
+    ...toConversationHistoryMessages(conversationHistory),
     {
       role: 'user',
-      content: params.query,
+      content: trimmedQuery,
     },
   ]
 
@@ -1210,6 +1826,25 @@ export async function queryWithActions(
       })
     }
 
+    if (call.name === TOOL_NAME_ASK_ACTION_DETAILS) {
+      const requestedActionName = asString(call.args.actionName)
+      const action = actions.find(
+        (candidate) => candidate.name.toLowerCase() === requestedActionName?.toLowerCase()
+      )
+      const missingParameters = parseStringArray(call.args.missingParameters)
+      const question = asString(call.args.question)
+
+      return finish({
+        type: 'action_clarification',
+        message: action
+          ? buildActionClarificationMessage(action, missingParameters, question)
+          : question || "I can help with that. Could you share the required details so I can continue?",
+        confidence: 0.8,
+        sources: [],
+        tokensUsed: totalTokens,
+      })
+    }
+
     if (call.name === TOOL_NAME_SEARCH_KB) {
       const kbQuery = asString(call.args.query) ?? params.query
       const ragResult = await queryRAG({
@@ -1258,8 +1893,30 @@ export async function queryWithActions(
       continue
     }
 
+    const validation = validateActionParameters(action, call.args)
+    const ungrounded = findUngroundedRequiredParameters({
+      action,
+      parameters: validation.parameters,
+      query: trimmedQuery,
+      conversationHistory,
+    })
+    const missingOrInvalid = [
+      ...validation.missing,
+      ...validation.invalid,
+      ...ungrounded,
+    ].filter((value, index, values) => values.indexOf(value) === index)
+    if (missingOrInvalid.length > 0) {
+      return finish({
+        type: 'action_clarification',
+        message: buildActionClarificationMessage(action, missingOrInvalid),
+        confidence: 0.8,
+        sources,
+        tokensUsed: totalTokens,
+      })
+    }
+
     if (params.simulateActions) {
-      const safeArgs = JSON.stringify(call.args ?? {})
+      const safeArgs = JSON.stringify(validation.parameters ?? {})
       executedCustomAction = true
       latestActionLog = {
         logId: `simulated_${call.id}`,
@@ -1276,7 +1933,7 @@ export async function queryWithActions(
 
     const outcome = await executeAndLogAction({
       action,
-      parameters: call.args,
+      parameters: validation.parameters,
       orgId: params.orgId,
       conversationId: params.conversationId,
       contactId: params.contactId,
@@ -1443,6 +2100,24 @@ export async function handleConfirmedAction(
   }
 
   const parameters = asRecord(logRow.parameters_used)
+  if (action.humanApprovalRequired) {
+    await updateActionLog(logId, {
+      status: 'pending_approval',
+      approved_at: null,
+      approved_by: null,
+      completed_at: null,
+    })
+
+    await createPendingApproval(
+      logId,
+      asString(logRow.conversation_id) ?? undefined,
+      action.displayName,
+      parameters
+    )
+
+    return "I've requested agent approval for this action. You'll be notified once it is approved."
+  }
+
   const execution = await executeAction(action, parameters)
 
   const responseText = execution.success

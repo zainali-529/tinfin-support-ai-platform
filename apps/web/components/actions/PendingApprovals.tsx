@@ -1,10 +1,11 @@
 'use client'
 
+import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { Card, CardContent, CardHeader, CardTitle } from '@workspace/ui/components/card'
 import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
-import { ClockIcon, ShieldAlertIcon } from 'lucide-react'
+import { ArrowUpRightIcon, ClockIcon, ShieldAlertIcon } from 'lucide-react'
 
 export interface PendingApprovalItem {
   id: string
@@ -30,6 +31,11 @@ interface PendingApprovalsProps {
 function formatRelative(value: string | null): string {
   if (!value) return 'Unknown'
   return formatDistanceToNow(new Date(value), { addSuffix: true })
+}
+
+function isExpired(value: string | null): boolean {
+  if (!value) return false
+  return new Date(value).getTime() < Date.now()
 }
 
 function formatParams(parameters: Record<string, unknown> | null): string {
@@ -72,17 +78,33 @@ export function PendingApprovals({
             const approving = approvingLogId === item.logId
             const rejecting = rejectingLogId === item.logId
             const busy = approving || rejecting
+            const expired = isExpired(item.expiresAt)
 
             return (
-              <div key={item.id} className="space-y-3 rounded-xl border bg-card p-3">
+              <div
+                key={item.id}
+                className="space-y-3 rounded-xl border bg-card p-3 transition-colors hover:border-amber-500/35"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">{item.actionName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Conversation: {item.conversationId ?? 'Not linked'}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold">{item.actionName}</p>
+                      <Badge variant={expired ? 'destructive' : 'secondary'}>
+                        {expired ? 'Expired' : 'Pending'}
+                      </Badge>
+                    </div>
+                    {item.conversationId ? (
+                      <Link
+                        href={`/inbox?conversation=${item.conversationId}`}
+                        className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Open conversation
+                        <ArrowUpRightIcon className="size-3" />
+                      </Link>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">Conversation not linked</p>
+                    )}
                   </div>
-                  <Badge variant="secondary">Pending</Badge>
                 </div>
 
                 <pre className="overflow-x-auto rounded-lg bg-muted/60 p-2 text-[11px] leading-relaxed">
@@ -101,7 +123,7 @@ export function PendingApprovals({
                   <Button
                     size="sm"
                     onClick={() => onApprove(item.logId)}
-                    disabled={busy || disabled}
+                    disabled={busy || disabled || expired}
                   >
                     {approving ? 'Approving...' : 'Approve & Execute'}
                   </Button>

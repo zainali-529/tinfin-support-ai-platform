@@ -39,6 +39,13 @@ export interface ActionStat {
   name: string
   displayName: string
   executions: number
+  success: number
+  failed: number
+  timeout: number
+  pending: number
+  retryCount: number
+  lastRunAt: string | null
+  lastStatus: string | null
   successRate: number
   avgDurationMs: number | null
 }
@@ -49,12 +56,21 @@ export interface ActionLogItem {
   conversation_id: string | null
   contact_id: string | null
   status: string
+  parameters_used?: Record<string, unknown> | null
+  request_payload?: unknown
+  response_raw?: unknown
   response_parsed: string | null
   error_message: string | null
+  failureReason?: string | null
+  retryable?: boolean
+  durationMs?: number | null
+  statusCode?: number | null
+  retry_count?: number | null
   created_at: string
   ai_actions?: {
     name?: string
     display_name?: string
+    method?: string
   } | null
 }
 
@@ -67,6 +83,12 @@ export interface PendingApproval {
   requestedAt: string
   expiresAt: string | null
   log?: Record<string, unknown>
+}
+
+export interface ActionOutboundAllowlist {
+  orgEntries: string[]
+  effectiveEntries: string[]
+  envManagedCount: number
 }
 
 export function useActions(options?: { enabled?: boolean }) {
@@ -94,12 +116,18 @@ export function useActions(options?: { enabled?: boolean }) {
     refetchInterval: 15_000,
   })
 
+  const outboundAllowlistQuery = trpc.actions.getOutboundAllowlist.useQuery(undefined, {
+    enabled,
+    staleTime: 30_000,
+  })
+
   const invalidate = async () => {
     await Promise.all([
       utils.actions.getActions.invalidate(),
       utils.actions.getActionStats.invalidate(),
       utils.actions.getActionLogs.invalidate(),
       utils.actions.getPendingApprovals.invalidate(),
+      utils.actions.getOutboundAllowlist.invalidate(),
     ])
   }
 
@@ -134,6 +162,17 @@ export function useActions(options?: { enabled?: boolean }) {
   })
 
   const testAction = trpc.actions.testAction.useMutation()
+  const previewActionExecution = trpc.actions.previewActionExecution.useMutation()
+  const retryActionLog = trpc.actions.retryActionLog.useMutation({
+    onSuccess: () => {
+      void invalidate()
+    },
+  })
+  const updateOutboundAllowlist = trpc.actions.updateOutboundAllowlist.useMutation({
+    onSuccess: () => {
+      void invalidate()
+    },
+  })
 
   const approveAction = trpc.actions.approveAction.useMutation({
     onSuccess: () => {
@@ -152,21 +191,30 @@ export function useActions(options?: { enabled?: boolean }) {
     actionStats: (statsQuery.data ?? []) as ActionStat[],
     actionLogs: (logsQuery.data?.items ?? []) as ActionLogItem[],
     pendingApprovals: (pendingApprovalsQuery.data ?? []) as PendingApproval[],
+    outboundAllowlist:
+      (outboundAllowlistQuery.data ?? {
+        orgEntries: [],
+        effectiveEntries: [],
+        envManagedCount: 0,
+      }) as ActionOutboundAllowlist,
     loading:
       actionsQuery.isLoading ||
       statsQuery.isLoading ||
       logsQuery.isLoading ||
-      pendingApprovalsQuery.isLoading,
+      pendingApprovalsQuery.isLoading ||
+      outboundAllowlistQuery.isLoading,
     isError:
       actionsQuery.isError ||
       statsQuery.isError ||
       logsQuery.isError ||
-      pendingApprovalsQuery.isError,
+      pendingApprovalsQuery.isError ||
+      outboundAllowlistQuery.isError,
     error:
       actionsQuery.error ??
       statsQuery.error ??
       logsQuery.error ??
       pendingApprovalsQuery.error ??
+      outboundAllowlistQuery.error ??
       null,
     createAction,
     updateAction,
@@ -174,6 +222,9 @@ export function useActions(options?: { enabled?: boolean }) {
     setActionSecret,
     deleteActionSecret,
     testAction,
+    previewActionExecution,
+    retryActionLog,
+    updateOutboundAllowlist,
     approveAction,
     rejectAction,
     refetch: invalidate,

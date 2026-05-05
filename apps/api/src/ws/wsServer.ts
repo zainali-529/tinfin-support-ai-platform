@@ -1105,8 +1105,6 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
             content: String((message as { content?: string }).content ?? ''),
           }))
 
-        conversationHistory.push({ role: 'user', content })
-
         const ragResult = await queryWithActions({
           query: content,
           orgId,
@@ -1273,7 +1271,7 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
         console.error('[ws] RAG error:', err)
         send(socket, { type: 'typing:stop', source: 'ai', conversationId })
         broadcastToAgents(orgId, { type: 'typing:stop', source: 'ai', conversationId })
-        const fallback = "I'm having a little trouble right now. If you'd like, I can connect you with a human agent. Reply **yes** or **ok** to connect."
+        const fallback = "I'm having a little trouble right now. If you'd like, I can connect you with a human agent who can help."
         const createdAt = new Date().toISOString()
         send(socket, { type: 'ai:response', content: fallback, conversationId, createdAt })
         broadcastToAgents(orgId, { type: 'ai:response', content: fallback, conversationId, createdAt })

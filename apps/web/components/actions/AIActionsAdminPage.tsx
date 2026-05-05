@@ -1,13 +1,29 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@workspace/ui/components/card'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import { Input } from '@workspace/ui/components/input'
+import { Label } from '@workspace/ui/components/label'
+import { Textarea } from '@workspace/ui/components/textarea'
 import { toast } from '@workspace/ui/components/sonner'
-import { Trash2Icon, PlusIcon, PencilIcon, FlaskConicalIcon, BotIcon, LockIcon } from 'lucide-react'
+import {
+  AlertTriangleIcon,
+  BarChart3Icon,
+  ClockIcon,
+  GlobeLockIcon,
+  KeyRoundIcon,
+  RotateCwIcon,
+  Trash2Icon,
+  PlusIcon,
+  PencilIcon,
+  FlaskConicalIcon,
+  BotIcon,
+  LockIcon,
+} from 'lucide-react'
 import { LaunchErrorState, LaunchInlineError } from '@/components/launch/LaunchState'
 import {
   ActionBuilder,
@@ -75,6 +91,351 @@ function statusTone(status: string): string {
   return 'bg-muted text-muted-foreground'
 }
 
+function prettyJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function formatMs(value: number | null | undefined): string {
+  if (typeof value !== 'number') return '--'
+  if (value < 1000) return `${value}ms`
+  return `${(value / 1000).toFixed(2)}s`
+}
+
+function readableStatus(status: string): string {
+  return status.replace(/_/g, ' ')
+}
+
+function failureReason(log: ActionLogItem): string | null {
+  return log.failureReason ?? log.error_message ?? null
+}
+
+function SecretRotationPanel({
+  action,
+  disabled,
+  saving,
+  deleting,
+  onSave,
+  onDelete,
+}: {
+  action: ActionConfig
+  disabled: boolean
+  saving: boolean
+  deleting: boolean
+  onSave: (input: { actionId: string; keyName: string; keyValue: string }) => Promise<void>
+  onDelete: (input: { actionId: string; keyName: string }) => Promise<void>
+}) {
+  const [keyName, setKeyName] = useState(action.secretKeys[0] ?? 'apiKey')
+  const [keyValue, setKeyValue] = useState('')
+
+  return (
+    <div className="rounded-xl border bg-muted/20 p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-1.5 text-xs font-semibold">
+            <KeyRoundIcon className="size-3.5 text-primary" />
+            Secrets
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Values are encrypted. Existing values are never displayed.
+          </p>
+        </div>
+        <Badge variant="outline">{action.secretKeys.length} key(s)</Badge>
+      </div>
+
+      {action.secretKeys.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {action.secretKeys.map((key) => (
+            <Badge key={key} variant="secondary" className="gap-1">
+              {key}
+              <button
+                type="button"
+                disabled={disabled || deleting}
+                onClick={() => void onDelete({ actionId: action.id, keyName: key })}
+                className="ml-1 rounded-sm text-muted-foreground hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
+                aria-label={`Delete ${key}`}
+              >
+                x
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      <div className="grid gap-2 md:grid-cols-[0.85fr_1fr_auto]">
+        <Input
+          value={keyName}
+          onChange={(event) => setKeyName(event.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+          placeholder="apiKey"
+          disabled={disabled}
+          className="h-8 text-xs"
+        />
+        <Input
+          value={keyValue}
+          onChange={(event) => setKeyValue(event.target.value)}
+          placeholder="Paste new secret value"
+          type="password"
+          disabled={disabled}
+          className="h-8 text-xs"
+        />
+        <Button
+          size="sm"
+          disabled={disabled || saving || !keyName.trim() || !keyValue.trim()}
+          onClick={async () => {
+            await onSave({ actionId: action.id, keyName, keyValue })
+            setKeyValue('')
+          }}
+          className="h-8"
+        >
+          {saving ? 'Saving...' : 'Rotate'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function OutboundAllowlistCard({
+  entries,
+  effectiveEntries,
+  envManagedCount,
+  disabled,
+  saving,
+  onSave,
+}: {
+  entries: string[]
+  effectiveEntries: string[]
+  envManagedCount: number
+  disabled: boolean
+  saving: boolean
+  onSave: (entries: string[]) => Promise<void>
+}) {
+  const [draft, setDraft] = useState(entries.join('\n'))
+
+  useEffect(() => {
+    setDraft(entries.join('\n'))
+  }, [entries])
+
+  const parsedEntries = draft
+    .split(/[\n,]+/g)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+
+  return (
+    <Card className="shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <GlobeLockIcon className="size-4 text-primary" />
+          Domain Allowlist
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs leading-5 text-muted-foreground">
+          Restrict outbound action requests to trusted domains. Use one host per line,
+          for example <span className="font-mono">api.yourapp.com</span> or{' '}
+          <span className="font-mono">*.stripe.com</span>.
+        </p>
+        <Textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          rows={5}
+          disabled={disabled}
+          placeholder="api.yourapp.com&#10;api.stripe.com"
+          className="font-mono text-xs"
+        />
+        <div className="flex flex-wrap gap-1.5">
+          {effectiveEntries.length === 0 ? (
+            <Badge variant="outline">No custom allowlist</Badge>
+          ) : (
+            effectiveEntries.slice(0, 8).map((entry) => (
+              <Badge key={entry} variant="outline">{entry}</Badge>
+            ))
+          )}
+          {envManagedCount > 0 && (
+            <Badge variant="secondary">{envManagedCount} env-managed</Badge>
+          )}
+        </div>
+        <Button
+          size="sm"
+          disabled={disabled || saving}
+          onClick={() => void onSave(parsedEntries)}
+          className="w-full"
+        >
+          {saving ? 'Saving...' : 'Save Allowlist'}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ActionUsageAnalytics({ stats }: { stats: ActionStat[] }) {
+  const totals = stats.reduce(
+    (acc, stat) => {
+      acc.executions += stat.executions ?? 0
+      acc.success += stat.success ?? 0
+      acc.failed += stat.failed ?? 0
+      acc.timeout += stat.timeout ?? 0
+      acc.pending += stat.pending ?? 0
+      acc.retryCount += stat.retryCount ?? 0
+      return acc
+    },
+    { executions: 0, success: 0, failed: 0, timeout: 0, pending: 0, retryCount: 0 }
+  )
+
+  return (
+    <Card className="shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BarChart3Icon className="size-4 text-primary" />
+          Usage Analytics
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            ['Success', totals.success],
+            ['Failed', totals.failed],
+            ['Timeout', totals.timeout],
+            ['Pending', totals.pending],
+            ['Retries', totals.retryCount],
+            ['Total', totals.executions],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border bg-muted/20 p-2">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+              <p className="mt-0.5 text-lg font-semibold tabular-nums">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {stats.slice(0, 5).map((stat) => (
+            <div key={stat.actionId} className="rounded-lg border px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-xs font-medium">{stat.displayName}</p>
+                <Badge variant="outline">{stat.successRate}%</Badge>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {stat.executions} runs · {formatMs(stat.avgDurationMs)} avg
+                {stat.lastRunAt ? ` · last ${formatDistanceToNow(new Date(stat.lastRunAt), { addSuffix: true })}` : ''}
+              </p>
+            </div>
+          ))}
+          {stats.length === 0 && (
+            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              No action usage yet.
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ExecutionLogsPanel({
+  logs,
+  retryingLogId,
+  disabled,
+  onRetry,
+}: {
+  logs: ActionLogItem[]
+  retryingLogId: string | null
+  disabled: boolean
+  onRetry: (logId: string) => Promise<void>
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  return (
+    <Card className="shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Execution Logs</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {logs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No execution logs yet.</p>
+        ) : (
+          logs.slice(0, 12).map((log) => {
+            const expanded = expandedId === log.id
+            const reason = failureReason(log)
+            const retrying = retryingLogId === log.id
+
+            return (
+              <div key={log.id} className="rounded-xl border bg-card p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {log.ai_actions?.display_name ?? log.ai_actions?.name ?? 'Action'}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <ClockIcon className="size-3" />
+                        {formatMs(log.durationMs)}
+                      </span>
+                      {log.statusCode && <span>HTTP {log.statusCode}</span>}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className={statusTone(log.status)}>{readableStatus(log.status)}</Badge>
+                    {log.retryable && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={disabled || retrying}
+                        onClick={() => void onRetry(log.id)}
+                        className="h-7 gap-1"
+                      >
+                        <RotateCwIcon className="size-3" />
+                        {retrying ? 'Retrying...' : 'Retry'}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setExpandedId(expanded ? null : log.id)}
+                      className="h-7"
+                    >
+                      {expanded ? 'Hide' : 'Details'}
+                    </Button>
+                  </div>
+                </div>
+
+                {reason && (
+                  <div className="mt-2 flex gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                    <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+                    <span>{reason}</span>
+                  </div>
+                )}
+
+                {expanded && (
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Request</Label>
+                      <Textarea
+                        readOnly
+                        value={prettyJson(log.request_payload ?? {})}
+                        className="min-h-[150px] font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Response</Label>
+                      <Textarea
+                        readOnly
+                        value={prettyJson(log.response_raw ?? log.response_parsed ?? log.error_message ?? null)}
+                        className="min-h-[150px] font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function AIActionsAdminPage() {
   const { canUse, isPlanLoading } = usePlan()
   const canUseActions = canUse('aiActions')
@@ -85,11 +446,17 @@ export function AIActionsAdminPage() {
     actionStats,
     actionLogs,
     pendingApprovals,
+    outboundAllowlist,
     loading,
     createAction,
     updateAction,
     deleteAction,
+    setActionSecret,
+    deleteActionSecret,
     testAction,
+    previewActionExecution,
+    retryActionLog,
+    updateOutboundAllowlist,
     approveAction,
     rejectAction,
     isError,
@@ -106,6 +473,7 @@ export function AIActionsAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [approvingLogId, setApprovingLogId] = useState<string | null>(null)
   const [rejectingLogId, setRejectingLogId] = useState<string | null>(null)
+  const [retryingLogId, setRetryingLogId] = useState<string | null>(null)
 
   const filteredActions = useMemo(() => {
     if (filter === 'all') return actions
@@ -118,6 +486,13 @@ export function AIActionsAdminPage() {
         stat.actionId,
         {
           executions: stat.executions ?? 0,
+          success: stat.success ?? 0,
+          failed: stat.failed ?? 0,
+          timeout: stat.timeout ?? 0,
+          pending: stat.pending ?? 0,
+          retryCount: stat.retryCount ?? 0,
+          lastRunAt: stat.lastRunAt ?? null,
+          lastStatus: stat.lastStatus ?? null,
           successRate: stat.successRate ?? 0,
           avgDurationMs:
             typeof stat.avgDurationMs === 'number' ? stat.avgDurationMs : null,
@@ -157,6 +532,10 @@ export function AIActionsAdminPage() {
       totalExecutions,
       successRate,
       avgDurationMs,
+      failedExecutions: actionStats.reduce(
+        (sum: number, stat: ActionStat) => sum + (stat.failed ?? 0) + (stat.timeout ?? 0),
+        0
+      ),
     }
   }, [actionStats])
 
@@ -260,6 +639,86 @@ export function AIActionsAdminPage() {
     }
   }
 
+  const previewTest = async (
+    parameters: Record<string, unknown>
+  ): Promise<ActionTestResult> => {
+    if (isPreviewMode) {
+      throw new Error('AI Actions are in preview mode on this plan. Upgrade to Pro to preview live saved actions.')
+    }
+
+    if (!testTarget || !testTarget.id || testTarget.id === '__template__') {
+      throw new Error('Save the action first, then preview execution.')
+    }
+
+    const result = await previewActionExecution.mutateAsync({
+      id: testTarget.id,
+      testParameters: parameters,
+    })
+
+    return {
+      success: true,
+      responseData: result.safety,
+      formattedResult: 'Execution preview generated. No network request was sent.',
+      error: null,
+      durationMs: 0,
+      request: result.request,
+    }
+  }
+
+  const handleRetryLog = async (logId: string) => {
+    if (isPreviewMode) {
+      setError('AI Actions are in preview mode on this plan. Upgrade to Pro to retry failed executions.')
+      return
+    }
+
+    setRetryingLogId(logId)
+    try {
+      const result = await retryActionLog.mutateAsync({ logId })
+      toast.success(result.success ? 'Action retry succeeded' : 'Action retry failed', {
+        description: result.message,
+      })
+    } finally {
+      setRetryingLogId(null)
+    }
+  }
+
+  const handleRotateSecret = async (input: {
+    actionId: string
+    keyName: string
+    keyValue: string
+  }) => {
+    if (isPreviewMode) {
+      setError('AI Actions are in preview mode on this plan. Upgrade to Pro to rotate secrets.')
+      return
+    }
+
+    await setActionSecret.mutateAsync(input)
+    toast.success('Secret rotated', {
+      description: `${input.keyName} was encrypted and saved.`,
+    })
+  }
+
+  const handleDeleteSecret = async (input: {
+    actionId: string
+    keyName: string
+  }) => {
+    if (isPreviewMode) return
+    if (!confirm(`Delete secret "${input.keyName}"?`)) return
+
+    await deleteActionSecret.mutateAsync(input)
+    toast.success('Secret deleted')
+  }
+
+  const handleSaveAllowlist = async (entries: string[]) => {
+    if (isPreviewMode) {
+      setError('AI Actions are in preview mode on this plan. Upgrade to Pro to update the allowlist.')
+      return
+    }
+
+    await updateOutboundAllowlist.mutateAsync({ entries })
+    toast.success('Outbound allowlist saved')
+  }
+
   const handleApprove = async (logId: string) => {
     if (isPreviewMode) {
       setError('AI Actions are in preview mode on this plan. Upgrade to Pro to approve executions.')
@@ -327,7 +786,7 @@ export function AIActionsAdminPage() {
         />
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <Card className="shadow-none">
           <CardContent className="p-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -357,6 +816,16 @@ export function AIActionsAdminPage() {
               {aggregateStats.avgDurationMs === null
                 ? '--'
                 : `${(aggregateStats.avgDurationMs / 1000).toFixed(2)}s`}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-none">
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Failed / Timeout
+            </p>
+            <p className="mt-1 text-2xl font-semibold">
+              {aggregateStats.failedExecutions}
             </p>
           </CardContent>
         </Card>
@@ -397,6 +866,13 @@ export function AIActionsAdminPage() {
             filteredActions.map((action) => {
               const actionStat = statByAction.get(action.id) ?? {
                 executions: action.executionCount ?? 0,
+                success: 0,
+                failed: 0,
+                timeout: 0,
+                pending: 0,
+                retryCount: 0,
+                lastRunAt: null,
+                lastStatus: null,
                 successRate: 0,
                 avgDurationMs: null,
               }
@@ -447,6 +923,8 @@ export function AIActionsAdminPage() {
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                       <span>{actionStat.executions} executions</span>
                       <span>{actionStat.successRate}% success</span>
+                      <span>{actionStat.failed ?? 0} failed</span>
+                      <span>{actionStat.timeout ?? 0} timed out</span>
                       <span>
                         {actionStat.avgDurationMs === null
                           ? '--'
@@ -454,6 +932,15 @@ export function AIActionsAdminPage() {
                       </span>
                       <span>{action.secretKeys.length} secret keys</span>
                     </div>
+
+                    <SecretRotationPanel
+                      action={action}
+                      disabled={isPreviewMode}
+                      saving={setActionSecret.isPending}
+                      deleting={deleteActionSecret.isPending}
+                      onSave={handleRotateSecret}
+                      onDelete={handleDeleteSecret}
+                    />
 
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -498,40 +985,26 @@ export function AIActionsAdminPage() {
             })
           )}
 
-          <Card className="shadow-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Recent Executions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {(actionLogs ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">No execution logs yet.</p>
-              ) : (
-                actionLogs.slice(0, 10).map((log: ActionLogItem) => (
-                  <div
-                    key={log.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {log.ai_actions?.display_name ?? log.ai_actions?.name ?? 'Action'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(log.created_at), {
-                          addSuffix: true,
-                        })}
-                      </p>
-                    </div>
-                    <Badge className={statusTone(log.status)}>
-                      {log.status}
-                    </Badge>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+          <ExecutionLogsPanel
+            logs={actionLogs ?? []}
+            retryingLogId={retryingLogId}
+            disabled={isPreviewMode}
+            onRetry={handleRetryLog}
+          />
         </div>
 
         <div className="space-y-4">
+          <OutboundAllowlistCard
+            entries={outboundAllowlist.orgEntries}
+            effectiveEntries={outboundAllowlist.effectiveEntries}
+            envManagedCount={outboundAllowlist.envManagedCount}
+            disabled={isPreviewMode}
+            saving={updateOutboundAllowlist.isPending}
+            onSave={handleSaveAllowlist}
+          />
+
+          <ActionUsageAnalytics stats={actionStats} />
+
           <PendingApprovals
             items={pendingApprovalItems}
             approvingLogId={approvingLogId}
@@ -576,6 +1049,7 @@ export function AIActionsAdminPage() {
         actionName={testTarget?.displayName ?? 'Action'}
         parameters={testTarget?.parameters ?? []}
         onRunTest={runTest}
+        onPreview={previewTest}
       />
     </div>
   )

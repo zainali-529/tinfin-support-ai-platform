@@ -78,6 +78,7 @@ const EMPTY_PARAMETER: ActionParameter = {
   description: '',
   required: true,
   enumValues: [],
+  extractionHint: '',
 }
 
 function ensureHeader(header: HeaderPair | undefined): HeaderPair {
@@ -103,6 +104,37 @@ function toTemplateIdentifier(input: string): string {
     .replace(/^[^a-zA-Z]+/g, '')
 }
 
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+
+  return trimmed
+}
+
+function normalizeHeaderPair(header: HeaderPair): HeaderPair {
+  const keyWithPossibleValue = stripWrappingQuotes(header.key)
+  let key = keyWithPossibleValue
+  let value = header.value.trim()
+  const colonIndex = keyWithPossibleValue.indexOf(':')
+
+  if (colonIndex > 0) {
+    key = keyWithPossibleValue.slice(0, colonIndex).trim()
+    if (!value) {
+      value = keyWithPossibleValue.slice(colonIndex + 1).trim()
+    }
+  }
+
+  return {
+    key: stripWrappingQuotes(key),
+    value: stripWrappingQuotes(value).replace(/[\r\n]+/g, ' '),
+  }
+}
+
 function fromAction(action: ActionConfig): ActionDraft {
   return {
     name: action.name,
@@ -110,10 +142,9 @@ function fromAction(action: ActionConfig): ActionDraft {
     description: action.description,
     method: action.method,
     urlTemplate: action.urlTemplate,
-    headers: Object.entries(action.headersTemplate ?? {}).map(([key, value]) => ({
-      key,
-      value,
-    })),
+    headers: Object.entries(action.headersTemplate ?? {}).map(([key, value]) =>
+      normalizeHeaderPair({ key, value })
+    ),
     bodyTemplate: action.bodyTemplate ?? '',
     responsePath: action.responsePath ?? '',
     responseTemplate: action.responseTemplate ?? '',
@@ -220,6 +251,7 @@ export function ActionBuilder({
     urlTemplate: draft.urlTemplate,
     headersTemplate: Object.fromEntries(
       draft.headers
+        .map(normalizeHeaderPair)
         .filter((header) => header.key.trim().length > 0)
         .map((header) => [header.key.trim(), header.value])
     ),
@@ -414,6 +446,13 @@ export function ActionBuilder({
                     <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
                       <Input
                         value={header.key}
+                        onBlur={() =>
+                          setDraft((prev) => {
+                            const next = [...prev.headers]
+                            next[index] = normalizeHeaderPair(ensureHeader(next[index]))
+                            return { ...prev, headers: next }
+                          })
+                        }
                         onChange={(event) =>
                           setDraft((prev) => {
                             const next = [...prev.headers]
@@ -424,7 +463,7 @@ export function ActionBuilder({
                             return { ...prev, headers: next }
                           })
                         }
-                        placeholder="Authorization"
+                        placeholder="Content-Type"
                       />
                       <div className="relative">
                         <Input
@@ -439,7 +478,7 @@ export function ActionBuilder({
                               return { ...prev, headers: next }
                             })
                           }
-                          placeholder="Bearer {apiKey}"
+                          placeholder="application/json"
                           className="pr-8"
                         />
                         {/\{[a-zA-Z0-9_]+\}/.test(header.value) && (
@@ -584,6 +623,25 @@ export function ActionBuilder({
                       placeholder="How AI should extract this parameter"
                       rows={2}
                     />
+                    <Input
+                      className="md:col-span-2"
+                      value={parameter.extractionHint ?? ''}
+                      onChange={(event) =>
+                        setDraft((prev) => {
+                          const next = [...prev.parameters]
+                          next[index] = {
+                            ...ensureParameter(next[index]),
+                            extractionHint: event.target.value,
+                          }
+                          return { ...prev, parameters: next }
+                        })
+                      }
+                      placeholder="Helper text for AI, e.g. ask for order ID if missing"
+                    />
+                    <p className="md:col-span-2 text-[11px] leading-relaxed text-muted-foreground">
+                      Required parameters make the AI collect this value before running the action.
+                      Use helper text to explain examples, format, or when to ask a follow-up.
+                    </p>
                     {attemptedSave && (parameterErrors[index]?.length ?? 0) > 0 && (
                       <p className="md:col-span-2 text-xs text-destructive">
                         {(parameterErrors[index] ?? []).join(' ')}

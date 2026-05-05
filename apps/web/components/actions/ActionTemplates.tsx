@@ -4,7 +4,7 @@ import type { ComponentType } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@workspace/ui/components/card'
 import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
-import { BoxIcon, CalendarIcon, SendIcon, Building2Icon } from 'lucide-react'
+import { BoxIcon, CalendarIcon, CreditCardIcon, SendIcon, UserRoundIcon } from 'lucide-react'
 import type { ActionBuilderPayload } from '@/components/actions/ActionBuilder'
 
 interface TemplateItem {
@@ -27,167 +27,6 @@ interface ActionTemplatesProps {
 }
 
 const TEMPLATE_GROUPS: TemplateGroup[] = [
-  {
-    id: 'orca-business-solutions',
-    title: 'Orca Business Solutions',
-    icon: Building2Icon,
-    items: [
-      {
-        id: 'get_consultation_details',
-        label: 'Get Consultation Details',
-        description: 'Fetches full consultation details by consultation ID.',
-        payload: {
-          name: 'get_consultation_details',
-          displayName: 'Get Consultation Details',
-          description:
-            'Fetches consultation details including consultant, schedule, mode, and notes using consultation ID.',
-          method: 'GET',
-          urlTemplate:
-            'http://localhost:3001/api/action-mock/consultations/{consultationId}',
-          headersTemplate: {},
-          bodyTemplate: null,
-          responsePath: 'consultation',
-          responseTemplate:
-            'Consultation {referenceNumber} is {status}. Service: {serviceName}. Consultant: {consultant}. Scheduled: {startAt}.',
-          parameters: [
-            {
-              name: 'consultationId',
-              type: 'string',
-              description:
-                'Consultation ID provided to the customer, for example CONS-1204 or any booking reference.',
-              required: true,
-            },
-          ],
-          requiresConfirmation: false,
-          humanApprovalRequired: false,
-          timeoutSeconds: 10,
-          isActive: true,
-          category: 'scheduling',
-        },
-      },
-      {
-        id: 'get_consultation_status',
-        label: 'Get Consultation Status',
-        description: 'Checks consultation status and next step quickly.',
-        payload: {
-          name: 'get_consultation_status',
-          displayName: 'Get Consultation Status',
-          description:
-            'Checks current consultation status, last update, and next step using consultation ID.',
-          method: 'GET',
-          urlTemplate:
-            'http://localhost:3001/api/action-mock/consultations/{consultationId}/status',
-          headersTemplate: {},
-          bodyTemplate: null,
-          responsePath: 'consultationStatus',
-          responseTemplate:
-            'Consultation {referenceNumber} is {status}. Update: {lastUpdate}. Next: {nextStep}.',
-          parameters: [
-            {
-              name: 'consultationId',
-              type: 'string',
-              description: 'Consultation ID to check status for.',
-              required: true,
-            },
-          ],
-          requiresConfirmation: false,
-          humanApprovalRequired: false,
-          timeoutSeconds: 10,
-          isActive: true,
-          category: 'scheduling',
-        },
-      },
-      {
-        id: 'book_consultation',
-        label: 'Book Consultation',
-        description: 'Creates a new consultation booking with customer details.',
-        payload: {
-          name: 'book_consultation',
-          displayName: 'Book Consultation',
-          description:
-            'Books a new consultation slot for the customer and returns booking confirmation details.',
-          method: 'POST',
-          urlTemplate: 'http://localhost:3001/api/action-mock/consultations/book',
-          headersTemplate: {
-            'Content-Type': 'application/json',
-          },
-          bodyTemplate:
-            '{"name":"{name}","email":"{email}","phone":"{phone}","serviceCode":"{serviceCode}","preferredDate":"{preferredDate}","preferredTime":"{preferredTime}","timezone":"{timezone}","mode":"{mode}","notes":"{notes}"}',
-          responsePath: 'booking',
-          responseTemplate:
-            'Consultation booked. Booking ID: {bookingId}. Status: {status}. Scheduled at: {consultation.startAt}.',
-          parameters: [
-            {
-              name: 'name',
-              type: 'string',
-              description: 'Customer full name.',
-              required: true,
-            },
-            {
-              name: 'email',
-              type: 'string',
-              description: 'Customer email (optional if phone is provided).',
-              required: false,
-            },
-            {
-              name: 'phone',
-              type: 'string',
-              description: 'Customer phone (optional if email is provided).',
-              required: false,
-            },
-            {
-              name: 'serviceCode',
-              type: 'enum',
-              description: 'Consultation service type.',
-              required: true,
-              enumValues: [
-                'business_strategy',
-                'ai_automation',
-                'operations_optimization',
-                'digital_transformation',
-              ],
-            },
-            {
-              name: 'preferredDate',
-              type: 'string',
-              description: 'Preferred date in YYYY-MM-DD format.',
-              required: false,
-            },
-            {
-              name: 'preferredTime',
-              type: 'string',
-              description: 'Preferred time in HH:mm format.',
-              required: false,
-            },
-            {
-              name: 'timezone',
-              type: 'string',
-              description: 'Timezone, e.g. Asia/Karachi.',
-              required: false,
-            },
-            {
-              name: 'mode',
-              type: 'enum',
-              description: 'Consultation mode.',
-              required: false,
-              enumValues: ['zoom', 'google_meet', 'phone_call', 'onsite'],
-            },
-            {
-              name: 'notes',
-              type: 'string',
-              description: 'Optional extra notes from customer.',
-              required: false,
-            },
-          ],
-          requiresConfirmation: true,
-          humanApprovalRequired: false,
-          timeoutSeconds: 12,
-          isActive: true,
-          category: 'scheduling',
-        },
-      },
-    ],
-  },
   {
     id: 'shopify',
     title: 'Shopify',
@@ -292,6 +131,120 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
           timeoutSeconds: 10,
           isActive: true,
           category: 'ecommerce',
+        },
+      },
+    ],
+  },
+  {
+    id: 'stripe',
+    title: 'Stripe',
+    icon: CreditCardIcon,
+    items: [
+      {
+        id: 'stripe_find_customer',
+        label: 'Find Customer',
+        description: 'Finds a Stripe customer by email address.',
+        payload: {
+          name: 'stripe_find_customer',
+          displayName: 'Stripe Find Customer',
+          description:
+            'Finds a customer in Stripe using their email address. Use for billing account lookup only.',
+          method: 'GET',
+          urlTemplate: 'https://api.stripe.com/v1/customers?email={email}&limit=1',
+          headersTemplate: {
+            Authorization: 'Bearer {stripeSecretKey}',
+          },
+          bodyTemplate: null,
+          responsePath: 'data.0',
+          responseTemplate:
+            'Stripe customer found: {email}. Customer ID: {id}. Delinquent: {delinquent}.',
+          parameters: [
+            {
+              name: 'email',
+              type: 'string',
+              description: 'Customer email address used for billing.',
+              extractionHint: 'Ask for the billing email if the customer has not provided it.',
+              required: true,
+            },
+          ],
+          requiresConfirmation: false,
+          humanApprovalRequired: false,
+          timeoutSeconds: 12,
+          isActive: true,
+          category: 'account',
+        },
+      },
+      {
+        id: 'stripe_list_invoices',
+        label: 'List Recent Invoices',
+        description: 'Lists recent invoices for a Stripe customer.',
+        payload: {
+          name: 'stripe_list_invoices',
+          displayName: 'Stripe Recent Invoices',
+          description:
+            'Lists recent Stripe invoices for a customer ID. Use only after the customer has provided or confirmed their Stripe customer ID.',
+          method: 'GET',
+          urlTemplate: 'https://api.stripe.com/v1/invoices?customer={customerId}&limit=3',
+          headersTemplate: {
+            Authorization: 'Bearer {stripeSecretKey}',
+          },
+          bodyTemplate: null,
+          responsePath: 'data',
+          responseTemplate: 'Recent invoices: {data}.',
+          parameters: [
+            {
+              name: 'customerId',
+              type: 'string',
+              description: 'Stripe customer ID, usually starts with cus_.',
+              extractionHint: 'Use only a customer ID from Stripe or an approved internal source.',
+              required: true,
+            },
+          ],
+          requiresConfirmation: false,
+          humanApprovalRequired: true,
+          timeoutSeconds: 12,
+          isActive: true,
+          category: 'account',
+        },
+      },
+    ],
+  },
+  {
+    id: 'customer-account',
+    title: 'Customer Account',
+    icon: UserRoundIcon,
+    items: [
+      {
+        id: 'lookup_customer_plan',
+        label: 'Lookup Customer Plan',
+        description: 'Reads plan, account status, and next renewal date.',
+        payload: {
+          name: 'lookup_customer_plan',
+          displayName: 'Lookup Customer Plan',
+          description:
+            'Looks up a customer account by email and returns plan, account status, and renewal details.',
+          method: 'GET',
+          urlTemplate: 'https://api.yourapp.com/customers/{email}/plan',
+          headersTemplate: {
+            Authorization: 'Bearer {apiKey}',
+          },
+          bodyTemplate: null,
+          responsePath: 'data',
+          responseTemplate: 'Plan: {plan}. Status: {status}. Renewal date: {renewalDate}.',
+          parameters: [
+            {
+              name: 'email',
+              type: 'string',
+              description: 'Customer account email address.',
+              extractionHint: 'Ask for the account email if the customer is not identified.',
+              required: true,
+            },
+          ],
+          requiresConfirmation: false,
+          humanApprovalRequired: false,
+          timeoutSeconds: 10,
+          isActive: true,
+          category: 'account',
         },
       },
     ],

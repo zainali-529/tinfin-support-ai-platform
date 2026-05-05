@@ -6,6 +6,7 @@ import {
   executeAction,
   executeApprovedAction,
   formatActionResponse,
+  resolveTemplate,
   resolveActionOutboundAllowlist,
   type ActionConfig,
   type ActionParameter,
@@ -20,6 +21,7 @@ import { protectedProcedure, router } from '../trpc/trpc'
 
 const ACTION_NAME_REGEX = /^[a-z][a-z0-9_]*$/
 const TEMPLATE_IDENTIFIER_REGEX = /^[a-zA-Z][a-zA-Z0-9_]*$/
+const RETRYABLE_LOG_STATUSES = new Set(['failed', 'timeout'])
 
 const actionParameterSchema = z.object({
   name: z.string().regex(TEMPLATE_IDENTIFIER_REGEX),
@@ -79,6 +81,190 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function normalizeAllowlistEntry(input: string): string | null {
+  let value = input.trim().toLowerCase()
+  if (!value) return null
+
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    try {
+      value = new URL(value).hostname
+    } catch {
+      return null
+    }
+  } else {
+    const slashIndex = value.indexOf('/')
+    if (slashIndex >= 0) value = value.slice(0, slashIndex)
+
+    const atIndex = value.lastIndexOf('@')
+    if (atIndex >= 0) value = value.slice(atIndex + 1)
+
+    if (!value.startsWith('*.')) {
+      const colonIndex = value.lastIndexOf(':')
+      if (colonIndex > 0 && value.indexOf(':') === colonIndex) {
+        value = value.slice(0, colonIndex)
+      }
+    }
+  }
+
+  value = value.replace(/\.+$/, '')
+  if (!value) return null
+  if (value.startsWith('*.')) {
+    const suffix = value.slice(2).replace(/\.+$/, '')
+    return suffix ? `*.${suffix}` : null
+  }
+
+  return value
+}
+
+function normalizeAllowlistInput(entries: string[]): string[] {
+  return Array.from(
+    new Set(
+      entries
+        .flatMap((entry) => entry.split(/[,\s]+/g))
+        .map((entry) => normalizeAllowlistEntry(entry))
+        .filter((entry): entry is string => Boolean(entry))
+    )
+  )
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : []
+}
+
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+
+  return trimmed
+}
+
+function isValidHeaderName(value: string): boolean {
+  return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(value)
+}
+
+function normalizeHeaderTemplates(value: unknown): Record<string, string> {
+  const input = asRecord(value)
+  const headers: Record<string, string> = {}
+
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    const keyWithPossibleValue = stripWrappingQuotes(rawKey)
+    let headerName = keyWithPossibleValue
+    let headerValue =
+      typeof rawValue === 'string'
+        ? rawValue.trim()
+        : rawValue === null || rawValue === undefined
+          ? ''
+          : String(rawValue).trim()
+
+    const colonIndex = keyWithPossibleValue.indexOf(':')
+    if (colonIndex > 0) {
+      headerName = keyWithPossibleValue.slice(0, colonIndex).trim()
+      if (!headerValue) {
+        headerValue = keyWithPossibleValue.slice(colonIndex + 1).trim()
+      }
+    }
+
+    headerName = stripWrappingQuotes(headerName)
+    headerValue = stripWrappingQuotes(headerValue).replace(/[\r\n]+/g, ' ')
+
+    if (!headerName) continue
+    if (!isValidHeaderName(headerName)) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Invalid header name "${headerName}". Use separate key/value fields, for example key "Content-Type" and value "application/json".`,
+      })
+    }
+
+    headers[headerName] = headerValue
+  }
+
+  return headers
+}
+
+function maskSecretsInText(input: string, secrets: Record<string, string>): string {
+  let output = input
+  for (const value of Object.values(secrets)) {
+    if (!value) continue
+    output = output.split(value).join('[REDACTED]')
+  }
+  return output
+}
+
+function maskSecrets(value: unknown, secrets: Record<string, string>): unknown {
+  if (typeof value === 'string') return maskSecretsInText(value, secrets)
+  if (Array.isArray(value)) return value.map((item) => maskSecrets(item, secrets))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+        key,
+        maskSecrets(child, secrets),
+      ])
+    )
+  }
+  return value
+}
+
+function looksLikeJson(input: string): boolean {
+  const trimmed = input.trim()
+  return (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  )
+}
+
+function tryParseJson(input: string): unknown {
+  try {
+    return JSON.parse(input) as unknown
+  } catch {
+    return input
+  }
+}
+
+function getExecutionStatus(result: { success: boolean; error?: string }): 'success' | 'failed' | 'timeout' {
+  if (result.success) return 'success'
+  const errorText = (result.error ?? '').toLowerCase()
+  return errorText.includes('timeout') || errorText.includes('aborted') ? 'timeout' : 'failed'
+}
+
+function getReadableFailureReason(row: Record<string, unknown>): string | null {
+  const explicit = asString(row.error_message)
+  if (explicit) {
+    if (explicit.includes('Host') && explicit.includes('allowlist')) {
+      return 'The endpoint host is not allowed. Add it to the outbound domain allowlist, then retry.'
+    }
+    if (explicit.toLowerCase().includes('timeout')) {
+      return 'The endpoint did not respond before the timeout. Check endpoint health or increase timeout.'
+    }
+    if (explicit.startsWith('HTTP 401') || explicit.startsWith('HTTP 403')) {
+      return 'The endpoint rejected authentication or permissions. Rotate the related secret and test again.'
+    }
+    if (explicit.startsWith('HTTP 404')) {
+      return 'The endpoint was not found. Check the URL template and required parameters.'
+    }
+    if (explicit.startsWith('HTTP 5')) {
+      return 'The external service returned a server error. Retry after checking the provider status.'
+    }
+    return explicit
+  }
+
+  const status = asString(row.status)
+  if (status === 'timeout') return 'The request timed out.'
+  if (status === 'failed') return 'The action failed. Review request and response details.'
+  if (status === 'rejected') return 'The action was rejected by an agent.'
+  return null
+}
+
 async function getOrgOutboundAllowlist(
   supabase: any,
   orgId: string
@@ -124,7 +310,7 @@ function toActionResponse(
     description: action.description,
     method: action.method,
     urlTemplate: action.url_template,
-    headersTemplate: asRecord(action.headers_template),
+    headersTemplate: normalizeHeaderTemplates(action.headers_template),
     bodyTemplate: asString(action.body_template),
     responsePath: asString(action.response_path),
     responseTemplate: asString(action.response_template),
@@ -204,7 +390,7 @@ async function loadActionWithSecretsForOrg(
     description: row.description as string,
     method: row.method as string,
     urlTemplate: row.url_template as string,
-    headersTemplate: asRecord(row.headers_template) as Record<string, string>,
+    headersTemplate: normalizeHeaderTemplates(row.headers_template),
     bodyTemplate: asString(row.body_template),
     responsePath: asString(row.response_path),
     responseTemplate: asString(row.response_template),
@@ -218,6 +404,68 @@ async function loadActionWithSecretsForOrg(
     secrets: secretsMap,
     outboundAllowlist,
   }
+}
+
+async function buildActionPreview(
+  action: ActionConfig,
+  parameters: Record<string, unknown>
+): Promise<{
+  method: string
+  url: string
+  headers: Record<string, string>
+  body: unknown
+  hasBody: boolean
+}> {
+  const renderedUrl = await resolveTemplate(
+    action.urlTemplate,
+    parameters,
+    action.secrets,
+    { encodeUriComponent: true }
+  )
+  validateActionUrlTemplate(action.urlTemplate, action.outboundAllowlist)
+
+  const renderedHeaders: Record<string, string> = {}
+  for (const [key, template] of Object.entries(normalizeHeaderTemplates(action.headersTemplate))) {
+    renderedHeaders[key] = await resolveTemplate(template, parameters, action.secrets)
+  }
+
+  let body: unknown = null
+  if (action.bodyTemplate?.trim()) {
+    const renderedBody = await resolveTemplate(
+      action.bodyTemplate,
+      parameters,
+      action.secrets
+    )
+    body = looksLikeJson(renderedBody) ? tryParseJson(renderedBody) : renderedBody
+  }
+
+  return {
+    method: action.method.toUpperCase(),
+    url: maskSecretsInText(renderedUrl, action.secrets),
+    headers: maskSecrets(renderedHeaders, action.secrets) as Record<string, string>,
+    body: maskSecrets(body, action.secrets),
+    hasBody: body !== null && body !== undefined,
+  }
+}
+
+async function getOrgSettings(
+  supabase: any,
+  orgId: string
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('settings')
+    .eq('id', orgId)
+    .maybeSingle()
+
+  if (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Failed to load organization settings: ${error.message}`,
+    })
+  }
+
+  return asRecord(data?.settings)
 }
 
 function ensureAdmin(ctx: { userRole: string; userPermissions: any }): void {
@@ -235,6 +483,61 @@ async function ensureActionsAdmin(ctx: {
 }
 
 export const actionsRouter = router({
+  getOutboundAllowlist: protectedProcedure.query(async ({ ctx }) => {
+    ensureAdmin(ctx)
+
+    const settings = await getOrgSettings(ctx.supabase, ctx.userOrgId)
+    const orgEntries = normalizeAllowlistInput([
+      ...stringArray(settings.aiActionOutboundAllowlist),
+      ...stringArray(asRecord(settings.security).aiActionOutboundAllowlist),
+    ])
+
+    return {
+      orgEntries,
+      effectiveEntries: resolveActionOutboundAllowlist(settings),
+      envManagedCount: Math.max(
+        0,
+        resolveActionOutboundAllowlist(settings).length - orgEntries.length
+      ),
+    }
+  }),
+
+  updateOutboundAllowlist: protectedProcedure
+    .input(z.object({ entries: z.array(z.string().max(300)).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureActionsAdmin(ctx)
+
+      const nextEntries = normalizeAllowlistInput(input.entries)
+      const currentSettings = await getOrgSettings(ctx.supabase, ctx.userOrgId)
+      const security = asRecord(currentSettings.security)
+
+      const nextSettings = {
+        ...currentSettings,
+        aiActionOutboundAllowlist: nextEntries,
+        security: {
+          ...security,
+          aiActionOutboundAllowlist: nextEntries,
+        },
+      }
+
+      const { error } = await ctx.supabase
+        .from('organizations')
+        .update({ settings: nextSettings })
+        .eq('id', ctx.userOrgId)
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to save outbound allowlist: ${error.message}`,
+        })
+      }
+
+      return {
+        orgEntries: nextEntries,
+        effectiveEntries: resolveActionOutboundAllowlist(nextSettings),
+      }
+    }),
+
   getActions: protectedProcedure.query(async ({ ctx }) => {
     ensureAdmin(ctx)
 
@@ -386,6 +689,8 @@ export const actionsRouter = router({
         })
       }
 
+      const headersTemplate = normalizeHeaderTemplates(input.headersTemplate)
+
       const payload = {
         org_id: orgId,
         name: input.name,
@@ -393,7 +698,7 @@ export const actionsRouter = router({
         description: input.description,
         method: input.method,
         url_template: input.urlTemplate,
-        headers_template: input.headersTemplate,
+        headers_template: headersTemplate,
         body_template: input.bodyTemplate ?? null,
         response_path: input.responsePath ?? null,
         response_template: input.responseTemplate ?? null,
@@ -452,7 +757,7 @@ export const actionsRouter = router({
       if (input.data.urlTemplate !== undefined)
         payload.url_template = input.data.urlTemplate
       if (input.data.headersTemplate !== undefined)
-        payload.headers_template = input.data.headersTemplate
+        payload.headers_template = normalizeHeaderTemplates(input.data.headersTemplate)
       if (input.data.bodyTemplate !== undefined)
         payload.body_template = input.data.bodyTemplate ?? null
       if (input.data.responsePath !== undefined)
@@ -651,6 +956,45 @@ export const actionsRouter = router({
       }
     }),
 
+  previewActionExecution: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        testParameters: z.record(z.string(), z.unknown()).default({}),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureActionsAdmin(ctx)
+
+      const action = await loadActionWithSecretsForOrg(
+        ctx.supabase,
+        ctx.userOrgId,
+        input.id
+      )
+
+      if (!action) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Action not found.',
+        })
+      }
+
+      const preview = await buildActionPreview(action, input.testParameters)
+      return {
+        actionName: action.name,
+        displayName: action.displayName,
+        request: preview,
+        safety: {
+          requiresConfirmation: action.requiresConfirmation,
+          humanApprovalRequired: action.humanApprovalRequired,
+          retryableIfFailed:
+            action.method.toUpperCase() === 'GET' &&
+            !action.requiresConfirmation &&
+            !action.humanApprovalRequired,
+        },
+      }
+    }),
+
   getActionLogs: protectedProcedure
     .input(
       z.object({
@@ -665,7 +1009,7 @@ export const actionsRouter = router({
 
       let query = ctx.supabase
         .from('ai_action_logs')
-        .select('*, ai_actions(name, display_name)', { count: 'exact' })
+        .select('*, ai_actions(name, display_name, method, requires_confirmation, human_approval_required)', { count: 'exact' })
         .eq('org_id', ctx.userOrgId)
         .order('created_at', { ascending: false })
         .range(input.offset, input.offset + input.limit - 1)
@@ -682,11 +1026,125 @@ export const actionsRouter = router({
         })
       }
 
+      const items = ((data ?? []) as Record<string, unknown>[]).map((row) => {
+        const action = asRecord(row.ai_actions)
+        const method = asString(action.method) ?? null
+        const retryable =
+          RETRYABLE_LOG_STATUSES.has(asString(row.status) ?? '') &&
+          method === 'GET' &&
+          action.requires_confirmation !== true &&
+          action.human_approval_required !== true
+
+        return {
+          ...row,
+          failureReason: getReadableFailureReason(row),
+          retryable,
+          durationMs:
+            asNumber(row.duration_ms) ??
+            asNumber(asRecord(row.request_payload).durationMs),
+          statusCode:
+            asNumber(row.status_code) ??
+            asNumber(asRecord(row.request_payload).statusCode),
+        }
+      })
+
       return {
-        items: data ?? [],
+        items,
         totalCount: count ?? 0,
         limit: input.limit,
         offset: input.offset,
+      }
+    }),
+
+  retryActionLog: protectedProcedure
+    .input(z.object({ logId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureActionsAdmin(ctx)
+
+      const { data: logRow, error: logError } = await ctx.supabase
+        .from('ai_action_logs')
+        .select('id, org_id, action_id, conversation_id, contact_id, parameters_used, status, retry_count')
+        .eq('id', input.logId)
+        .eq('org_id', ctx.userOrgId)
+        .maybeSingle()
+
+      if (logError || !logRow) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Action log not found.',
+        })
+      }
+
+      const status = asString(logRow.status)
+      if (!status || !RETRYABLE_LOG_STATUSES.has(status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Only failed or timed-out action logs can be retried.',
+        })
+      }
+
+      const action = await loadActionWithSecretsForOrg(
+        ctx.supabase,
+        ctx.userOrgId,
+        logRow.action_id as string
+      )
+
+      if (!action) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Action not found.' })
+      }
+
+      const method = action.method.toUpperCase()
+      if (method !== 'GET' || action.requiresConfirmation || action.humanApprovalRequired) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'For safety, only read-only GET actions without confirmation or approval can be retried from logs.',
+        })
+      }
+
+      const parameters = asRecord(logRow.parameters_used)
+      const execution = await executeAction(action, parameters)
+      const responseText = execution.success
+        ? await formatActionResponse(action, execution.data)
+        : `Action failed: ${execution.error ?? 'Unknown error'}`
+      const executionStatus = getExecutionStatus(execution)
+      const now = new Date().toISOString()
+      const retryCount = (asNumber(logRow.retry_count) ?? 0) + 1
+
+      const { data: retryLog, error: insertError } = await ctx.supabase
+        .from('ai_action_logs')
+        .insert({
+          org_id: ctx.userOrgId,
+          action_id: action.id,
+          conversation_id: logRow.conversation_id ?? null,
+          contact_id: logRow.contact_id ?? null,
+          parameters_used: parameters,
+          request_payload: execution.requestPayload ?? null,
+          response_raw: execution.data,
+          response_parsed: responseText,
+          status: executionStatus,
+          error_message: execution.error ?? null,
+          executed_at: now,
+          completed_at: now,
+          duration_ms: execution.durationMs ?? null,
+          status_code: execution.statusCode ?? null,
+          retry_count: retryCount,
+        })
+        .select('*')
+        .single()
+
+      if (insertError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to write retry log: ${insertError.message}`,
+        })
+      }
+
+      return {
+        success: execution.success,
+        status: executionStatus,
+        message: responseText,
+        log: retryLog,
       }
     }),
 
@@ -852,7 +1310,7 @@ export const actionsRouter = router({
 
     const { data: logs, error: logsError } = await ctx.supabase
       .from('ai_action_logs')
-      .select('action_id, status, request_payload, duration_ms')
+      .select('action_id, status, request_payload, duration_ms, retry_count, created_at')
       .eq('org_id', ctx.userOrgId)
       .gte('created_at', since)
 
@@ -877,17 +1335,59 @@ export const actionsRouter = router({
 
     const statByAction = new Map<
       string,
-      { total: number; success: number; durationTotal: number; durationCount: number }
+      {
+        total: number
+        success: number
+        failed: number
+        timeout: number
+        pending: number
+        retryCount: number
+        durationTotal: number
+        durationCount: number
+        lastRunAt: string | null
+        lastStatus: string | null
+      }
     >()
 
     for (const log of (logs ?? []) as Record<string, unknown>[]) {
       const actionId = log.action_id as string
       const current =
         statByAction.get(actionId) ??
-        { total: 0, success: 0, durationTotal: 0, durationCount: 0 }
+        {
+          total: 0,
+          success: 0,
+          failed: 0,
+          timeout: 0,
+          pending: 0,
+          retryCount: 0,
+          durationTotal: 0,
+          durationCount: 0,
+          lastRunAt: null,
+          lastStatus: null,
+        }
 
       current.total += 1
       if (log.status === 'success') current.success += 1
+      if (log.status === 'failed') current.failed += 1
+      if (log.status === 'timeout') current.timeout += 1
+      if (
+        log.status === 'pending_approval' ||
+        log.status === 'pending_confirmation' ||
+        log.status === 'approved'
+      ) {
+        current.pending += 1
+      }
+      current.retryCount += asNumber(log.retry_count) ?? 0
+
+      const createdAt = asString(log.created_at)
+      if (
+        createdAt &&
+        (!current.lastRunAt ||
+          new Date(createdAt).getTime() > new Date(current.lastRunAt).getTime())
+      ) {
+        current.lastRunAt = createdAt
+        current.lastStatus = asString(log.status)
+      }
 
       const requestPayload = asRecord(log.request_payload)
       const durationMs =
@@ -903,7 +1403,18 @@ export const actionsRouter = router({
     return (actions ?? []).map((action: Record<string, unknown>) => {
       const stat =
         statByAction.get(action.id as string) ??
-        { total: 0, success: 0, durationTotal: 0, durationCount: 0 }
+        {
+          total: 0,
+          success: 0,
+          failed: 0,
+          timeout: 0,
+          pending: 0,
+          retryCount: 0,
+          durationTotal: 0,
+          durationCount: 0,
+          lastRunAt: null,
+          lastStatus: null,
+        }
 
       const successRate =
         stat.total > 0 ? Number(((stat.success / stat.total) * 100).toFixed(2)) : 0
@@ -918,6 +1429,13 @@ export const actionsRouter = router({
         name: action.name,
         displayName: action.display_name,
         executions: stat.total,
+        success: stat.success,
+        failed: stat.failed,
+        timeout: stat.timeout,
+        pending: stat.pending,
+        retryCount: stat.retryCount,
+        lastRunAt: stat.lastRunAt,
+        lastStatus: stat.lastStatus,
         successRate,
         avgDurationMs,
       }
