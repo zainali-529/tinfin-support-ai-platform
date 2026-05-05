@@ -15,3 +15,4 @@ export * from './vapi.service'
 // AI Actions
 export * from './actions.service'
 export * from './action-security'
+export * from './copilot.service'

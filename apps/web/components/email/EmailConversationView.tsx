@@ -65,6 +65,8 @@ interface Props {
   orgId: string
   agentId: string
   onStatusChange?: (id: string, status: string) => void
+  copilotDraft?: { content: string; nonce: number } | null
+  onComposerTextChange?: (content: string) => void
 }
 
 interface TeamMember {
@@ -77,7 +79,14 @@ interface TeamMember {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function EmailConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
+export function EmailConversationView({
+  conversation,
+  orgId,
+  agentId,
+  onStatusChange,
+  copilotDraft,
+  onComposerTextChange,
+}: Props) {
   const contact = conversation.contacts
   const status = conversation.status
   const isResolved = status === 'resolved' || status === 'closed'
@@ -359,6 +368,8 @@ export function EmailConversationView({ conversation, orgId, agentId, onStatusCh
         conversationId={conversation.id}
         status={status}
         toEmail={toEmail}
+        copilotDraft={copilotDraft}
+        onComposerTextChange={onComposerTextChange}
       />
     </div>
   )

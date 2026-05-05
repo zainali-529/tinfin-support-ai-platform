@@ -355,9 +355,11 @@ function noteWasEdited(item: TimelineItem): boolean {
 export function ConversationTimelinePanel({
   conversationId,
   agentId,
+  embedded = false,
 }: {
   conversationId: string
   agentId: string
+  embedded?: boolean
 }) {
   const [note, setNote] = React.useState('')
   const [realtimeItems, setRealtimeItems] = React.useState<TimelineItem[]>([])
@@ -487,7 +489,12 @@ export function ConversationTimelinePanel({
   }
 
   return (
-    <aside className="hidden h-full w-[318px] shrink-0 flex-col border-l bg-muted/10 xl:flex">
+    <aside
+      className={cn(
+        'h-full min-h-0 shrink-0 flex-col bg-muted/10',
+        embedded ? 'flex w-full' : 'hidden w-[318px] border-l xl:flex'
+      )}
+    >
       <div className="border-b px-4 py-3">
         <div className="flex items-center justify-between gap-2">
           <div>

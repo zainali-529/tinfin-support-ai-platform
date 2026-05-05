@@ -279,6 +279,8 @@ interface Props {
   orgId: string
   agentId: string
   onStatusChange?: (id: string, status: string, patch?: Partial<Conversation>) => void
+  copilotDraft?: { content: string; nonce: number } | null
+  onComposerTextChange?: (content: string) => void
 }
 
 interface TeamMember {
@@ -291,7 +293,14 @@ interface TeamMember {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export function ConversationView({ conversation, orgId, agentId, onStatusChange }: Props) {
+export function ConversationView({
+  conversation,
+  orgId,
+  agentId,
+  onStatusChange,
+  copilotDraft,
+  onComposerTextChange,
+}: Props) {
   const router = useRouter()
   const { messages, loading, sending, sendMessage, refetch, appendMessage } = useMessages(conversation.id, orgId)
   const { send: wsSend } = useAgentRealtime()
@@ -516,6 +525,22 @@ export function ConversationView({ conversation, orgId, agentId, onStatusChange 
     }
     return `${remoteReplyingAgentNames[0]} +${remoteReplyingAgentNames.length - 1} others are replying...`
   }, [remoteReplyingAgentNames])
+
+  useEffect(() => {
+    onComposerTextChange?.(reply)
+  }, [onComposerTextChange, reply])
+
+  useEffect(() => {
+    if (!copilotDraft?.content || copilotDraft.content === reply) return
+    setReply(copilotDraft.content)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+      }
+    })
+  }, [copilotDraft?.nonce])
 
   const assignedAgentLabel = useMemo(() => {
     if (!conversation.assigned_to) return 'Unassigned'

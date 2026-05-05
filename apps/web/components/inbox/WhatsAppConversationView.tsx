@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Textarea } from '@workspace/ui/components/textarea'
@@ -65,6 +65,8 @@ interface Props {
   orgId: string
   agentId: string
   onStatusChange?: (id: string, status: string) => void
+  copilotDraft?: { content: string; nonce: number } | null
+  onComposerTextChange?: (content: string) => void
 }
 
 function getContactLabel(conversation: Conversation) {
@@ -301,6 +303,8 @@ export function WhatsAppConversationView({
   conversation,
   agentId,
   onStatusChange,
+  copilotDraft,
+  onComposerTextChange,
 }: Props) {
   const { messages: waMessages, isLoading: waLoading } = useWhatsAppMessages(
     conversation.id
@@ -329,6 +333,15 @@ export function WhatsAppConversationView({
   const isResolved = status === 'resolved' || status === 'closed'
   const takeoverRequired = status === 'bot' || status === 'pending'
   const maxChars = 4096
+
+  useEffect(() => {
+    onComposerTextChange?.(content)
+  }, [content, onComposerTextChange])
+
+  useEffect(() => {
+    if (!copilotDraft?.content || copilotDraft.content === content) return
+    setContent(copilotDraft.content.slice(0, maxChars))
+  }, [copilotDraft?.nonce])
 
   const renderedMessages = useMemo(() => {
     const waTyped = waMessages as WhatsAppMessage[]
@@ -602,9 +615,7 @@ export function WhatsAppConversationView({
           <div className="rounded-lg border bg-background p-2">
             <Textarea
               value={content}
-              onChange={(event) =>
-                setContent(event.target.value.slice(0, maxChars))
-              }
+              onChange={(event) => setContent(event.target.value.slice(0, maxChars))}
               placeholder="Type a WhatsApp reply..."
               className="min-h-[80px] resize-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
             />

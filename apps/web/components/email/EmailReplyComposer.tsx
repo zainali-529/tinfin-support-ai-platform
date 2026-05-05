@@ -7,7 +7,7 @@
  * Used as the input area in EmailConversationView.
  */
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useEmailReply } from '@/hooks/useEmail'
 import { Button } from '@workspace/ui/components/button'
 import { Textarea } from '@workspace/ui/components/textarea'
@@ -26,9 +26,17 @@ interface Props {
   status: string
   /** Recipient email for display */
   toEmail: string | null
+  copilotDraft?: { content: string; nonce: number } | null
+  onComposerTextChange?: (content: string) => void
 }
 
-export function EmailReplyComposer({ conversationId, status, toEmail }: Props) {
+export function EmailReplyComposer({
+  conversationId,
+  status,
+  toEmail,
+  copilotDraft,
+  onComposerTextChange,
+}: Props) {
   const { sendReply } = useEmailReply()
   const [content, setContent] = useState('')
   const [sentOk, setSentOk] = useState(false)
@@ -36,6 +44,22 @@ export function EmailReplyComposer({ conversationId, status, toEmail }: Props) {
 
   const isResolved = status === 'resolved' || status === 'closed'
   const canSend = content.trim().length > 0 && !isResolved && !sendReply.isPending
+
+  useEffect(() => {
+    onComposerTextChange?.(content)
+  }, [content, onComposerTextChange])
+
+  useEffect(() => {
+    if (!copilotDraft?.content || copilotDraft.content === content) return
+    setContent(copilotDraft.content)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+      }
+    })
+  }, [copilotDraft?.nonce])
 
   const handleSend = useCallback(async () => {
     if (!canSend) return
