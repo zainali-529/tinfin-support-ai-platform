@@ -1,29 +1,54 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { httpBatchLink } from '@trpc/client'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
 import { ThemeProvider } from 'next-themes'
 import { TooltipProvider } from '@workspace/ui/components/tooltip'
+import { Toaster, toast } from '@workspace/ui/components/sonner'
+import { normalizeLaunchError } from '@/lib/launch-errors'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
-    defaultOptions: { queries: { staleTime: 30_000 } },
+    mutationCache: new MutationCache({
+      onError(error) {
+        const info = normalizeLaunchError(error)
+        toast.error(info.title, {
+          description: info.message,
+          action: info.docsHref
+            ? {
+                label: 'Docs',
+                onClick: () => {
+                  window.location.href = info.docsHref!
+                },
+              }
+            : undefined,
+        })
+      },
+    }),
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        retry: (failureCount, error) => {
+          const message = error instanceof Error ? error.message.toLowerCase() : ''
+          if (message.includes('forbidden') || message.includes('unauthorized')) return false
+          return failureCount < 2
+        },
+      },
+      mutations: {
+        retry: false,
+      },
+    },
   }))
 
   useEffect(() => {
-    const logSession = async () => {
+    const warmSession = async () => {
       const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        console.log('User Access Token:', session.access_token)
-      } else {
-        console.log('No active Supabase session found.')
-      }
+      await supabase.auth.getSession()
     }
-    logSession()
+    void warmSession()
   }, [])
 
   const [trpcClient] = useState(() =>
@@ -54,6 +79,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={0}>
             {children}
+            <Toaster richColors closeButton position="top-right" />
           </TooltipProvider>
         </QueryClientProvider>
       </trpc.Provider>

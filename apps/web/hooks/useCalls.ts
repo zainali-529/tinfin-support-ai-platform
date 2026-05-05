@@ -141,7 +141,12 @@ export function useCallDetail(id: string) {
 export function useVapiAssistantConfig() {
   const utils = trpc.useUtils()
 
-  const { data: config, isLoading } = trpc.vapi.getAssistantConfig.useQuery(undefined, {
+  const {
+    data: config,
+    isLoading,
+    error,
+    refetch,
+  } = trpc.vapi.getAssistantConfig.useQuery(undefined, {
     staleTime: 60_000,
   })
 
@@ -153,5 +158,5 @@ export function useVapiAssistantConfig() {
     onSuccess: () => utils.vapi.getAssistantConfig.invalidate(),
   })
 
-  return { config, isLoading, upsert, remove }
+  return { config, isLoading, error, refetch, upsert, remove }
 }

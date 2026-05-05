@@ -13,7 +13,12 @@ import { trpc } from '@/lib/trpc'
 export function useEmailAccount() {
   const utils = trpc.useUtils()
 
-  const { data: account, isLoading } = trpc.email.getAccount.useQuery(undefined, {
+  const {
+    data: account,
+    isLoading,
+    error,
+    refetch,
+  } = trpc.email.getAccount.useQuery(undefined, {
     staleTime: 60_000,
   })
 
@@ -34,6 +39,8 @@ export function useEmailAccount() {
   return {
     account,
     isLoading,
+    error,
+    refetch,
     upsertAccount,
     deleteAccount,
     regenerateToken,

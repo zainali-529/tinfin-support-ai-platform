@@ -21,6 +21,7 @@ import { Badge } from '@workspace/ui/components/badge'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { Separator } from '@workspace/ui/components/separator'
 import { Spinner } from '@workspace/ui/components/spinner'
+import { toast } from '@workspace/ui/components/sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +51,7 @@ import {
   ShieldCheckIcon,
   LockIcon,
 } from 'lucide-react'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 
 // ─── Provider selector ────────────────────────────────────────────────────────
 
@@ -125,7 +127,7 @@ function SettingRow({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function EmailSettingsPage() {
-  const { account, isLoading, upsertAccount, deleteAccount, regenerateToken, testConnection } =
+  const { account, isLoading, error, refetch, upsertAccount, deleteAccount, regenerateToken, testConnection } =
     useEmailAccount()
   const { canUse, isPlanLoading } = usePlan()
   const isReadOnly = isPlanLoading || !canUse('emailChannel')
@@ -211,6 +213,9 @@ export function EmailSettingsPage() {
     await upsertAccount.mutateAsync(payload)
     setResendKey('')
     setSavedOk(true)
+    toast.success('Email settings saved', {
+      description: 'Inbound and outbound channel settings were updated.',
+    })
     setTimeout(() => setSavedOk(false), 3000)
   }, [
     aiAutoReply,
@@ -235,6 +240,9 @@ export function EmailSettingsPage() {
 
     await testConnection.mutateAsync()
     setConnectedOk(true)
+    toast.success('Email connection looks healthy', {
+      description: 'Outbound provider settings responded successfully.',
+    })
     setTimeout(() => setConnectedOk(false), 5000)
   }, [isReadOnly, openUpgradeDialog, testConnection])
 
@@ -248,6 +256,7 @@ export function EmailSettingsPage() {
 
     await regenerateToken.mutateAsync()
     setRegenDialogOpen(false)
+    toast.success('Webhook token regenerated')
   }, [isReadOnly, openUpgradeDialog, regenerateToken])
 
   if (isLoading) {
@@ -291,6 +300,15 @@ export function EmailSettingsPage() {
           </Button>
         )}
       </div>
+
+      {error && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="Email settings could not be loaded"
+          onRetry={() => void refetch()}
+          docsHref="/docs/channels/email"
+        />
+      )}
 
       {isReadOnly && (
         <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">

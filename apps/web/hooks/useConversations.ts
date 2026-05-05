@@ -280,6 +280,8 @@ export function useConversations(orgId: string, options?: UseConversationsOption
     totalCount,
     loading: isLoadingInitial,
     hasMore,
+    isError: query.isError,
+    error: query.error,
     isFetchingMore,
     loadMore,
     refetch: refreshFirstPage,

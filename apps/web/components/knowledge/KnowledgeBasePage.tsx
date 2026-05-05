@@ -33,6 +33,7 @@ import {
   LayersIcon, ClockIcon, CheckCircleIcon, ChevronRightIcon,
   InboxIcon, SparklesIcon, RefreshCwIcon, DatabaseIcon,
 } from 'lucide-react'
+import { toast } from '@workspace/ui/components/sonner'
 import {
   useDeleteKBSource,
   useKnowledgeBases,
@@ -43,6 +44,7 @@ import {
 } from '@/hooks/useKnowledgeBases'
 import { CreateKBDialog } from './CreateKBDialog'
 import { AddSourceDialog } from './AddSourceDialog'
+import { LaunchErrorState, LaunchInlineError } from '@/components/launch/LaunchState'
 
 // Source type helpers
 
@@ -367,7 +369,7 @@ function KBDetailPanel({
   orgId: string
   onAddSource: () => void
 }) {
-  const { sources, chunkCount, loading, refetch } = useKBSources(kb.id, orgId)
+  const { sources, chunkCount, loading, isError, error, refetch } = useKBSources(kb.id, orgId)
   const deleteSource = useDeleteKBSource()
   const reindexSource = useReindexKBSource()
   const [search, setSearch] = useState('')
@@ -394,12 +396,18 @@ function KBDetailPanel({
     await deleteSource.mutateAsync({
       sourceId: sourceToDelete.id,
     })
+    toast.success('Knowledge source deleted', {
+      description: 'Indexed chunks were removed from the assistant context.',
+    })
     setSourceToDelete(null)
     await refetch()
   }
 
   const handleReindexSource = async (source: KBSource) => {
     await reindexSource.mutateAsync({ sourceId: source.id })
+    toast.success('Source re-indexed', {
+      description: 'The latest content is ready for AI answers.',
+    })
     await refetch()
   }
 
@@ -469,10 +477,13 @@ function KBDetailPanel({
       {/* Sources List */}
       <ScrollArea className="flex-1">
         <div className="p-3">
-          {reindexSource.isError && (
-            <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {reindexSource.error?.message ?? 'Failed to re-index source.'}
-            </div>
+          {(isError || reindexSource.isError) && (
+            <LaunchInlineError
+              error={error ?? reindexSource.error}
+              onRetry={() => void refetch()}
+              docsHref="/docs/ai/knowledge-base"
+              className="mb-3"
+            />
           )}
           {loading ? (
             <div className="space-y-2">
@@ -574,7 +585,7 @@ interface Props {
 }
 
 export function KnowledgeBasePage({ orgId }: Props) {
-  const { kbs, isLoading, createKB, deleteKB, ingestUrl, ingestFile, ingestText } = useKnowledgeBases(orgId)
+  const { kbs, isLoading, error, createKB, deleteKB, ingestUrl, ingestFile, ingestText } = useKnowledgeBases(orgId)
   const [selectedKBId, setSelectedKBId] = useState<string | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [addSourceDialogOpen, setAddSourceDialogOpen] = useState(false)
@@ -591,6 +602,9 @@ export function KnowledgeBasePage({ orgId }: Props) {
   const handleCreateKB = async (name: string, sourceType: string) => {
     const result = await createKB.mutateAsync({ orgId, name, sourceType })
     if (result?.id) setSelectedKBId(result.id)
+    toast.success('Knowledge base created', {
+      description: 'You can now add URLs, files, or text notes.',
+    })
   }
 
   const handleDeleteKB = async () => {
@@ -598,6 +612,7 @@ export function KnowledgeBasePage({ orgId }: Props) {
     await deleteKB.mutateAsync({ id: deleteConfirmId })
     if (selectedKBId === deleteConfirmId) setSelectedKBId(null)
     setDeleteConfirmId(null)
+    toast.success('Knowledge base deleted')
   }
 
   const handleSourceSuccess = useCallback(() => {
@@ -622,6 +637,15 @@ export function KnowledgeBasePage({ orgId }: Props) {
           New Knowledge Base
         </Button>
       </div>
+
+      {error && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="Knowledge bases could not be loaded"
+          onRetry={() => window.location.reload()}
+          docsHref="/docs/ai/knowledge-base"
+        />
+      )}
 
       {/* Main Layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">

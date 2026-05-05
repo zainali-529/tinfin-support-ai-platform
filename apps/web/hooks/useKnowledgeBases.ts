@@ -104,6 +104,8 @@ export function useKBSources(kbId: string | null, orgId: string) {
     data = [],
     isLoading,
     isFetching,
+    isError,
+    error,
     refetch: queryRefetch,
   } = trpc.knowledge.getKnowledgeSources.useQuery(
     { kbId: kbId ?? '00000000-0000-0000-0000-000000000000' },
@@ -127,7 +129,7 @@ export function useKBSources(kbId: string | null, orgId: string) {
     }
   }
 
-  return { sources, chunkCount, loading: isLoading || refreshing, isFetching, refetch }
+  return { sources, chunkCount, loading: isLoading || refreshing, isFetching, isError, error, refetch }
 }
 
 export function useDeleteKBSource() {

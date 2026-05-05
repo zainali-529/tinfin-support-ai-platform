@@ -24,6 +24,7 @@ import {
 } from '@workspace/ui/components/alert-dialog'
 import { Checkbox } from '@workspace/ui/components/checkbox'
 import { Spinner } from '@workspace/ui/components/spinner'
+import { toast } from '@workspace/ui/components/sonner'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   MicIcon,
@@ -46,6 +47,7 @@ import { useVapiAssistantConfig } from '@/hooks/useCalls'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
 import { usePlan } from '@/hooks/usePlan'
+import { LaunchErrorState, LaunchInlineError } from '@/components/launch/LaunchState'
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
 
@@ -267,9 +269,9 @@ function VoiceCard({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function VoiceSettingsPanel() {
-  const { config: assistantConfig, isLoading, upsert, remove } = useVapiAssistantConfig()
-  const { data: hasKeyData } = trpc.vapi.hasCustomVapiKey.useQuery()
-  const { data: knowledgeBases } = trpc.knowledge.getKnowledgeBases.useQuery({})
+  const { config: assistantConfig, isLoading, error, refetch, upsert, remove } = useVapiAssistantConfig()
+  const { data: hasKeyData, error: keyError, refetch: refetchKey } = trpc.vapi.hasCustomVapiKey.useQuery()
+  const { data: knowledgeBases, error: kbError, refetch: refetchKbs } = trpc.knowledge.getKnowledgeBases.useQuery({})
   const utils = trpc.useUtils()
   const { previewStates, playPreview } = useVoicePreview()
   const { canUse } = usePlan()
@@ -370,6 +372,9 @@ export function VoiceSettingsPanel() {
       endCallPhrases: endCallPhrases.split(',').map(p => p.trim()).filter(Boolean),
     })
     setSaved(true)
+    toast.success(isConfigured ? 'Voice assistant updated' : 'Voice assistant created', {
+      description: 'Vapi configuration is now synced for this workspace.',
+    })
     setTimeout(() => setSaved(false), 3000)
   }
 
@@ -378,6 +383,7 @@ export function VoiceSettingsPanel() {
     if (!vapiKey.trim()) return
     await saveKey.mutateAsync({ vapiPrivateKey: vapiKey.trim() })
     setVapiKey('')
+    toast.success('Custom Vapi key saved')
   }
 
   const filteredVoices = VOICE_CATALOGUE.filter(v =>
@@ -408,6 +414,26 @@ export function VoiceSettingsPanel() {
             </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {error && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="Voice assistant settings could not be loaded"
+          onRetry={() => void refetch()}
+          docsHref="/docs/channels/voice"
+        />
+      )}
+
+      {(keyError || kbError) && (
+        <LaunchInlineError
+          error={keyError ?? kbError}
+          onRetry={() => {
+            void refetchKey()
+            void refetchKbs()
+          }}
+          docsHref="/docs/channels/voice"
+        />
       )}
 
       {/* Status banner */}
@@ -895,7 +921,10 @@ export function VoiceSettingsPanel() {
                     <button
                       data-free-allow={isReadOnly ? 'true' : undefined}
                       className="text-destructive underline underline-offset-2"
-                      onClick={() => { if (isReadOnly) { openUpgradeDialog(); return }; removeKey.mutate() }}
+                    onClick={() => {
+                      if (isReadOnly) { openUpgradeDialog(); return }
+                      removeKey.mutate(undefined, { onSuccess: () => toast.success('Custom Vapi key removed') })
+                    }}
                       disabled={removeKey.isPending}
                     >
                       {removeKey.isPending ? 'Removing...' : 'Remove'}
@@ -932,7 +961,10 @@ export function VoiceSettingsPanel() {
             variant="destructive"
             size="sm"
             className="gap-1.5 text-xs h-7"
-            onClick={() => { if (isReadOnly) { openUpgradeDialog(); return }; remove.mutate() }}
+            onClick={() => {
+              if (isReadOnly) { openUpgradeDialog(); return }
+              remove.mutate(undefined, { onSuccess: () => toast.success('Voice assistant deleted') })
+            }}
             disabled={remove.isPending}
           >
             {remove.isPending ? <Spinner className="size-3" /> : <Trash2Icon className="size-3" />}

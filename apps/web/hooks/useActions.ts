@@ -157,6 +157,17 @@ export function useActions(options?: { enabled?: boolean }) {
       statsQuery.isLoading ||
       logsQuery.isLoading ||
       pendingApprovalsQuery.isLoading,
+    isError:
+      actionsQuery.isError ||
+      statsQuery.isError ||
+      logsQuery.isError ||
+      pendingApprovalsQuery.isError,
+    error:
+      actionsQuery.error ??
+      statsQuery.error ??
+      logsQuery.error ??
+      pendingApprovalsQuery.error ??
+      null,
     createAction,
     updateAction,
     deleteAction,

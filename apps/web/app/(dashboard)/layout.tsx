@@ -22,6 +22,7 @@ import { getEffectiveTeamPermissions } from '@workspace/types'
 import { DocsSearchLauncher } from '@/components/docs/DocsSearchLauncher'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { AgentRealtimeProvider } from '@/components/realtime/AgentRealtimeProvider'
+import { RealtimeStatusBanner } from '@/components/launch/RealtimeStatusBanner'
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
   const msg = (error?.message ?? '').toLowerCase()
@@ -146,6 +147,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                   <ThemeToggle />
                 </div>
               </header>
+              <RealtimeStatusBanner />
               <div className="mx-auto flex min-h-0 w-full max-w-[1680px] flex-1 flex-col gap-4 p-4">
                 {children}
               </div>

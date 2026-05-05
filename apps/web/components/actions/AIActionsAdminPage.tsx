@@ -6,7 +6,9 @@ import { Button } from '@workspace/ui/components/button'
 import { Badge } from '@workspace/ui/components/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@workspace/ui/components/card'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import { toast } from '@workspace/ui/components/sonner'
 import { Trash2Icon, PlusIcon, PencilIcon, FlaskConicalIcon, BotIcon, LockIcon } from 'lucide-react'
+import { LaunchErrorState, LaunchInlineError } from '@/components/launch/LaunchState'
 import {
   ActionBuilder,
   type ActionBuilderPayload,
@@ -90,6 +92,9 @@ export function AIActionsAdminPage() {
     testAction,
     approveAction,
     rejectAction,
+    isError,
+    error: loadError,
+    refetch,
   } = useActions({ enabled: actionsEnabled })
 
   const [filter, setFilter] = useState<CategoryFilter>('all')
@@ -217,6 +222,9 @@ export function AIActionsAdminPage() {
       } else {
         await createAction.mutateAsync(payload)
       }
+      toast.success(editingActionId ? 'Action updated' : 'Action created', {
+        description: 'The AI assistant will use this action when it matches a customer request.',
+      })
       setBuilderSeed(null)
       setEditingActionId(null)
     } catch (err) {
@@ -239,6 +247,9 @@ export function AIActionsAdminPage() {
       id: testTarget.id,
       testParameters: parameters,
     })
+    toast.success(result.success ? 'Action test completed' : 'Action test returned an error', {
+      description: result.success ? 'Review the rendered request and response before enabling it.' : result.error ?? 'The endpoint responded but did not pass validation.',
+    })
     return {
       success: result.success,
       responseData: result.responseData,
@@ -258,6 +269,7 @@ export function AIActionsAdminPage() {
     setApprovingLogId(logId)
     try {
       await approveAction.mutateAsync({ logId })
+      toast.success('Action approved')
     } finally {
       setApprovingLogId(null)
     }
@@ -267,6 +279,7 @@ export function AIActionsAdminPage() {
     setRejectingLogId(logId)
     try {
       await rejectAction.mutateAsync({ logId })
+      toast.success('Action rejected')
     } finally {
       setRejectingLogId(null)
     }
@@ -303,6 +316,15 @@ export function AIActionsAdminPage() {
             AI Actions are in preview mode on Free and Starter. You can explore templates and existing setup, but saving, testing, deleting, and approvals require Pro.
           </AlertDescription>
         </Alert>
+      )}
+
+      {isError && (
+        <LaunchErrorState
+          error={loadError}
+          title="AI Actions could not be loaded"
+          onRetry={() => void refetch()}
+          docsHref="/docs/ai/actions-v1"
+        />
       )}
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -354,9 +376,7 @@ export function AIActionsAdminPage() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <LaunchInlineError error={error} docsHref="/docs/ai/actions-v1" />
       )}
 
       <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
@@ -465,6 +485,7 @@ export function AIActionsAdminPage() {
                             return
                           }
                           await deleteAction.mutateAsync({ id: action.id })
+                          toast.success('Action deleted')
                         }}
                       >
                         <Trash2Icon className="size-3.5" />

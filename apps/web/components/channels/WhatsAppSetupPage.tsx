@@ -12,6 +12,8 @@ import { Switch } from '@workspace/ui/components/switch'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { Badge } from '@workspace/ui/components/badge'
 import { Spinner } from '@workspace/ui/components/spinner'
+import { toast } from '@workspace/ui/components/sonner'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 import {
   AlertCircleIcon,
   CheckCircleIcon,
@@ -54,6 +56,8 @@ export function WhatsAppSetupPage() {
     updateAccount,
     deleteAccount,
     testConnection,
+    error,
+    refetch,
   } = useWhatsAppAccount()
 
   const [phoneNumberId, setPhoneNumberId] = useState('')
@@ -81,6 +85,9 @@ export function WhatsAppSetupPage() {
     })
     setSetupMeta(result)
     setAccessToken('')
+    toast.success('WhatsApp connected', {
+      description: 'Copy the webhook URL and verify token into Meta to finish setup.',
+    })
   }
 
   if (isLoading) {
@@ -103,6 +110,15 @@ export function WhatsAppSetupPage() {
           in the unified inbox.
         </p>
       </div>
+
+      {error && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="WhatsApp settings could not be loaded"
+          onRetry={() => void refetch()}
+          docsHref="/docs/channels/whatsapp"
+        />
+      )}
 
       {isReadOnly && (
         <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-900/20">

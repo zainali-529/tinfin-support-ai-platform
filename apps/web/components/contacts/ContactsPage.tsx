@@ -19,7 +19,9 @@ import { Input } from '@workspace/ui/components/input'
 import { Label } from '@workspace/ui/components/label'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
 import { Spinner } from '@workspace/ui/components/spinner'
+import { toast } from '@workspace/ui/components/sonner'
 import { OctagonXIcon, UsersIcon } from 'lucide-react'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 
 // ─── Add Contact Dialog ───────────────────────────────────────────────────────
 
@@ -48,6 +50,7 @@ function AddContactDialog({
     }
     try {
       await createContact.mutateAsync({ name: name || undefined, email: email || undefined, phone: phone || undefined })
+      toast.success('Contact created')
       setName('')
       setEmail('')
       setPhone('')
@@ -109,7 +112,7 @@ export function ContactsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  const { contacts, totalCount, isLoading, hasMore, isFetchingMore, loadMore } = useContacts({
+  const { contacts, totalCount, isLoading, isError, error, hasMore, isFetchingMore, loadMore, refetch } = useContacts({
     search: debouncedSearch,
     limit: 20,
   })
@@ -155,6 +158,16 @@ export function ContactsPage() {
           </p>
         </div>
       </div>
+
+      {isError && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="Contacts could not be loaded"
+          onRetry={() => void refetch()}
+          docsHref="/docs/inbox/unified-inbox"
+          className="mb-4"
+        />
+      )}
 
       {/* Two-panel layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm">

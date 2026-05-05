@@ -12,6 +12,7 @@ import { Switch } from '@workspace/ui/components/switch'
 import { Slider } from '@workspace/ui/components/slider'
 import { Badge } from '@workspace/ui/components/badge'
 import { Alert, AlertDescription } from '@workspace/ui/components/alert'
+import { toast } from '@workspace/ui/components/sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
   PaletteIcon, MessageSquareIcon, SlidersHorizontalIcon,
 } from 'lucide-react'
 import { WidgetPreview } from './WidgetPreview'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -452,7 +454,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   const { planId } = usePlan()
   const isReadOnly = planId === 'free'
 
-  const { data: existingConfig, isLoading } = trpc.org.getWidgetConfig.useQuery(
+  const { data: existingConfig, isLoading, error, refetch } = trpc.org.getWidgetConfig.useQuery(
     { orgId }, { retry: false }
   )
   const updateConfig = trpc.org.updateWidgetConfig.useMutation()
@@ -621,6 +623,9 @@ export function WidgetCustomizationPage({ orgId }: Props) {
       })
       setSaved(true)
       setIsDirty(false)
+      toast.success('Widget customization saved', {
+        description: 'Installed widgets will use these settings after refresh.',
+      })
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       console.error('[widget save]', err)
@@ -714,6 +719,15 @@ export function WidgetCustomizationPage({ orgId }: Props) {
       )}
 
       {/* ── Main Layout: 50/50 ── */}
+      {error && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="Widget settings could not be loaded"
+          onRetry={() => void refetch()}
+          docsHref="/docs/widget/customization"
+        />
+      )}
+
       <div className="flex gap-0 overflow-hidden rounded-xl border bg-background shadow-sm" style={{ height: 'calc(100vh - 11rem)' }}>
 
         {/* ── Left: Settings (50%) ── */}

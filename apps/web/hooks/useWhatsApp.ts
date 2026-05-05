@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react'
 import { trpc } from '@/lib/trpc'
+import { toast } from '@workspace/ui/components/sonner'
 import { useRealtimeTable } from './useRealtime'
 import { useActiveOrgId } from '@/components/org/OrgContext'
 
@@ -32,20 +33,28 @@ export function useWhatsAppAccount() {
   const updateAccount = trpc.whatsapp.updateAccount.useMutation({
     onSuccess: () => {
       void utils.whatsapp.getAccount.invalidate()
+      toast.success('WhatsApp settings updated')
     },
   })
 
   const deleteAccount = trpc.whatsapp.deleteAccount.useMutation({
     onSuccess: () => {
       void utils.whatsapp.getAccount.invalidate()
+      toast.success('WhatsApp disconnected')
     },
   })
 
-  const testConnection = trpc.whatsapp.testConnection.useMutation()
+  const testConnection = trpc.whatsapp.testConnection.useMutation({
+    onSuccess: () => {
+      toast.success('WhatsApp connection successful')
+    },
+  })
 
   return {
     account: accountQuery.data ?? null,
     isLoading: accountQuery.isLoading,
+    error: accountQuery.error,
+    refetch: accountQuery.refetch,
     setupAccount,
     updateAccount,
     deleteAccount,

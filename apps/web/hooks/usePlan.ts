@@ -37,11 +37,21 @@ export type LimitKey =
 export type BillingAccessMode = 'active' | 'grace' | 'restricted'
 
 export function usePlan() {
-  const { data: sub, isLoading: subLoading } = trpc.billing.getSubscription.useQuery(undefined, {
+  const {
+    data: sub,
+    isLoading: subLoading,
+    error: subscriptionError,
+    refetch: refetchSubscription,
+  } = trpc.billing.getSubscription.useQuery(undefined, {
     staleTime: 60_000,
   })
 
-  const { data: usageData, isLoading: usageLoading } = trpc.usage.getUsage.useQuery(undefined, {
+  const {
+    data: usageData,
+    isLoading: usageLoading,
+    error: usageError,
+    refetch: refetchUsage,
+  } = trpc.usage.getUsage.useQuery(undefined, {
     staleTime: 30_000,
   })
 
@@ -125,6 +135,11 @@ export function usePlan() {
     activeAddOns: usageData?.activeAddOns ?? [],
     periodStart: usageData?.periodStart ?? null,
     isLoading: subLoading || usageLoading,
+    error: subscriptionError ?? usageError ?? null,
+    refetchPlan: () => {
+      void refetchSubscription()
+      void refetchUsage()
+    },
     canUse,
     withinLimit,
     usagePercent,

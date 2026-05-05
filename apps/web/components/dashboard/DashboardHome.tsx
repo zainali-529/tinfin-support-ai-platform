@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { Button } from '@workspace/ui/components/button'
-import { Card, CardContent } from '@workspace/ui/components/card'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   BarChart3Icon,
@@ -19,6 +18,7 @@ import { DashboardOperationsGrid } from './DashboardOperationsGrid'
 import { DashboardRecentConversations } from './DashboardRecentConversations'
 import { useDashboard } from '@/hooks/useDashboard'
 import type { DashboardPeriod } from '@/hooks/useDashboard'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 
 const PERIOD_OPTIONS: Array<{ label: string; value: DashboardPeriod }> = [
   { label: 'Today', value: 'today' },
@@ -117,15 +117,12 @@ export function DashboardHome() {
       </section>
 
       {errorMessage && (
-        <Card className="border-destructive/30 shadow-none">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <div>
-              <p className="text-sm font-semibold text-destructive">Dashboard data unavailable</p>
-              <p className="mt-1 text-xs text-muted-foreground">{errorMessage}</p>
-            </div>
-            <Button size="sm" onClick={refetchAll}>Try again</Button>
-          </CardContent>
-        </Card>
+        <LaunchErrorState
+          error={errorMessage}
+          title="Dashboard data unavailable"
+          onRetry={refetchAll}
+          docsHref="/docs/troubleshooting/common-issues"
+        />
       )}
 
       <DashboardKpis overview={overview} isLoading={isLoading} />

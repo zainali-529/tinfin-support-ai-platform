@@ -35,10 +35,12 @@ import { Input } from '@workspace/ui/components/input'
 import { Separator } from '@workspace/ui/components/separator'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Spinner } from '@workspace/ui/components/spinner'
+import { toast } from '@workspace/ui/components/sonner'
 import { cn } from '@workspace/ui/lib/utils'
 import { trpc } from '@/lib/trpc'
 import { usePlan } from '@/hooks/usePlan'
 import { PlanBadge, UsageBar } from '../billing/PlanGuard'
+import { LaunchErrorState, LaunchInlineError } from '@/components/launch/LaunchState'
 
 type PlanId = 'free' | 'starter' | 'pro' | 'scale'
 
@@ -532,17 +534,19 @@ function BillingInner() {
     graceEndsAt,
     isLoading,
     canManageBilling,
+    error: planError,
+    refetchPlan,
   } = usePlan()
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [addOnLoading, setAddOnLoading] = useState<string | null>(null)
 
-  const { data: plans = [], isLoading: plansLoading } = trpc.billing.getPlans.useQuery()
-  const { data: addOnData, isLoading: addOnsLoading } = trpc.billing.getAddOns.useQuery(undefined, {
+  const { data: plans = [], isLoading: plansLoading, error: plansError, refetch: refetchPlans } = trpc.billing.getPlans.useQuery()
+  const { data: addOnData, isLoading: addOnsLoading, error: addOnsError, refetch: refetchAddOns } = trpc.billing.getAddOns.useQuery(undefined, {
     enabled: canManageBilling,
     staleTime: 30_000,
   })
-  const { data: invoices = [], isLoading: invoicesLoading } = trpc.billing.getInvoices.useQuery(undefined, {
+  const { data: invoices = [], isLoading: invoicesLoading, error: invoicesError, refetch: refetchInvoices } = trpc.billing.getInvoices.useQuery(undefined, {
     enabled: canManageBilling,
     staleTime: 60_000,
   })
@@ -554,17 +558,14 @@ function BillingInner() {
 
   const createCheckout = trpc.billing.createCheckout.useMutation({
     onSuccess: (data) => { window.location.href = data.url },
-    onError: (err) => alert(err.message),
     onSettled: () => setCheckoutLoading(null),
   })
   const createAddOnCheckout = trpc.billing.createAddOnCheckout.useMutation({
     onSuccess: (data) => { window.location.href = data.url },
-    onError: (err) => alert(err.message),
     onSettled: () => setAddOnLoading(null),
   })
   const createPortal = trpc.billing.createPortal.useMutation({
     onSuccess: (data) => { window.location.href = data.url },
-    onError: (err) => alert(err.message),
     onSettled: () => setPortalLoading(false),
   })
 
@@ -607,6 +608,22 @@ function BillingInner() {
           <AlertDescription className="text-sm">Add-on checkout was cancelled. No usage pack was added.</AlertDescription>
         </Alert>
       )}
+      {plansError && !plansLoading && (
+        <LaunchErrorState
+          error={plansError}
+          title="Plans could not be loaded"
+          onRetry={() => void refetchPlans()}
+          docsHref="/docs/admin/billing-usage-addons"
+        />
+      )}
+      {planError && !isLoading && (
+        <LaunchErrorState
+          error={planError}
+          title="Current billing status could not be loaded"
+          onRetry={refetchPlan}
+          docsHref="/docs/admin/billing-usage-addons"
+        />
+      )}
       {isBillingRestricted && (
         <Alert className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20">
           <AlertCircleIcon className="size-4 text-red-600" />
@@ -640,8 +657,20 @@ function BillingInner() {
                 key={plan.id}
                 plan={plan}
                 currentPlanId={planId}
-                onUpgrade={(id) => { setCheckoutLoading(id); createCheckout.mutate({ planId: id }) }}
-                onPortal={() => { setPortalLoading(true); createPortal.mutate({}) }}
+                onUpgrade={(id) => {
+                  setCheckoutLoading(id)
+                  toast.loading('Opening secure checkout...', { id: `checkout-${id}` })
+                  createCheckout.mutate({ planId: id }, {
+                    onSettled: () => toast.dismiss(`checkout-${id}`),
+                  })
+                }}
+                onPortal={() => {
+                  setPortalLoading(true)
+                  toast.loading('Opening billing portal...', { id: 'billing-portal' })
+                  createPortal.mutate({}, {
+                    onSettled: () => toast.dismiss('billing-portal'),
+                  })
+                }}
                 canManageBilling={canManageBilling}
                 isLoading={checkoutLoading === plan.id || portalLoading}
               />
@@ -699,7 +728,19 @@ function BillingInner() {
               </Alert>
             )}
             {planId !== 'free' && canManageBilling && (
-              <Button size="sm" variant="outline" onClick={() => { setPortalLoading(true); createPortal.mutate({}) }} disabled={portalLoading} className="gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setPortalLoading(true)
+                toast.loading('Opening billing portal...', { id: 'billing-portal' })
+                createPortal.mutate({}, {
+                  onSettled: () => toast.dismiss('billing-portal'),
+                })
+              }}
+              disabled={portalLoading}
+              className="gap-1.5"
+            >
                 {portalLoading ? <Spinner className="size-3.5" /> : <CreditCardIcon className="size-3.5" />}
                 Manage in Portal
               </Button>
@@ -749,7 +790,13 @@ function BillingInner() {
             </Badge>
           )}
         </div>
-        {isLoading || addOnsLoading ? (
+        {addOnsError && canManageBilling && !addOnsLoading ? (
+          <LaunchInlineError
+            error={addOnsError}
+            onRetry={() => void refetchAddOns()}
+            docsHref="/docs/admin/billing-usage-addons"
+          />
+        ) : isLoading || addOnsLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[210px] rounded-2xl" />)}
           </div>
@@ -793,7 +840,10 @@ function BillingInner() {
                   isLoading={addOnLoading === addOn.id}
                   onBuy={(requestedUnits) => {
                     setAddOnLoading(addOn.id)
-                    createAddOnCheckout.mutate({ addOnId: addOn.id, units: requestedUnits })
+                    toast.loading('Opening add-on checkout...', { id: `addon-${addOn.id}` })
+                    createAddOnCheckout.mutate({ addOnId: addOn.id, units: requestedUnits }, {
+                      onSettled: () => toast.dismiss(`addon-${addOn.id}`),
+                    })
                   }}
                 />
               )
@@ -809,7 +859,15 @@ function BillingInner() {
         </CardHeader>
         <Separator />
         <CardContent className="pt-0">
-          {invoicesLoading ? (
+          {invoicesError && canManageBilling ? (
+            <div className="py-4">
+              <LaunchInlineError
+                error={invoicesError}
+                onRetry={() => void refetchInvoices()}
+                docsHref="/docs/admin/billing-usage-addons"
+              />
+            </div>
+          ) : invoicesLoading ? (
             <div className="space-y-3 py-4">
               {Array.from({ length: 3 }).map((_, index) => (
                 <div key={index} className="flex gap-4 py-2">

@@ -8,6 +8,7 @@ import { Badge } from '@workspace/ui/components/badge'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Separator } from '@workspace/ui/components/separator'
 import { PlanBadge, PlanLimitAlert, UsageBar } from '../billing/PlanGuard'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 import { cn } from '@workspace/ui/lib/utils'
 import {
   MessageSquareIcon,
@@ -53,6 +54,8 @@ export function UsagePage() {
     addOnLimits,
     activeAddOns,
     canUse,
+    error,
+    refetchPlan,
   } = usePlan()
   const utils = trpc.useUtils()
 
@@ -89,6 +92,15 @@ export function UsagePage() {
           Refresh
         </Button>
       </div>
+
+      {error && !isLoading && (
+        <LaunchErrorState
+          error={error}
+          title="Usage data could not be loaded"
+          onRetry={refetchPlan}
+          docsHref="/docs/admin/billing-usage-addons"
+        />
+      )}
 
       <div className="flex items-center gap-3 rounded-xl border bg-muted/20 px-5 py-4">
         <CalendarIcon className="size-5 text-muted-foreground shrink-0" />

@@ -27,6 +27,7 @@ import { Progress } from '@workspace/ui/components/progress'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Skeleton } from '@workspace/ui/components/skeleton'
 import { cn } from '@workspace/ui/lib/utils'
+import { LaunchErrorState } from '@/components/launch/LaunchState'
 import {
   ActivityIcon,
   AlertTriangleIcon,
@@ -389,9 +390,12 @@ export function AnalyticsDashboard() {
       </section>
 
       {isError && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
-          {error?.message ?? 'Failed to load analytics.'}
-        </div>
+        <LaunchErrorState
+          error={error}
+          title="Analytics could not be loaded"
+          onRetry={refetchAll}
+          docsHref="/docs/admin/analytics-reporting"
+        />
       )}
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">

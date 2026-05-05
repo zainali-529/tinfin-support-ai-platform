@@ -84,6 +84,8 @@ export function useContacts(options?: UseContactsOptions) {
     totalCount,
     isLoading: isLoadingInitial,
     isFetchingMore,
+    isError: query.isError,
+    error: query.error,
     hasMore,
     loadMore,
     refetch,

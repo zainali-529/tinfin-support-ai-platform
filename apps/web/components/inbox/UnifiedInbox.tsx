@@ -41,6 +41,7 @@ import { ConversationRenderer } from './ConversationRenderer'
 import { EmptyState } from './EmptyState'
 import { InboxSavedViews } from './InboxSavedViews'
 import { PendingApprovals } from '@/components/actions/PendingApprovals'
+import { LaunchErrorState, LaunchInlineError, LaunchState } from '@/components/launch/LaunchState'
 import { INBOX_SAVED_VIEW_IDS, type AgentRealtimeEvent, type InboxSavedViewId } from '@workspace/types'
 import type { Conversation, ConversationQueueState } from '@/types/database'
 
@@ -142,6 +143,8 @@ export function UnifiedInbox() {
     conversations,
     totalCount,
     loading,
+    isError,
+    error,
     hasMore,
     isFetchingMore,
     loadMore,
@@ -449,8 +452,12 @@ export function UnifiedInbox() {
 
   if (!agentId) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading...
+      <div className="flex h-full items-center justify-center">
+        <LaunchState
+          title="Preparing inbox"
+          description="Loading your agent session and realtime connection..."
+          className="w-full max-w-md"
+        />
       </div>
     )
   }
@@ -591,7 +598,15 @@ export function UnifiedInbox() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto" onScroll={handleListScroll}>
-          {loading && conversations.length === 0 ? (
+          {isError && conversations.length === 0 ? (
+            <div className="p-3">
+              <LaunchInlineError
+                error={error}
+                onRetry={() => void refetch()}
+                docsHref="/docs/inbox/unified-inbox"
+              />
+            </div>
+          ) : loading && conversations.length === 0 ? (
             <div className="space-y-2 p-2">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div key={index} className="rounded-lg border p-3">
@@ -602,8 +617,13 @@ export function UnifiedInbox() {
               ))}
             </div>
           ) : conversations.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-              No conversations found.
+            <div className="px-3 py-6">
+              <LaunchState
+                title="No conversations found"
+                description="Try another saved view, clear filters, or send a test message from the widget."
+                docsHref="/docs/widget/testing"
+                className="border-dashed"
+              />
             </div>
           ) : (
             <>
@@ -643,6 +663,16 @@ export function UnifiedInbox() {
             agentId={agentId}
             onStatusChange={handleStatusMutation}
           />
+        ) : selectedId && deepLinkedConversationQuery.isError ? (
+          <div className="flex h-full items-center justify-center p-6">
+            <LaunchErrorState
+              error={deepLinkedConversationQuery.error}
+              title="Conversation could not be opened"
+              onRetry={() => void deepLinkedConversationQuery.refetch()}
+              docsHref="/docs/inbox/unified-inbox"
+              className="w-full max-w-xl"
+            />
+          </div>
         ) : selectedId && deepLinkedConversationQuery.isFetching ? (
           <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner className="size-4" />
