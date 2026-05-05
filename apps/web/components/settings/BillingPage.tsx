@@ -287,6 +287,7 @@ function PlanCard({
         <FeatureLine enabled={boolFeature(plan, 'emailChannel')} label="Email channel" mutedLabel="Email channel not included" />
         <FeatureLine enabled={boolFeature(plan, 'whatsappChannel')} label="WhatsApp channel" mutedLabel="WhatsApp channel not included" />
         <FeatureLine enabled={boolFeature(plan, 'aiActions')} label={actionLabel} mutedLabel={actionLabel} />
+        <FeatureLine enabled={boolFeature(plan, 'agentCopilot')} label="Agent Copilot" mutedLabel="Agent Copilot not included" />
         <FeatureLine enabled={boolFeature(plan, 'analytics')} label="Analytics and reporting" mutedLabel="Basic reporting only" />
       </ul>
 
@@ -645,7 +646,7 @@ function BillingInner() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">Available Plans</p>
-            <p className="text-xs text-muted-foreground">Starter keeps the core chat experience lean. Pro unlocks email, WhatsApp, voice, analytics, and AI Actions. Automatic discounts and trials are shown before checkout and applied in Stripe.</p>
+            <p className="text-xs text-muted-foreground">Starter keeps the core chat experience lean. Pro unlocks email, WhatsApp, voice, analytics, AI Actions, and Agent Copilot. Automatic discounts and trials are shown before checkout and applied in Stripe.</p>
           </div>
           <PlanBadge planId={planId} />
         </div>
@@ -911,6 +912,7 @@ function BillingInner() {
               { label: 'Email channel', icon: MailIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'WhatsApp channel', icon: MessageCircleIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'AI Actions', icon: WorkflowIcon, free: <PreviewCell />, starter: <PreviewCell />, pro: <Tick yes />, scale: <Tick yes /> },
+              { label: 'Agent Copilot', icon: BotIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Voice calls', icon: PhoneCallIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Analytics', icon: SparklesIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes />, scale: <Tick yes /> },
               { label: 'Priority support', icon: StarIcon, free: <Tick yes={false} />, starter: <Tick yes={false} />, pro: <Tick yes={false} />, scale: <Tick yes /> },

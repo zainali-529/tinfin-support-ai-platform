@@ -28,6 +28,8 @@ import { Textarea } from '@workspace/ui/components/textarea'
 import { toast } from '@workspace/ui/components/sonner'
 import { cn } from '@workspace/ui/lib/utils'
 import { trpc } from '@/lib/trpc'
+import { UpgradePrompt } from '@/components/billing/PlanGuard'
+import { usePlan } from '@/hooks/usePlan'
 import { MessageMarkdown } from './MessageMarkdown'
 import type { Conversation } from '@/types/database'
 
@@ -115,6 +117,7 @@ export function AgentCopilotPanel({
 }: AgentCopilotPanelProps) {
   const router = useRouter()
   const utils = trpc.useUtils()
+  const { canUse, isPlanLoading } = usePlan()
   const [customQuestion, setCustomQuestion] = useState('')
   const [targetLanguage, setTargetLanguage] = useState('Spanish')
   const [activeMode, setActiveMode] = useState<CopilotMode | null>(null)
@@ -215,6 +218,18 @@ export function AgentCopilotPanel({
     setActiveMode('custom')
     setLastInput(payload)
     runCopilot.mutate(payload)
+  }
+
+  if (!isPlanLoading && !canUse('agentCopilot')) {
+    return (
+      <div className="flex h-full items-center justify-center bg-muted/10 p-4">
+        <UpgradePrompt
+          feature="Agent Copilot"
+          requiredPlan="pro"
+          description="Draft replies, summarize conversations, rewrite responses, translate, and find next actions with AI."
+        />
+      </div>
+    )
   }
 
   return (

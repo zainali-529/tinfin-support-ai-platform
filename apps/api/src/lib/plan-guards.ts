@@ -26,6 +26,7 @@ const FEATURE_NAMES: Record<string, string> = {
   aiResponses: 'AI Responses',
   knowledgeBase: 'Knowledge Base',
   aiActions: 'AI Actions',
+  agentCopilot: 'Agent Copilot',
   emailChannel: 'Email Channel',
   whatsappChannel: 'WhatsApp Channel',
   widgetCustomization: 'Widget Customization',
@@ -46,6 +47,7 @@ const LIMIT_NAMES: Record<string, string> = {
 
 const REQUIRED_PLAN: Record<string, 'starter' | 'pro' | 'scale'> = {
   aiActions: 'pro',
+  agentCopilot: 'pro',
   emailChannel: 'pro',
   whatsappChannel: 'pro',
   widgetCustomization: 'starter',

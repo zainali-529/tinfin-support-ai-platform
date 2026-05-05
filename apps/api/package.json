@@ -10,8 +10,8 @@
     "check-types": "tsc --noEmit",
     "eval:historical": "tsx src/scripts/eval-historical-replay.ts",
     "load:reporting": "tsx src/scripts/load-reporting-dashboard.ts",
-    "seed:analytics-demo": "tsx --env-file=../../.env src/scripts/seed-analytics-demo.ts",
-    "cleanup:analytics-demo": "tsx --env-file=../../.env src/scripts/cleanup-analytics-demo.ts"
+    "seed:screenshot-demo": "tsx --env-file=../../.env src/scripts/seed-screenshot-demo.ts",
+    "cleanup:screenshot-demo": "tsx --env-file=../../.env src/scripts/cleanup-screenshot-demo.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

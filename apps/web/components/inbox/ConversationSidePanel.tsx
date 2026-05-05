@@ -1,6 +1,6 @@
 'use client'
 
-import { BotIcon, NotebookPenIcon, PanelRightOpenIcon, XIcon } from 'lucide-react'
+import { BotIcon, LockIcon, NotebookPenIcon, PanelRightOpenIcon, XIcon } from 'lucide-react'
 import {
   Tabs,
   TabsContent,
@@ -12,6 +12,8 @@ import { Sheet, SheetContent } from '@workspace/ui/components/sheet'
 import { AgentCopilotPanel } from './AgentCopilotPanel'
 import { ConversationTimelinePanel } from './ConversationTimelinePanel'
 import type { Conversation } from '@/types/database'
+import { UpgradePrompt } from '@/components/billing/PlanGuard'
+import { usePlan } from '@/hooks/usePlan'
 
 interface ConversationSidePanelProps {
   conversation: Conversation
@@ -37,6 +39,9 @@ function ConversationSidePanelContent({
   onInsertDraft,
   onClose,
 }: ConversationSidePanelContentProps) {
+  const { canUse, isPlanLoading } = usePlan()
+  const canUseCopilot = isPlanLoading || canUse('agentCopilot')
+
   return (
     <Tabs defaultValue="timeline" className="h-full min-h-0 w-full gap-0">
       <div className="flex items-center gap-2 border-b bg-background/60 px-3 py-2">
@@ -46,7 +51,7 @@ function ConversationSidePanelContent({
             Timeline
           </TabsTrigger>
           <TabsTrigger value="copilot" className="gap-1.5 text-xs">
-            <BotIcon className="size-3.5" />
+            {canUseCopilot ? <BotIcon className="size-3.5" /> : <LockIcon className="size-3.5" />}
             Copilot
           </TabsTrigger>
         </TabsList>
@@ -72,11 +77,21 @@ function ConversationSidePanelContent({
         />
       </TabsContent>
       <TabsContent value="copilot" className="min-h-0">
-        <AgentCopilotPanel
-          conversation={conversation}
-          composerText={composerText}
-          onInsertDraft={onInsertDraft}
-        />
+        {canUseCopilot ? (
+          <AgentCopilotPanel
+            conversation={conversation}
+            composerText={composerText}
+            onInsertDraft={onInsertDraft}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center p-4">
+            <UpgradePrompt
+              feature="Agent Copilot"
+              requiredPlan="pro"
+              description="Draft replies, summarize conversations, rewrite responses, translate, and find next actions with AI."
+            />
+          </div>
+        )}
       </TabsContent>
     </Tabs>
   )

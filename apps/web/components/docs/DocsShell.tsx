@@ -12,11 +12,11 @@ import {
   Inbox,
   MessageCircle,
   Rocket,
-  ShieldCheck,
 } from 'lucide-react'
 
 import type { DocsPage } from '@/lib/docs'
 import { docsPageMap, docsSections, getDocsHref } from '@/lib/docs'
+import { ThemeToggle } from '@/components/nav/ThemeToggle'
 import { Button } from '@workspace/ui/components/button'
 import {
   Sidebar,
@@ -132,6 +132,7 @@ export function DocsShell({ page }: { page: DocsPage }) {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <DocsSearchLauncher showDocsButton={false} compact />
+              <ThemeToggle />
               <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
                 <Link href="/dashboard">
                   <ArrowLeft className="size-3.5" />

@@ -12,6 +12,7 @@ import {
 } from '@workspace/ai'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
+import { requireFeature } from '../lib/plan-guards'
 
 const copilotModeSchema = z.enum([
   'draft_reply',
@@ -452,6 +453,7 @@ export const copilotRouter = router({
     .input(runCopilotSchema)
     .mutation(async ({ ctx, input }) => {
       requirePermissionFromContext(ctx, 'inbox', 'Inbox access is required.')
+      await requireFeature(ctx.supabase, ctx.userOrgId, 'agentCopilot')
 
       if (!process.env.OPENAI_API_KEY) {
         throw new TRPCError({

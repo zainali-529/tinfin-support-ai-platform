@@ -5,11 +5,9 @@ import { format, formatDistanceToNow } from 'date-fns'
 import {
   useAddContactNote,
   useContact,
-  useDeleteContact,
   useDeleteContactNote,
   useUpdateContactIntelligence,
 } from '@/hooks/useContacts'
-import { useHasOrgPermission } from '@/components/org/OrgContext'
 import { EditContactDialog } from './EditContactDialog'
 import { ScrollArea } from '@workspace/ui/components/scroll-area'
 import { Button } from '@workspace/ui/components/button'
@@ -19,16 +17,6 @@ import { Skeleton } from '@workspace/ui/components/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@workspace/ui/components/tabs'
 import { Input } from '@workspace/ui/components/input'
 import { Textarea } from '@workspace/ui/components/textarea'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@workspace/ui/components/alert-dialog'
 import { toast } from '@workspace/ui/components/sonner'
 import { cn } from '@workspace/ui/lib/utils'
 import {
@@ -195,7 +183,6 @@ interface ContactProfile {
 
 interface Props {
   contactId: string
-  onDeleted?: () => void
   onBack?: () => void
 }
 
@@ -365,19 +352,15 @@ function MobileContactBackButton({ onBack }: { onBack?: () => void }) {
   )
 }
 
-export function ContactDetail({ contactId, onDeleted, onBack }: Props) {
+export function ContactDetail({ contactId, onBack }: Props) {
   const { contact: rawContact, isLoading } = useContact(contactId)
   const contact = rawContact as ContactProfile | undefined
-  const canManageContacts = useHasOrgPermission('contacts')
   const router = useRouter()
-  const deleteContact = useDeleteContact()
   const updateIntelligence = useUpdateContactIntelligence()
   const addNote = useAddContactNote()
   const deleteNote = useDeleteContactNote()
 
   const [editOpen, setEditOpen] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [customFields, setCustomFields] = useState<Record<string, string>>({})
   const [fieldKey, setFieldKey] = useState('')
@@ -436,17 +419,6 @@ export function ContactDetail({ contactId, onDeleted, onBack }: Props) {
     name: contact.name ?? null,
     email: contact.email ?? null,
     phone: contact.phone ?? null,
-  }
-
-  const handleDelete = async () => {
-    setDeleteError('')
-    try {
-      await deleteContact.mutateAsync({ id: contactId })
-      setDeleteOpen(false)
-      onDeleted?.()
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete contact.')
-    }
   }
 
   const saveTags = async (nextTags: string[]) => {
@@ -557,19 +529,6 @@ export function ContactDetail({ contactId, onDeleted, onBack }: Props) {
               <EditIcon className="size-3.5" />
               <span className="hidden sm:inline">Edit</span>
             </Button>
-            {canManageContacts && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setDeleteError('')
-                  setDeleteOpen(true)
-                }}
-                className="h-8 border-destructive/30 text-destructive hover:bg-destructive/5"
-              >
-                <Trash2Icon className="size-3.5" />
-              </Button>
-            )}
           </div>
         </div>
       </div>
@@ -920,31 +879,6 @@ export function ContactDetail({ contactId, onDeleted, onBack }: Props) {
         />
       )}
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete contact?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes <strong>{displayName}</strong>. Related chats, email threads,
-              WhatsApp threads, calls, action logs, and widget visitor history will also be removed.
-            </AlertDialogDescription>
-            {deleteError && <p className="text-xs font-medium text-destructive">{deleteError}</p>}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault()
-                void handleDelete()
-              }}
-              disabled={deleteContact.isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteContact.isPending ? 'Deleting...' : 'Delete contact'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

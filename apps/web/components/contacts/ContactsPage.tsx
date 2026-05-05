@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useContacts, useCreateContact } from '@/hooks/useContacts'
 import { ContactList } from './ContactList'
 import { ContactDetail, ContactDetailEmpty } from './ContactDetail'
-import { EditContactDialog } from './EditContactDialog'
 import { ImportContactsDialog } from './ImportContactsDialog'
 import {
   Dialog,
@@ -132,10 +131,6 @@ export function ContactsPage() {
     router.replace(query ? `${pathname}?${query}` : pathname)
   }, [pathname, router, searchParams])
 
-  const handleDeleted = useCallback(() => {
-    clearSelectedContact()
-  }, [clearSelectedContact])
-
   useEffect(() => {
     const contactId = searchParams.get('contact')
     setSelectedId((current) => (current === contactId ? current : contactId))
@@ -209,7 +204,6 @@ export function ContactsPage() {
           {selectedId ? (
             <ContactDetail
               contactId={selectedId}
-              onDeleted={handleDeleted}
               onBack={clearSelectedContact}
             />
           ) : (

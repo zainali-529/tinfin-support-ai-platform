@@ -18,6 +18,7 @@ export type FeatureKey =
   | 'aiResponses'
   | 'knowledgeBase'
   | 'aiActions'
+  | 'agentCopilot'
   | 'emailChannel'
   | 'whatsappChannel'
   | 'widgetCustomization'
@@ -72,6 +73,9 @@ export function usePlan() {
 
     // Backward-compatible fallback when API responds with an older planDetails shape.
     if (feature === 'aiActions') {
+      return sub.plan === 'pro' || sub.plan === 'scale'
+    }
+    if (feature === 'agentCopilot') {
       return sub.plan === 'pro' || sub.plan === 'scale'
     }
     if (feature === 'emailChannel') {

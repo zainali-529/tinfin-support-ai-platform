@@ -7,7 +7,7 @@
  *   getContacts    — paginated list with search + stats
  *   getContact     — full contact detail with conversations, calls, emails
  *   updateContact  — update name/email/phone
- *   deleteContact  — hard delete (admin only)
+ *   deleteContact  - disabled to preserve support history and usage integrity
  *   createContact  — manual contact creation
  *   importContacts — bulk upsert (admin only, max 500)
  */
@@ -19,15 +19,8 @@ import { router, protectedProcedure } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 import { safeRecordConversationTimelineEvent } from '../services/conversation-timeline.service'
 
-const VISITOR_TOMBSTONE_LIMIT = 500
-const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 const CONTACT_NOTE_LIMIT = 80
 const CONTACT_TIMELINE_LIMIT = 120
-
-type VisitorTombstone = {
-  visitorId: string
-  deletedAt: string
-}
 
 type ContactNote = {
   id: string
@@ -169,90 +162,6 @@ function publicMeta(meta: unknown): Record<string, unknown> {
       .filter((key) => Object.prototype.hasOwnProperty.call(input, key))
       .map((key) => [key, input[key]])
   )
-}
-
-function readVisitorId(meta: unknown): string | null {
-  const visitorId = asRecord(meta).visitorId
-  return typeof visitorId === 'string' && visitorId.trim().length > 0
-    ? visitorId.trim()
-    : null
-}
-
-function normalizeVisitorTombstones(value: unknown): VisitorTombstone[] {
-  if (!Array.isArray(value)) return []
-
-  return value
-    .map((item) => {
-      const row = asRecord(item)
-      const visitorId = typeof row.visitorId === 'string' ? row.visitorId.trim() : ''
-      const deletedAt = typeof row.deletedAt === 'string' ? row.deletedAt : ''
-      if (!visitorId || !deletedAt) return null
-      return { visitorId, deletedAt }
-    })
-    .filter((item): item is VisitorTombstone => Boolean(item))
-}
-
-async function tombstoneDeletedVisitor(
-  supabase: any,
-  orgId: string,
-  visitorId: string | null
-): Promise<void> {
-  if (!visitorId) return
-
-  const { data, error } = await supabase
-    .from('organizations')
-    .select('settings')
-    .eq('id', orgId)
-    .maybeSingle()
-
-  if (error) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `Failed to load organization settings: ${error.message}`,
-    })
-  }
-
-  const now = new Date()
-  const settings = asRecord(data?.settings)
-  const existing = normalizeVisitorTombstones(settings.visitorIdentityTombstones)
-  const fresh = existing.filter((item) => {
-    if (item.visitorId === visitorId) return false
-    const age = now.getTime() - new Date(item.deletedAt).getTime()
-    return Number.isFinite(age) && age < VISITOR_TOMBSTONE_MAX_AGE_MS
-  })
-
-  const nextSettings = {
-    ...settings,
-    visitorIdentityTombstones: [
-      { visitorId, deletedAt: now.toISOString() },
-      ...fresh,
-    ].slice(0, VISITOR_TOMBSTONE_LIMIT),
-  }
-
-  const { error: updateError } = await supabase
-    .from('organizations')
-    .update({ settings: nextSettings })
-    .eq('id', orgId)
-
-  if (updateError) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `Failed to update visitor deletion marker: ${updateError.message}`,
-    })
-  }
-}
-
-async function deleteRows(
-  query: PromiseLike<{ error: { message: string } | null }>,
-  message: string
-): Promise<void> {
-  const { error } = await query
-  if (error) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `${message}: ${error.message}`,
-    })
-  }
 }
 
 export const contactsRouter = router({
@@ -1117,162 +1026,13 @@ export const contactsRouter = router({
 
   deleteContact: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx }) => {
       requirePermissionFromContext(ctx, 'contacts', 'Contacts access is required.')
-      const orgId = ctx.userOrgId
 
-      const { data: existing } = await ctx.supabase
-        .from('contacts')
-        .select('id, meta')
-        .eq('id', input.id)
-        .eq('org_id', orgId)
-        .maybeSingle()
-
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Contact not found.' })
-      }
-
-      const existingContact = existing as { id: string; meta: unknown }
-      await tombstoneDeletedVisitor(ctx.supabase, orgId, readVisitorId(existingContact.meta))
-
-      const { data: conversations, error: conversationsError } = await ctx.supabase
-        .from('conversations')
-        .select('id')
-        .eq('org_id', orgId)
-        .eq('contact_id', input.id)
-
-      if (conversationsError) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to load contact conversations before deletion: ${conversationsError.message}`,
-        })
-      }
-
-      const conversationIds = ((conversations ?? []) as Array<{ id: string }>).map((row) => row.id)
-
-      if (conversationIds.length > 0) {
-        await deleteRows(
-          ctx.supabase
-            .from('conversation_feedback')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete conversation feedback linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('ai_action_approvals')
-            .delete()
-            .in('conversation_id', conversationIds),
-          'Failed to delete action approvals linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('ai_action_logs')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete action logs linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('email_messages')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete email messages linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('whatsapp_messages')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete WhatsApp messages linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('inbox_routing_events')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete routing events linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('messages')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete conversation messages linked to this contact'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('calls')
-            .delete()
-            .eq('org_id', orgId)
-            .in('conversation_id', conversationIds),
-          'Failed to delete calls linked to this contact conversations'
-        )
-
-        await deleteRows(
-          ctx.supabase
-            .from('conversations')
-            .delete()
-            .eq('org_id', orgId)
-            .in('id', conversationIds),
-          'Failed to delete conversations linked to this contact'
-        )
-      }
-
-      await deleteRows(
-        ctx.supabase
-          .from('ai_action_logs')
-          .delete()
-          .eq('org_id', orgId)
-          .eq('contact_id', input.id),
-        'Failed to delete remaining action logs linked to this contact'
-      )
-
-      await deleteRows(
-        ctx.supabase
-          .from('conversation_feedback')
-          .delete()
-          .eq('org_id', orgId)
-          .eq('contact_id', input.id),
-        'Failed to delete remaining conversation feedback linked to this contact'
-      )
-
-      await deleteRows(
-        ctx.supabase
-          .from('calls')
-          .delete()
-          .eq('org_id', orgId)
-          .eq('contact_id', input.id),
-        'Failed to delete remaining calls linked to this contact'
-      )
-
-      const { error } = await ctx.supabase
-        .from('contacts')
-        .delete()
-        .eq('id', input.id)
-        .eq('org_id', orgId)
-
-      if (error) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Failed to delete contact: ${error.message}` })
-      }
-
-      return {
-        success: true,
-        deletedConversations: conversationIds.length,
-      }
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Contact deletion is disabled to preserve conversation history, call logs, usage limits, and audit trails. Edit contact details instead.',
+      })
     }),
 
   createContact: protectedProcedure
