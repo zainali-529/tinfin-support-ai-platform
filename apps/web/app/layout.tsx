@@ -10,7 +10,7 @@ const raleway = Raleway({
 })
 
 export const metadata: Metadata = {
-  title: 'Tinfin',
+  title: 'Tinfiz',
   description: 'AI-Powered Customer Support Platform',
 }
 

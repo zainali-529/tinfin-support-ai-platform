@@ -1,7 +1,7 @@
 # Next Launch Roadmap - Product, AI, Dashboard, Docs
 
 Date: 2026-05-03  
-Project: Tinfin AI / SaaS Support Platform  
+Project: Tinfiz / SaaS Support Platform  
 Mode: Launch ke liye practical roadmap, scratch se analysis
 
 ---
@@ -65,7 +65,7 @@ Intercom jahan strong hai wahan usually 3 cheezain saath hoti hain:
 - Admin control.
 - Reporting/feedback loop.
 
-Tinfin ko bhi har feature mein ye pattern follow karna chahiye: "AI works, admin controls it, analytics prove it."
+Tinfiz ko bhi har feature mein ye pattern follow karna chahiye: "AI works, admin controls it, analytics prove it."
 
 ---
 
@@ -1235,7 +1235,7 @@ Do not claim:
 
 ## Competitor Gap Matrix
 
-| Area | Current Tinfin Status | Intercom/Fin Benchmark | Priority |
+| Area | Current Tinfiz Status | Intercom/Fin Benchmark | Priority |
 | --- | --- | --- | --- |
 | Web widget | Strong customization, install wizard | Mature Messenger, JS/API, apps | P0 polish |
 | Unified inbox | Good base with channels, SLA, assignment | Team inboxes, views, workflows, tickets | P0/P1 |
@@ -1288,3 +1288,4 @@ Ye 5 cheezain product ko launch-ready aur professional feel dene mein sab se zya
 - Intercom Reports: https://www.intercom.com/help/en/articles/200-intercom-reports-explained
 - Intercom Outbound: https://www.intercom.com/help/en/articles/3292835-outbound-explained
 - Intercom JavaScript installation: https://developers.intercom.com/installing-intercom/web/installation
+

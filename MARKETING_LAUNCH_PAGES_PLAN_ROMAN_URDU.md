@@ -1,4 +1,4 @@
-# Marketing Launch Pages Plan - Tinfin AI
+# Marketing Launch Pages Plan - Tinfiz
 
 Date: 2026-05-05  
 Goal: First launch ke liye clean, professional, screenshot-led marketing website plan  
@@ -10,7 +10,7 @@ Mode: Minimal but conversion-ready. Over-animated nahi, over-filled nahi.
 
 First launch ke liye humein bohat zyada marketing pages ki zaroorat nahi. Product dashboard already strong hai, is liye marketing website ka kaam ye hona chahiye:
 
-- Visitor ko 5 seconds mein samajh aa jaye Tinfin AI kya karta hai.
+- Visitor ko 5 seconds mein samajh aa jaye Tinfiz kya karta hai.
 - Real product screenshots/GIFs se trust banay.
 - Pricing simple aur honest ho.
 - Docs/install path clear ho.
@@ -82,11 +82,11 @@ Alternative:
 
 ### Short subtitle
 
-> Tinfin AI combines a website widget, unified inbox, knowledge base, AI actions, email, WhatsApp, voice, CSAT, analytics, and Agent Copilot in one support workspace.
+> Tinfiz combines a website widget, unified inbox, knowledge base, AI actions, email, WhatsApp, voice, CSAT, analytics, and Agent Copilot in one support workspace.
 
 ### Simple promise
 
-Tinfin AI ka promise ye hona chahiye:
+Tinfiz ka promise ye hona chahiye:
 
 - Customers get faster answers.
 - AI stays grounded in approved knowledge.
@@ -275,7 +275,7 @@ Recommended hero copy:
 
 Subtitle:
 
-> Tinfin AI combines a website widget, unified inbox, grounded AI answers, AI actions, email, WhatsApp, voice, CSAT, and analytics in one workspace.
+> Tinfiz combines a website widget, unified inbox, grounded AI answers, AI actions, email, WhatsApp, voice, CSAT, and analytics in one workspace.
 
 Media:
 
@@ -560,7 +560,7 @@ AI support product mein trust important hai. Security page launch ke liye bohat 
 
 Overclaim nahi karna. Simple honest security page:
 
-> Tinfin AI is designed with workspace isolation, controlled AI actions, and human approval flows for sensitive operations.
+> Tinfiz is designed with workspace isolation, controlled AI actions, and human approval flows for sensitive operations.
 
 ### Sections
 
@@ -750,7 +750,7 @@ Suggested copy:
 
 **Subtitle**
 
-> Tinfin AI helps support teams answer from approved knowledge, manage conversations across chat, email, WhatsApp, and voice, and measure quality through SLA, CSAT, and action analytics.
+> Tinfiz helps support teams answer from approved knowledge, manage conversations across chat, email, WhatsApp, and voice, and measure quality through SLA, CSAT, and action analytics.
 
 **CTA**
 
@@ -967,7 +967,7 @@ Title:
 
 Subtitle:
 
-> Tinfin AI is designed around workspace isolation, grounded answers, safe actions, and human control.
+> Tinfiz is designed around workspace isolation, grounded answers, safe actions, and human control.
 
 ## Section 2 - Data Scope
 
@@ -1033,7 +1033,7 @@ Avoid:
 - "Autonomous everything".
 - Long paragraphs.
 
-### Good words for Tinfin
+### Good words for Tinfiz
 
 - Grounded.
 - Controlled.
@@ -1086,41 +1086,41 @@ Before implementation, capture these assets:
 
 Title:
 
-> Tinfin AI - AI Customer Support Workspace
+> Tinfiz - AI Customer Support Workspace
 
 Description:
 
-> Tinfin AI combines a website widget, unified inbox, grounded AI answers, AI actions, email, WhatsApp, voice, CSAT, and analytics for modern support teams.
+> Tinfiz combines a website widget, unified inbox, grounded AI answers, AI actions, email, WhatsApp, voice, CSAT, and analytics for modern support teams.
 
 ## Pricing
 
 Title:
 
-> Pricing - Tinfin AI
+> Pricing - Tinfiz
 
 Description:
 
-> Compare Tinfin AI plans for chat, AI answers, knowledge base, email, WhatsApp, voice, AI actions, Agent Copilot, analytics, and team support.
+> Compare Tinfiz plans for chat, AI answers, knowledge base, email, WhatsApp, voice, AI actions, Agent Copilot, analytics, and team support.
 
 ## Demo
 
 Title:
 
-> Book a Demo - Tinfin AI
+> Book a Demo - Tinfiz
 
 Description:
 
-> See how Tinfin AI helps teams launch AI-powered support with human handoff, channels, actions, and analytics.
+> See how Tinfiz helps teams launch AI-powered support with human handoff, channels, actions, and analytics.
 
 ## Security
 
 Title:
 
-> Security - Tinfin AI
+> Security - Tinfiz
 
 Description:
 
-> Learn how Tinfin AI handles workspace data, grounded AI answers, safe AI actions, access control, and support workflows.
+> Learn how Tinfiz handles workspace data, grounded AI answers, safe AI actions, access control, and support workflows.
 
 ---
 
@@ -1227,4 +1227,5 @@ Design should feel like:
 > A calm, reliable AI support operations platform, not a flashy AI toy.
 
 Is approach se aap jaldi launch kar sakte ho, product ki maturity show hoti hai, aur future mein customer feedback ke basis par marketing expand kar sakte ho.
+
 

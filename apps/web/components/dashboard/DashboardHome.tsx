@@ -77,7 +77,7 @@ export function DashboardHome() {
             {greeting()}, {activeOrg.name}
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Monitor workload, channels, automation, and launch readiness from one place.
+            Monitor workload, channels, automation, and workspace readiness from one place.
           </p>
         </div>
 

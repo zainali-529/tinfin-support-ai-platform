@@ -9,7 +9,7 @@ type DocsPageProps = {
 }
 
 function titleWithBrand(title: string) {
-  return `${title} | Tinfin AI Docs`
+  return `${title} | Tinfiz Docs`
 }
 
 export function generateStaticParams() {
@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
 
   if (!page) {
     return {
-      title: 'Docs | Tinfin AI',
+      title: 'Docs | Tinfiz',
     }
   }
 
@@ -48,3 +48,4 @@ export default async function DocsPage({ params }: DocsPageProps) {
 
   return <DocsShell page={page} />
 }
+

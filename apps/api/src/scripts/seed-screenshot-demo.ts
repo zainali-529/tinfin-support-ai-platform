@@ -109,7 +109,7 @@ function assistantAnswer(index: number, channel: string, seedId: string) {
   return {
     content: pick([
       `Order ORDER-12345 is out for delivery. ETA: today by 6:00 PM. Courier: DHL. Tracking: TRK-103708. ${channelTail}`,
-      `Tinfin AI combines website chat, AI replies, human handoff, email, WhatsApp, voice, knowledge base, actions, SLA tracking, contacts, and analytics in one support workspace. ${channelTail}`,
+      `Tinfiz combines website chat, AI replies, human handoff, email, WhatsApp, voice, knowledge base, actions, SLA tracking, contacts, and analytics in one support workspace. ${channelTail}`,
       `You can customize the widget from Widget settings: choose light and dark colors, set bottom-left or bottom-right launcher position, add help content, and test the preview before publishing. ${channelTail}`,
       `The knowledge base keeps AI grounded. Add text notes, URLs, or files, then review source health, stale sources, failed indexing, duplicate warnings, and AI improvement suggestions. ${channelTail}`,
       `Agent Copilot helps the support team draft replies, summarize the conversation, rewrite text, translate, suggest the next action, and find similar resolved conversations. ${channelTail}`,
@@ -119,7 +119,7 @@ function assistantAnswer(index: number, channel: string, seedId: string) {
       type: 'answer',
       confidence: 0.88 + ((index % 8) / 100),
       sources: [
-        { title: 'Tinfin product overview', sourceType: 'text', similarity: 0.92 },
+        { title: 'Tinfiz product overview', sourceType: 'text', similarity: 0.92 },
         { title: 'Launch support operations guide', sourceType: 'url', similarity: 0.86 },
       ],
     },
@@ -361,7 +361,7 @@ async function main() {
       org_id: orgId,
       kb_id: kbId,
       source_type: 'text_note',
-      source_title: 'Tinfin product overview',
+      source_title: 'Tinfiz product overview',
       source_url: null,
       status: 'indexed',
       chunk_count: 5,
@@ -370,7 +370,7 @@ async function main() {
       error_message: null,
       last_indexed_at: iso(nowMinus(0, 8, 12)),
       last_checked_at: iso(nowMinus(0, 8, 12)),
-      metadata: { ...marker, rawText: 'Tinfin AI is a customer support platform for chat, AI, handoff, channels, actions, and analytics.' },
+      metadata: { ...marker, rawText: 'Tinfiz is a customer support platform for chat, AI, handoff, channels, actions, and analytics.' },
     },
     {
       org_id: orgId,
@@ -425,7 +425,7 @@ async function main() {
     kb_id: kbId,
     source_id: source.id,
     content: pick([
-      'Tinfin AI helps teams support customers with AI-first chat, unified inbox operations, human handoff, and analytics.',
+      'Tinfiz helps teams support customers with AI-first chat, unified inbox operations, human handoff, and analytics.',
       'The widget supports light mode, dark mode, bottom left and bottom right launcher placement, help content, chat history, and voice entry points.',
       'Agent Copilot is available on Pro and Scale plans for internal reply drafting, summaries, rewrites, translations, next action suggestions, and similar resolved conversations.',
       'AI Actions v1 can safely call approved API endpoints with secrets, allowlists, logs, preview testing, and approval flows for risky write actions.',
@@ -710,3 +710,4 @@ main().catch((error) => {
   console.error('[screenshot-demo] seed failed:', error)
   process.exit(1)
 })
+

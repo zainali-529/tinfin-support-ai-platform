@@ -28,7 +28,7 @@ export function DocsSearchDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Search documentation"
-      description="Search guides, setup steps, troubleshooting, and launch checklists."
+      description="Search guides, setup steps, troubleshooting, and product checklists."
       className="top-[14vh] w-[calc(100vw-2rem)] max-w-5xl translate-y-0 border-border/80 p-0 sm:max-w-5xl"
       showCloseButton
     >
@@ -40,7 +40,7 @@ export function DocsSearchDialog({
             </div>
             <div>
               <div className="text-sm font-semibold text-foreground">Search documentation</div>
-              <div className="text-xs text-muted-foreground">Jump to setup, widget, inbox, AI, channels, billing, and launch guides.</div>
+              <div className="text-xs text-muted-foreground">Jump to setup, widget, inbox, AI, channels, billing, and product guides.</div>
             </div>
           </div>
           <CommandInput placeholder="Search docs, setup steps, channels, billing..." />

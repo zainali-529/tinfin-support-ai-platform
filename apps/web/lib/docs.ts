@@ -41,8 +41,8 @@ export const DOCS_DEFAULT_SLUG = 'getting-started/overview'
 export const docsSections: DocsSection[] = [
   {
     title: 'Get Started',
-    description: 'Launch path, workspace setup, QA, and screenshot demo data.',
-    pages: ['getting-started/overview', 'getting-started/workspace-setup', 'getting-started/launch-checklist', 'getting-started/screenshot-demo-data'],
+    description: 'Setup path, workspace configuration, QA, and support workflows.',
+    pages: ['getting-started/overview', 'getting-started/workspace-setup', 'getting-started/production-checklist'],
   },
   {
     title: 'Widget',
@@ -76,7 +76,7 @@ export const docsSections: DocsSection[] = [
   },
   {
     title: 'Troubleshooting',
-    description: 'Common launch and production issues.',
+    description: 'Common setup and production issues.',
     pages: ['troubleshooting/common-issues'],
   },
 ]
@@ -86,13 +86,13 @@ export const docsPages: DocsPage[] = [
     slug: 'getting-started/overview',
     section: 'Get Started',
     title: 'Platform overview',
-    description: 'Understand how Tinfin AI combines AI support, inbox operations, channels, actions, billing, and reporting in one workspace.',
+    description: 'Understand how Tinfiz combines AI support, inbox operations, channels, actions, billing, and reporting in one workspace.',
     updatedAt,
     readingTime: '6 min read',
-    keywords: ['overview', 'platform', 'workspace', 'launch'],
+    keywords: ['overview', 'platform', 'workspace', 'production'],
     blocks: [
-      p('Tinfin AI is a customer support workspace for teams that want AI-assisted conversations without losing human control. A launch-ready workspace usually includes the widget, knowledge base, inbox ownership, SLA rules, notifications, customer profiles, safe AI actions, CSAT, analytics, and billing limits.'),
-      screenshot('Dashboard overview screenshot', 'Capture the dashboard after running screenshot demo seed data so onboarding, recent conversations, activity, and metrics are populated.', '/docs-assets/screenshots/dashboard-overview.png'),
+      p('Tinfiz is a customer support workspace for teams that want AI-assisted conversations without losing human control. A production-ready workspace usually includes the widget, knowledge base, inbox ownership, SLA rules, notifications, customer profiles, safe AI actions, CSAT, analytics, and billing limits.'),
+      screenshot('Dashboard overview screenshot', 'Capture the dashboard after onboarding, recent conversations, activity, and metrics are populated.', '/docs-assets/screenshots/dashboard-overview.png'),
       h('core-areas', 'Core areas'),
       list([
         'Widget: customer-facing chat, help, history, voice entry, CSAT, and human handoff.',
@@ -100,18 +100,18 @@ export const docsPages: DocsPage[] = [
         'Knowledge Base: text, URL, and document sources with source health, re-indexing, duplicate warnings, and AI improvement suggestions.',
         'AI Actions v1: endpoint-based tools with templates, tests, preview, logs, secrets, domain allowlists, approvals, retries, and analytics.',
         'Customer profiles: timeline, notes, tags, custom fields, conversation history, calls, CSAT history, and actions used.',
-        'Reporting: conversation demand, SLA pressure, CSAT, action quality, channel quality, and launch readiness checks.',
+        'Reporting: conversation demand, SLA pressure, CSAT, action quality, channel quality, and workspace readiness checks.',
       ]),
-      h('launch-priority', 'Launch priority'),
-      p('For launch, product reliability matters more than decorative marketing. The dashboard, inbox, widget, knowledge base, billing guards, notifications, analytics, and docs should feel stable and understandable. Marketing pages can stay clean and simple until real customer feedback shows what needs stronger positioning.'),
-      callout('Current launch posture', 'The product is beyond a basic MVP. It has enough operational depth for an early launch if production environment variables, migrations, Stripe, Supabase, email, WhatsApp, Vapi, and AI provider keys are configured correctly.', 'success'),
+      h('product-focus', 'Product focus'),
+      p('Product reliability matters more than decorative marketing. The dashboard, inbox, widget, knowledge base, billing guards, notifications, analytics, and docs should feel stable, understandable, and easy to operate.'),
+      callout('Production readiness', 'Tinfiz is designed for real support workflows when production environment variables, migrations, Stripe, Supabase, email, WhatsApp, Vapi, and AI provider keys are configured correctly.', 'success'),
     ],
   },
   {
     slug: 'getting-started/workspace-setup',
     section: 'Get Started',
     title: 'Workspace setup',
-    description: 'Create an organization, select a plan, configure basics, and prepare the workspace for launch traffic.',
+    description: 'Create an organization, select a plan, configure basics, and prepare the workspace for customer traffic.',
     updatedAt,
     readingTime: '7 min read',
     keywords: ['workspace', 'organization', 'setup', 'team'],
@@ -121,7 +121,7 @@ export const docsPages: DocsPage[] = [
       h('recommended-order', 'Recommended setup order'),
       steps([
         'Create or select the organization from the sidebar organization switcher.',
-        'Choose the plan that matches the launch test: Free, Starter, Pro, or Scale.',
+        'Choose the plan that matches the workspace requirements: Free, Starter, Pro, or Scale.',
         'Configure the widget profile and install it on staging first.',
         'Add the first Knowledge Base sources and verify source health.',
         'Invite at least one teammate if you want assignment, notifications, and Copilot screenshots.',
@@ -138,16 +138,16 @@ export const docsPages: DocsPage[] = [
     ],
   },
   {
-    slug: 'getting-started/launch-checklist',
+    slug: 'getting-started/production-checklist',
     section: 'Get Started',
-    title: 'Launch checklist',
-    description: 'Final pre-launch QA across widget, inbox, AI, billing, channels, realtime, and rollback readiness.',
+    title: 'Production checklist',
+    description: 'Final production QA across widget, inbox, AI, billing, channels, realtime, and rollback readiness.',
     updatedAt,
     readingTime: '10 min read',
-    keywords: ['launch', 'qa', 'production', 'checklist'],
+    keywords: ['qa', 'production', 'checklist', 'readiness'],
     blocks: [
-      p('Use this checklist before sending real customers to the widget. The goal is to remove avoidable surprises, not to block launch until every future feature exists.'),
-      h('p0-checks', 'P0 checks'),
+      p('Use this checklist before sending real customers to the widget. The goal is to remove avoidable surprises while keeping setup practical.'),
+      h('core-checks', 'Core checks'),
       list([
         'Database migrations apply from the project without manual SQL editor patches.',
         'Widget installs correctly on staging and production domains.',
@@ -157,7 +157,7 @@ export const docsPages: DocsPage[] = [
         'SLA policies exist and inbox timers show clear met, at-risk, breached, and backlog states.',
         'Billing guards match UI and backend guards are the final authority.',
       ]),
-      h('p1-already-added', 'P1 already added'),
+      h('advanced-capabilities', 'Advanced capabilities'),
       list([
         'AI Improvements page inside Knowledge Base without heavy AI profile or complex eval UI.',
         'Channel-aware AI behavior for chat, email, WhatsApp, and voice.',
@@ -173,41 +173,7 @@ export const docsPages: DocsPage[] = [
         'Know how to revert the latest deployment and keep database migrations safe.',
         'Keep support contact details ready for Stripe, Supabase, AI provider, email provider, WhatsApp, and Vapi incidents.',
       ]),
-      callout('Launch answer', 'If production configuration is complete and this checklist passes, the product is launch-ready for an early customer release. Continue improving after real usage starts.', 'success'),
-    ],
-  },
-  {
-    slug: 'getting-started/screenshot-demo-data',
-    section: 'Get Started',
-    title: 'Screenshot demo data',
-    description: 'Seed realistic temporary data so screenshots show filled dashboards instead of empty states.',
-    updatedAt,
-    readingTime: '6 min read',
-    keywords: ['seed', 'screenshots', 'demo data', 'docs'],
-    blocks: [
-      p('Use screenshot demo data only in development or staging. The seed creates temporary contacts, conversations, messages, calls, knowledge sources, AI actions, action logs, notes, timeline events, notifications, and CSAT responses marked with a seed ID.'),
-      h('seed-command', 'Seed command'),
-      code('powershell', 'pnpm --filter @workspace/api seed:screenshot-demo -- --org=YOUR_ORG_ID --seed=launch-docs --days=30 --scale=2'),
-      h('cleanup-command', 'Cleanup command'),
-      code('powershell', 'pnpm --filter @workspace/api cleanup:screenshot-demo -- --org=YOUR_ORG_ID --seed=launch-docs'),
-      h('options', 'Options'),
-      table(['Option', 'Default', 'Purpose'], [
-        ['--org', 'required', 'Organization ID where demo data should be created.'],
-        ['--seed', 'launch-screenshot-demo', 'Marker used to clean only this demo data later.'],
-        ['--days', '30', 'How many days of trend data to create. Range: 7 to 90.'],
-        ['--scale', '2', 'How dense the generated dataset should be. Range: 1 to 6.'],
-        ['--reset', 'true', 'Runs cleanup for the same seed before inserting fresh data.'],
-      ]),
-      callout('Safety rule', 'Cleanup only deletes rows tagged with the matching screenshotDemoSeedId. Do not reuse a seed ID for real data.', 'warning'),
-      h('screenshots-to-capture', 'Screenshots to capture'),
-      list([
-        'Dashboard overview after conversations, onboarding, and activity are visible.',
-        'Unified inbox with conversation list, selected conversation, SLA badges, timeline, and Copilot tab.',
-        'Knowledge Base with source health and AI Improvements populated.',
-        'AI Actions page with templates, test panel, logs, and approval queue.',
-        'Contacts page with customer profile timeline, notes, tags, custom fields, CSAT, calls, and actions used.',
-        'Analytics page with CSAT, SLA, action quality, demand, and channel quality graphs populated.',
-      ]),
+      callout('Readiness answer', 'If production configuration is complete and this checklist passes, the workspace is ready for real customer usage. Continue improving from real conversations and analytics.', 'success'),
     ],
   },
   {
@@ -259,7 +225,7 @@ export const docsPages: DocsPage[] = [
         ['Google Tag Manager', 'Custom HTML tag', 'Trigger on all pages after consent rules.'],
       ]),
       h('future-auto-install', 'Future automatic install'),
-      p('A future installer can detect the website platform from a URL, show exact instructions, and use OAuth for supported platforms to inject the script with customer approval. This is useful later, but not required for launch.'),
+      p('A future installer can detect the website platform from a URL, show exact instructions, and use OAuth for supported platforms to inject the script with customer approval. This is useful later, but not required for the basic setup.'),
       screenshot('No-code install wizard screenshot', 'Capture platform selection and install instructions.', '/docs-assets/screenshots/widget-no-code-wizard.png'),
     ],
   },
@@ -431,7 +397,7 @@ export const docsPages: DocsPage[] = [
     readingTime: '7 min read',
     keywords: ['notifications', 'browser notifications', 'email notifications'],
     blocks: [
-      p('Notifications help agents notice work even when they are not staring at the inbox. The launch system includes in-app notifications, optional browser notifications, and email notification infrastructure.'),
+      p('Notifications help agents notice work even when they are not staring at the inbox. The product includes in-app notifications, optional browser notifications, and email notification infrastructure.'),
       h('notification-types', 'Notification types'),
       list([
         'New conversation notification.',
@@ -441,10 +407,10 @@ export const docsPages: DocsPage[] = [
         'Action approval request notification.',
       ]),
       h('channels', 'Channels'),
-      table(['Channel', 'Launch status', 'Notes'], [
-        ['In-app bell', 'P0', 'Available in dashboard topbar/sidebar area.'],
-        ['Browser notification', 'P0 optional', 'Requires user permission.'],
-        ['Email notification', 'P1', 'Use Resend or SMTP style provider from server-side environment.'],
+      table(['Channel', 'Status', 'Notes'], [
+        ['In-app bell', 'Available', 'Available in dashboard topbar/sidebar area.'],
+        ['Browser notification', 'Optional', 'Requires user permission.'],
+        ['Email notification', 'Email-ready', 'Use Resend or SMTP style provider from server-side environment.'],
         ['Slack', 'Not included now', 'Can be added later when needed.'],
       ]),
       screenshot('Notification bell screenshot', 'Capture notification bell with unread notifications and browser permission state.', '/docs-assets/screenshots/notification-bell.png'),
@@ -463,7 +429,7 @@ export const docsPages: DocsPage[] = [
       screenshot('Knowledge Base screenshot', 'Capture sources, health status, chunk count, re-index button, delete source button, and AI behavior panel.', '/docs-assets/screenshots/knowledge-base.png'),
       h('source-types', 'Source types'),
       list([
-        'Text notes: best for company overview, pricing policy, support rules, product FAQs, and launch-specific facts.',
+        'Text notes: best for company overview, pricing policy, support rules, product FAQs, and company-specific facts.',
         'URL sources: best for public docs, help centers, and policy pages that should be recrawled.',
         'Documents: best for internal manuals, onboarding guides, or customer support playbooks.',
       ]),
@@ -593,7 +559,7 @@ export const docsPages: DocsPage[] = [
     readingTime: '5 min read',
     keywords: ['chat', 'widget', 'channel'],
     blocks: [
-      p('The chat widget is the easiest channel to launch first. It supports AI-first replies, human takeover, help content, conversation history, voice entry, and CSAT after resolution.'),
+      p('The chat widget is the easiest channel to start with. It supports AI-first replies, human takeover, help content, conversation history, voice entry, and CSAT after resolution.'),
       list([
         'Monitor new chat conversations from saved views.',
         'Use AI answer trust indicators to decide whether to improve knowledge.',
@@ -611,7 +577,7 @@ export const docsPages: DocsPage[] = [
     readingTime: '6 min read',
     keywords: ['email', 'channel', 'threading'],
     blocks: [
-      p('Email is a paid advanced channel. It should not be available on Starter in launch packaging. When unavailable, show clear upgrade messaging instead of confusing preview copy.'),
+      p('Email is a paid advanced channel. It should not be available on Starter. When unavailable, show clear upgrade messaging instead of confusing preview copy.'),
       list([
         'Configure sender identity and inbound address.',
         'Send a test inbound email.',
@@ -651,7 +617,7 @@ export const docsPages: DocsPage[] = [
     readingTime: '7 min read',
     keywords: ['voice', 'calls', 'vapi', 'transcript'],
     blocks: [
-      p('Voice support is a premium channel because it has provider cost and customers expect fast, natural answers. The product uses platform provider keys at launch instead of asking every customer to bring their own keys.'),
+      p('Voice support is a premium channel because it has provider cost and customers expect fast, natural answers. The product uses platform provider keys by default instead of asking every customer to bring their own keys.'),
       table(['Plan', 'Included voice minutes', 'Notes'], [
         ['Free', '0', 'No voice minutes included.'],
         ['Starter', '0', 'Chat-first plan.'],
@@ -675,7 +641,7 @@ export const docsPages: DocsPage[] = [
     readingTime: '6 min read',
     keywords: ['team', 'permissions', 'roles'],
     blocks: [
-      p('Keep team access simple at launch. Admins configure the workspace. Agents handle customer conversations and customer context.'),
+      p('Keep team access simple. Admins configure the workspace. Agents handle customer conversations and customer context.'),
       table(['Role', 'Best use', 'Access'], [
         ['Admin', 'Founder, support lead, workspace owner', 'Billing, channels, widget, knowledge, team, analytics, and actions.'],
         ['Agent', 'Support teammate', 'Inbox, assigned conversations, customer context, notes, and allowed workflows.'],
@@ -764,10 +730,10 @@ export const docsPages: DocsPage[] = [
     slug: 'admin/analytics-reporting',
     section: 'Admin',
     title: 'Analytics and reporting',
-    description: 'Track conversation demand, SLA pressure, CSAT, action quality, and launch readiness.',
+    description: 'Track conversation demand, SLA pressure, CSAT, action quality, and workspace readiness.',
     updatedAt,
     readingTime: '8 min read',
-    keywords: ['analytics', 'reporting', 'graphs', 'launch readiness'],
+    keywords: ['analytics', 'reporting', 'graphs', 'workspace readiness'],
     blocks: [
       p('Analytics should answer operational questions, not just display decorative cards. The current analytics experience focuses on graphs and trends: demand, SLA, CSAT, channel quality, action reliability, and readiness.'),
       list([
@@ -776,10 +742,9 @@ export const docsPages: DocsPage[] = [
         'CSAT breakdown: channel, handling mode, agent, and recent comments.',
         'SLA and channel quality: breach rate, speed, and pressure by channel.',
         'Action quality: success, fail, timeout, retry, latency, and recent failure reasons.',
-        'Launch readiness: SLA policies, active breaches, action health, load testing, and rollback checks.',
+        'Workspace readiness: SLA policies, active breaches, action health, operational testing, and recovery checks.',
       ], 'Core reports'),
-      code('powershell', 'pnpm --filter @workspace/api seed:screenshot-demo -- --org=YOUR_ORG_ID --seed=launch-docs --days=30 --scale=2'),
-      screenshot('Analytics dashboard screenshot', 'Capture analytics after running screenshot demo seed data.', '/docs-assets/screenshots/analytics-reporting.png'),
+      screenshot('Analytics dashboard screenshot', 'Capture analytics after conversations, CSAT responses, channel activity, SLA states, and action logs are visible.', '/docs-assets/screenshots/analytics-reporting.png'),
     ],
   },
   {
@@ -793,7 +758,7 @@ export const docsPages: DocsPage[] = [
     blocks: [
       p('The widget works with only the script tag. Advanced websites can pass visitor identity and metadata so conversations connect to real customers instead of anonymous contacts.'),
       code('html', '<script\n  src="https://YOUR_APP_DOMAIN/widget.js"\n  data-organization-id="YOUR_ORGANIZATION_ID"\n  async\n></script>'),
-      code('html', '<script>\n  window.tinfinAI = window.tinfinAI || [];\n  window.tinfinAI.push(["identify", {\n    externalId: "customer_123",\n    name: "Ava Brooks",\n    email: "ava@example.com",\n    metadata: { plan: "pro", accountStatus: "active" }\n  }]);\n</script>'),
+      code('html', '<script>\n  window.TinfizAI = window.TinfizAI || [];\n  window.TinfizAI.push(["identify", {\n    externalId: "customer_123",\n    name: "Ava Brooks",\n    email: "ava@example.com",\n    metadata: { plan: "pro", accountStatus: "active" }\n  }]);\n</script>'),
       list([
         'Do not send passwords, secrets, private tokens, payment card data, or sensitive regulated data.',
         'Send stable customer IDs when available so contacts merge correctly.',
@@ -806,7 +771,7 @@ export const docsPages: DocsPage[] = [
     slug: 'developers/security-production',
     section: 'Developers',
     title: 'Security and production checklist',
-    description: 'Secure secrets, actions, provider keys, customer data, migrations, and deployment operations before launch.',
+    description: 'Secure secrets, actions, provider keys, customer data, migrations, and deployment operations before production use.',
     updatedAt,
     readingTime: '9 min read',
     keywords: ['security', 'production', 'secrets', 'deployment'],
@@ -874,14 +839,14 @@ export const docsPages: DocsPage[] = [
       list([
         'Refresh after switching organizations.',
         'Confirm frontend plan details and server-side plan guards use the same plan source.',
-        'Remember: Agent Copilot, AI Actions, email, WhatsApp, voice, and analytics are not Starter launch features.',
+        'Remember: Agent Copilot, AI Actions, email, WhatsApp, voice, and analytics are not Starter features.',
       ]),
       h('migration-failed', 'Migration failed'),
       list([
         'Do not remove migration files already referenced by Drizzle journal.',
         'Run migrations from the project command.',
         'Check that referenced SQL functions exist in baseline migration.',
-        'Use a fresh database only when you intentionally want a clean launch reset.',
+        'Use a fresh database only when you intentionally want a clean production reset.',
       ]),
     ],
   },
@@ -931,3 +896,5 @@ export const docsScreenshotPlaceholders = docsPages.flatMap((page) =>
     .filter((block): block is Extract<DocsBlock, { type: 'screenshot' }> => block.type === 'screenshot')
     .map((block) => ({ page: page.title, slug: page.slug, ...block }))
 )
+
+

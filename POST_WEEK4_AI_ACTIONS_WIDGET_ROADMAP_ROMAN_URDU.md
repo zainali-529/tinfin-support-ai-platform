@@ -1,7 +1,7 @@
-# Tinfin Post Week 4 Roadmap - AI, Actions, Widget Install, aur Next Product Direction
+# Tinfiz Post Week 4 Roadmap - AI, Actions, Widget Install, aur Next Product Direction
 
 **Date:** 1 May 2026  
-**Prepared For:** Tinfin AI Support Platform  
+**Prepared For:** Tinfiz Support Platform  
 **Language:** Roman Urdu  
 **Scope:** Week 1 se Week 4 tak jo launch-hardening improvements complete hui hain unke baad next best development direction.
 
@@ -269,7 +269,7 @@ Recommended formats:
 Example desired answer:
 
 ```text
-Tinfin AI ek customer support platform hai jo businesses ko website chat, inbox operations, AI replies, voice assistant, knowledge base, and AI actions ke through support automate karne mein help karta hai. Main Tinfin ka support assistant hoon, is liye agar aap product, setup, pricing, ya support workflow ke bare mein poochna chahte hain to main help kar sakta hoon.
+Tinfiz ek customer support platform hai jo businesses ko website chat, inbox operations, AI replies, voice assistant, knowledge base, and AI actions ke through support automate karne mein help karta hai. Main Tinfiz ka support assistant hoon, is liye agar aap product, setup, pricing, ya support workflow ke bare mein poochna chahte hain to main help kar sakta hoon.
 ```
 
 Bad answer:
@@ -282,7 +282,7 @@ Which company are you referring to?
 
 Intercom Fin mein Guidance concept hai jahan admin natural-language rules set kar sakta hai ke AI brand voice, policy, aur content source kaise follow kare.
 
-Tinfin mein bhi aisa feature add karna chahiye.
+Tinfiz mein bhi aisa feature add karna chahiye.
 
 Recommended guidance categories:
 
@@ -297,7 +297,7 @@ Recommended guidance categories:
 Example guidance:
 
 ```text
-If a visitor asks "your company", "what do you do", or "tell me about you", answer as Tinfin AI's official assistant using the company profile source. Do not ask which company unless the visitor names another company.
+If a visitor asks "your company", "what do you do", or "tell me about you", answer as Tinfiz's official assistant using the company profile source. Do not ask which company unless the visitor names another company.
 ```
 
 ## 4.8 AI Answer Debugger
@@ -354,7 +354,7 @@ Acceptance criteria:
 
 ## 5) AI Actions - Current vs Intercom-Style Advanced Model
 
-## 5.1 Current Tinfin Actions
+## 5.1 Current Tinfiz Actions
 
 Current action model kaafi useful hai:
 
@@ -385,9 +385,9 @@ Intercom docs ke mutabiq:
 - Procedures sequential hote hain, yani step by step execute hote hain.
 - Connector health monitoring bhi available hoti hai.
 
-## 5.3 Tinfin Actions v2 - Recommended Architecture
+## 5.3 Tinfiz Actions v2 - Recommended Architecture
 
-Tinfin ko endpoint actions se aage le ja kar 4-layer model banana chahiye:
+Tinfiz ko endpoint actions se aage le ja kar 4-layer model banana chahiye:
 
 | Layer | Purpose |
 |---|---|
@@ -535,11 +535,11 @@ Current action analytics ko aur expand karna chahiye:
 
 ## 6.1 Humara Current Widget Install
 
-Current Tinfin widget embed simple aur correct direction mein hai:
+Current Tinfiz widget embed simple aur correct direction mein hai:
 
 ```html
 <script
-  src="https://cdn.tinfin.com/widget.js"
+  src="https://cdn.Tinfiz.com/widget.js"
   data-org-id="YOUR_ORG_ID"
   async
 ></script>
@@ -569,14 +569,14 @@ Intercom official docs ke mutabiq web install ke liye multiple options hain:
 
 Basic JavaScript pattern mein Intercom workspace/app ID set hoti hai, `window.intercomSettings` define hota hai, aur widget script async load hoti hai. SPA ke liye `Intercom('boot')`, `Intercom('update')`, aur logout par `Intercom('shutdown')` type methods use hote hain.
 
-## 6.3 Tinfin Ko Next Widget API Kya Add Karni Chahiye
+## 6.3 Tinfiz Ko Next Widget API Kya Add Karni Chahiye
 
-Tinfin ko script tag ke saath programmatic JS API bhi deni chahiye.
+Tinfiz ko script tag ke saath programmatic JS API bhi deni chahiye.
 
 Recommended API:
 
 ```js
-window.Tinfin('boot', {
+window.Tinfiz('boot', {
   orgId: 'org_id',
   user: {
     id: 'user_123',
@@ -589,16 +589,16 @@ window.Tinfin('boot', {
   }
 })
 
-window.Tinfin('update', {
+window.Tinfiz('update', {
   pageUrl: window.location.href,
   plan: 'pro'
 })
 
-window.Tinfin('shutdown')
-window.Tinfin('show')
-window.Tinfin('hide')
-window.Tinfin('openNewMessage', 'I need help with...')
-window.Tinfin('trackEvent', 'checkout_started', { value: 120 })
+window.Tinfiz('shutdown')
+window.Tinfiz('show')
+window.Tinfiz('hide')
+window.Tinfiz('openNewMessage', 'I need help with...')
+window.Tinfiz('trackEvent', 'checkout_started', { value: 120 })
 ```
 
 ## 6.4 Why JS API Zaroori Hai
@@ -626,7 +626,7 @@ Recommended approach:
 - Customer backend generates `user_hash`.
 - Hash uses org secret + user ID/email.
 - Widget boot payload includes `userHash`.
-- Tinfin backend verifies before linking conversation to contact.
+- Tinfiz backend verifies before linking conversation to contact.
 
 ## 6.6 Widget Install Verification
 
@@ -635,7 +635,7 @@ Dashboard mein "Verify installation" button hona chahiye.
 Verification checks:
 
 - URL reachable hai ya nahi.
-- HTML mein Tinfin script present hai ya nahi.
+- HTML mein Tinfiz script present hai ya nahi.
 - `data-org-id` correct hai ya nahi.
 - Script CDN load ho raha hai ya nahi.
 - Widget config API hit ho rahi hai ya nahi.
@@ -661,17 +661,17 @@ Lekin non-technical users ke liye better options ban sakte hain.
 | Option | Best For | User Experience |
 |---|---|---|
 | Google Tag Manager | Marketing teams | Connect GTM, choose container, publish tag |
-| WordPress Plugin | WordPress users | Install plugin, connect Tinfin |
+| WordPress Plugin | WordPress users | Install plugin, connect Tinfiz |
 | Shopify App | Shopify stores | Install app, enable widget embed |
 | Webflow App/Guide | Webflow sites | Connect or guided custom code |
 | Wix/Squarespace App | Site builders | Marketplace/app-based install |
 | Cloudflare Zaraz/Worker | Advanced no-code/semi-code | Add via Cloudflare account |
 | Email developer | Non-technical founder | Send snippet to developer |
-| Concierge install | Paid plan | Tinfin team installs for customer |
+| Concierge install | Paid plan | Tinfiz team installs for customer |
 
 ## 7.2 URL-Based Platform Detector
 
-Tinfin can ask:
+Tinfiz can ask:
 
 ```text
 Enter your website URL
@@ -690,7 +690,7 @@ Then backend scans public HTML and detects:
 Then UI says:
 
 ```text
-We detected Shopify. Install Tinfin through our Shopify app for one-click setup.
+We detected Shopify. Install Tinfiz through our Shopify app for one-click setup.
 ```
 
 Ya:
@@ -706,31 +706,31 @@ This should be first no-code integration.
 Flow:
 
 1. User enters website URL.
-2. Tinfin detects GTM container.
+2. Tinfiz detects GTM container.
 3. User connects Google account through OAuth.
 4. User selects GTM account/container/workspace.
-5. Tinfin creates Custom HTML tag with widget snippet.
-6. Tinfin attaches Window Loaded trigger.
+5. Tinfiz creates Custom HTML tag with widget snippet.
+6. Tinfiz attaches Window Loaded trigger.
 7. User previews.
-8. User publishes or Tinfin requests publish permission.
-9. Tinfin verifies install.
+8. User publishes or Tinfiz requests publish permission.
+9. Tinfiz verifies install.
 
 ## 7.4 WordPress Plugin
 
 Flow:
 
-1. User installs Tinfin plugin from WordPress.
-2. User clicks "Connect Tinfin".
+1. User installs Tinfiz plugin from WordPress.
+2. User clicks "Connect Tinfiz".
 3. OAuth or API key connects org.
 4. Plugin injects widget snippet via `wp_footer`.
 5. Plugin supports logged-in user identity.
-6. Tinfin dashboard verifies installation.
+6. Tinfiz dashboard verifies installation.
 
 ## 7.5 Shopify App
 
 Flow:
 
-1. Merchant installs Tinfin Shopify app.
+1. Merchant installs Tinfiz Shopify app.
 2. App creates/enables app embed.
 3. Widget loads on storefront.
 4. Shopify customer/order data can become action connector data.
@@ -807,7 +807,7 @@ Acceptance criteria:
 
 Build:
 
-- `window.Tinfin()` JS API.
+- `window.Tinfiz()` JS API.
 - `boot`, `update`, `shutdown`, `show`, `hide`, `trackEvent`.
 - Logged-in user identity.
 - HMAC user verification.
@@ -1194,4 +1194,5 @@ Official Intercom sources:
 - Debug Fin AI Agent answers: https://www.intercom.com/help/en/articles/8403222-debug-fin-ai-agent-answers
 - Batch test Fin AI Agent: https://www.intercom.com/help/en/articles/10521711-batch-test-fin-ai-agent
 - Knowledge sources for AI agents: https://www.intercom.com/help/en/articles/9440354-knowledge-sources-to-power-ai-agents-and-self-serve-support
+
 

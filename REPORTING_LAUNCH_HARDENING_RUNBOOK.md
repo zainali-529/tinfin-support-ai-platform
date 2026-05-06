@@ -113,7 +113,7 @@ Required env:
 
 ```bash
 API_URL=http://localhost:3001
-TINFIN_LOAD_AUTH_TOKEN=<supabase-user-access-token>
+TINFIZ_LOAD_AUTH_TOKEN=<supabase-user-access-token>
 LOAD_PERIOD=30d
 LOAD_REQUESTS=120
 LOAD_CONCURRENCY=12
@@ -123,7 +123,7 @@ PowerShell example:
 
 ```powershell
 $env:API_URL="http://localhost:3001"
-$env:TINFIN_LOAD_AUTH_TOKEN="<token>"
+$env:TINFIZ_LOAD_AUTH_TOKEN="<token>"
 $env:LOAD_PERIOD="30d"
 $env:LOAD_REQUESTS="120"
 $env:LOAD_CONCURRENCY="12"

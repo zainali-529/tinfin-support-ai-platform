@@ -1,4 +1,4 @@
-// â”€â”€ Key changes vs original:
+// Ã¢â€â‚¬Ã¢â€â‚¬ Key changes vs original:
 // 1. handleVisitorMessage now reads msg.attachments and passes to persistMessage
 // 2. handleAgentMessage now reads msg.attachments and passes to visitor + persistMessage
 // 3. persistMessage accepts optional attachments param
@@ -32,15 +32,15 @@ import {
 import type {
   Attachment,
   ConversationStatus,
-  TinfinSocket,
+  TinfizSocket,
   VisitorConversationSummary,
 } from './types'
 
 const VISITOR_TOMBSTONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
-const DEFAULT_WELCOME_MESSAGE = 'Hi ðŸ‘‹ How can we help?'
+const DEFAULT_WELCOME_MESSAGE = 'Hi Ã°Å¸â€˜â€¹ How can we help?'
 
-// â”€â”€ Utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Utils Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function getSupabase(): SupabaseClient {
   return createClient(
@@ -259,7 +259,7 @@ async function getWelcomeMessage(orgId: string): Promise<string> {
 }
 
 async function sendWelcomeMessage(params: {
-  socket: TinfinSocket
+  socket: TinfizSocket
   conversationId: string
   orgId: string
 }) {
@@ -364,7 +364,7 @@ async function sendToVisitor(orgId: string, conversationId: string, data: unknow
   }
 }
 
-// â”€â”€ DB helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ DB helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 async function getConversationStatus(orgId: string, conversationId: string): Promise<ConversationStatus | null> {
   try {
@@ -446,7 +446,7 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
         const contact = contactById.get((conversation as { contact_id: string | null }).contact_id ?? '')
         const last = latestMsgByConv.get(conversation.id)
         const lastContent = last?.attachments?.length
-          ? `ðŸ“Ž ${last.attachments[0]?.name ?? 'File'}`
+          ? `Ã°Å¸â€œÅ½ ${last.attachments[0]?.name ?? 'File'}`
           : (last?.content ?? '')
 
         return {
@@ -616,7 +616,7 @@ async function getFeedbackConversationContext(orgId: string, conversationId: str
   }
 }
 
-async function handleVisitorCsat(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleVisitorCsat(socket: TinfizSocket, msg: Record<string, unknown>) {
   if (socket.isAgent) return
   const orgId = socket.orgId
   const visitorId = socket.visitorId
@@ -757,7 +757,7 @@ async function rejectPendingAction(
   }
 }
 
-// â”€â”€ Contact helpers (unchanged from original) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Contact helpers (unchanged from original) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 interface ContactIdentityRow {
   id: string
@@ -953,9 +953,9 @@ async function getOrCreateConversation(params: { orgId: string; visitorId: strin
   return { conversationId: newConv.id, isNew: true }
 }
 
-// â”€â”€ Handoff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Handoff Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgId: string) {
+async function triggerHandoff(socket: TinfizSocket, conversationId: string, orgId: string) {
   socket.awaitingHandoffConfirm = false
   socket.pendingActionLogId = undefined
   await updateConversation(orgId, conversationId, { status: 'pending' })
@@ -972,7 +972,7 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
   } catch (routingError) {
     console.error('[ws] triggerHandoff routing failed:', routingError)
   }
-  const msg = "I'm connecting you with a human agent now. Please hold on! ðŸ™"
+  const msg = "I'm connecting you with a human agent now. Please hold on! Ã°Å¸â„¢Â"
   const createdAt = new Date().toISOString()
   send(socket, { type: 'ai:response', content: msg, conversationId, createdAt, handoff: true })
   broadcastToAgents(orgId, {
@@ -1003,9 +1003,9 @@ async function triggerHandoff(socket: TinfinSocket, conversationId: string, orgI
   await persistMessage({ conversationId, orgId, role: 'assistant', content: msg, aiMetadata: { shouldHandoff: true } })
 }
 
-// â”€â”€ Visitor: identify â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Visitor: identify Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function handleVisitorIdentify(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleVisitorIdentify(socket: TinfizSocket, msg: Record<string, unknown>) {
   const orgId = socket.orgId!
   const visitorInfo = (msg.visitorInfo as Record<string, unknown> | undefined) ?? {}
   const name = (msg.name as string | undefined)?.trim()
@@ -1044,9 +1044,9 @@ async function handleVisitorIdentify(socket: TinfinSocket, msg: Record<string, u
   })
 }
 
-// â”€â”€ Visitor: message (with attachments) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Visitor: message (with attachments) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleVisitorMessage(socket: TinfizSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
   const attachments = (msg.attachments as Attachment[] | undefined) ?? []
   const orgId = socket.orgId!
@@ -1150,10 +1150,10 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     console.error('[ws] visitor message persist failed:', error)
   })
 
-  // If agent is handling â†’ skip AI
+  // If agent is handling Ã¢â€ â€™ skip AI
   if (status === 'open') return
 
-  // If only file attachment, no text â†’ just acknowledge, don't run AI
+  // If only file attachment, no text Ã¢â€ â€™ just acknowledge, don't run AI
   if (!content && attachments.length > 0) return
 
   // Pending action confirmation flow
@@ -1447,9 +1447,9 @@ async function handleVisitorMessage(socket: TinfinSocket, msg: Record<string, un
     })()
 }
 
-// â”€â”€ Agent: message (with attachments) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Agent: message (with attachments) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleAgentMessage(socket: TinfizSocket, msg: Record<string, unknown>) {
   const content = (msg.content as string | undefined)?.trim() ?? ''
   const attachments = (msg.attachments as Attachment[] | undefined) ?? []
   const clientNonce =
@@ -1503,9 +1503,9 @@ async function handleAgentMessage(socket: TinfinSocket, msg: Record<string, unkn
   })
 }
 
-// â”€â”€ Agent: takeover, release, resolve (unchanged) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Agent: takeover, release, resolve (unchanged) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleAgentTakeover(socket: TinfizSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   const orgId = socket.orgId!
   if (!conversationId) return
@@ -1539,10 +1539,10 @@ async function handleAgentTakeover(socket: TinfinSocket, msg: Record<string, unk
     },
   })
   send(socket, { type: 'takeover:success', conversationId })
-  await persistMessage({ conversationId, orgId, role: 'assistant', content: 'â€” Agent joined the conversation â€”', aiMetadata: { system: true, event: 'agent_joined' } })
+  await persistMessage({ conversationId, orgId, role: 'assistant', content: 'Ã¢â‚¬â€ Agent joined the conversation Ã¢â‚¬â€', aiMetadata: { system: true, event: 'agent_joined' } })
 }
 
-async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleAgentRelease(socket: TinfizSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   const orgId = socket.orgId!
   if (!conversationId) return
@@ -1579,7 +1579,7 @@ async function handleAgentRelease(socket: TinfinSocket, msg: Record<string, unkn
   await persistMessage({ conversationId, orgId, role: 'assistant', content: reply, aiMetadata: { system: true, event: 'released_to_bot' } })
 }
 
-async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleAgentResolve(socket: TinfizSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   const orgId = socket.orgId!
   if (!conversationId) return
@@ -1615,9 +1615,9 @@ async function handleAgentResolve(socket: TinfinSocket, msg: Record<string, unkn
   })
 }
 
-// â”€â”€ Conversation helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Conversation helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function handleConversationResume(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleConversationResume(socket: TinfizSocket, msg: Record<string, unknown>) {
   const conversationId = (msg.conversationId as string | undefined) ?? ''
   const orgId = socket.orgId!
   if (!conversationId) return
@@ -1658,14 +1658,14 @@ async function handleConversationResume(socket: TinfinSocket, msg: Record<string
   send(socket, { type: 'conversation:ready', conversationId, isNew: false, status })
 }
 
-async function handleConversationsList(socket: TinfinSocket) {
+async function handleConversationsList(socket: TinfizSocket) {
   if (socket.isAgent) return
   if (!socket.orgId || !socket.visitorId) return
   const conversations = await fetchVisitorConversations(socket.orgId, socket.visitorId)
   send(socket, { type: 'conversations:list', conversations, activeConversationId: socket.conversationId ?? null })
 }
 
-async function handleConversationSelect(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleConversationSelect(socket: TinfizSocket, msg: Record<string, unknown>) {
   if (socket.isAgent) return
   const orgId = socket.orgId!
   const visitorId = socket.visitorId!
@@ -1684,7 +1684,7 @@ async function handleConversationSelect(socket: TinfinSocket, msg: Record<string
   send(socket, { type: 'conversation:history', conversationId, messages })
 }
 
-async function handleNewChat(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleNewChat(socket: TinfizSocket, msg: Record<string, unknown>) {
   const orgId = socket.orgId!
   const visitorInfo = (msg.visitorInfo as Record<string, unknown> | undefined) ?? {}
   const name = ((msg.name as string | undefined) ?? (visitorInfo.name as string | undefined))?.trim()
@@ -1737,9 +1737,9 @@ async function handleNewChat(socket: TinfinSocket, msg: Record<string, unknown>)
   }
 }
 
-// â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Router Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>) {
+async function handleMessage(socket: TinfizSocket, msg: Record<string, unknown>) {
   switch (msg.type) {
     case 'conversations:list': await handleConversationsList(socket); break
     case 'conversation:select': await handleConversationSelect(socket, msg); break
@@ -1885,14 +1885,14 @@ async function handleMessage(socket: TinfinSocket, msg: Record<string, unknown>)
   }
 }
 
-// â”€â”€ Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Server Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 export function createWsServer(port: number) {
   const wss = new WebSocketServer({ port })
 
   startAgentRealtimeBridge()
 
-  wss.on('connection', async (socket: TinfinSocket, req: IncomingMessage) => {
+  wss.on('connection', async (socket: TinfizSocket, req: IncomingMessage) => {
     try {
       const url = new URL(req.url || '/', `http://localhost`)
       const orgId = (url.searchParams.get('orgId') || '').trim()
@@ -1949,7 +1949,7 @@ export function createWsServer(port: number) {
 
   setInterval(() => {
     wss.clients.forEach(ws => {
-      const s = ws as TinfinSocket
+      const s = ws as TinfizSocket
       if (!s.isAlive) return s.terminate()
       s.isAlive = false
       s.ping()
@@ -1959,3 +1959,4 @@ export function createWsServer(port: number) {
   console.log(`WS: ws://localhost:${port}`)
   return wss
 }
+

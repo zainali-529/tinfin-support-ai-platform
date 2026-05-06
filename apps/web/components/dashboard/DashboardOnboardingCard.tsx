@@ -116,11 +116,11 @@ export function DashboardOnboardingCard({
           <div className="min-w-0">
             <div className="mb-2 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               <ClipboardCheckIcon className="size-3.5" />
-              Launch readiness
+              Workspace readiness
             </div>
             <CardTitle className="text-xl tracking-tight">Product onboarding checklist</CardTitle>
             <CardDescription className="mt-2 max-w-2xl text-sm leading-6">
-              Follow the setup path, verify each signal, and keep docs one click away while preparing this workspace for launch.
+              Follow the setup path, verify each signal, and keep docs one click away while preparing this workspace for customer traffic.
             </CardDescription>
           </div>
 
@@ -150,7 +150,7 @@ export function DashboardOnboardingCard({
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <span className="text-muted-foreground">
-                    {onboarding.completedSteps}/{onboarding.totalSteps} available launch steps complete
+                    {onboarding.completedSteps}/{onboarding.totalSteps} available setup steps complete
                   </span>
                   <span className="font-semibold tabular-nums">{onboarding.completionPercent}%</span>
                 </div>

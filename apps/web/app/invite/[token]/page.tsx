@@ -51,7 +51,7 @@ export default async function InvitePage({ params }: Props) {
         email={invite.email as string}
         expiresAt={invite.expires_at as string}
         isLoggedIn={!!user}
-        loggedInEmail={user?.email ?? null}  // ← pass logged-in email for mismatch check
+        loggedInEmail={user?.email ?? null}  // â† pass logged-in email for mismatch check
       />
     </InviteLayout>
   )
@@ -70,7 +70,7 @@ function InviteLayout({ children }: { children: React.ReactNode }) {
         <div className="w-full max-w-sm animate-in space-y-0">
           <div className="mb-8 text-center">
             <Link href="/" className="text-sm font-bold tracking-widest uppercase text-muted-foreground hover:text-foreground transition-colors">
-              Tinfin
+              Tinfiz
             </Link>
           </div>
           {children}
@@ -93,7 +93,7 @@ function InviteError({ message }: { message: string }) {
           <h1 className="text-lg font-bold">Invite Unavailable</h1>
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
-        <a href="/dashboard" className="text-sm text-primary underline underline-offset-4">Go to Dashboard →</a>
+        <a href="/dashboard" className="text-sm text-primary underline underline-offset-4">Go to Dashboard â†’</a>
       </div>
     </InviteLayout>
   )

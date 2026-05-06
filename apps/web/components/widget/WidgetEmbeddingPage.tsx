@@ -48,7 +48,7 @@ type PlatformKey =
   | 'react'
   | 'custom'
 
-const SCRIPT_SRC = 'https://cdn.tinfin.com/widget.js'
+const SCRIPT_SRC = 'https://cdn.Tinfiz.com/widget.js'
 const LOCAL_SCRIPT_SRC = 'http://localhost:3002/src/main.ts'
 
 const SNIPPETS: Array<{ key: SnippetKey; label: string; hint: string; lang: 'html' | 'tsx' | 'js' }> = [
@@ -111,17 +111,17 @@ const PLATFORM_STEPS: Partial<Record<PlatformKey, string[]>> = {
   nextjs: [
     'app/layout.tsx ya root layout mein next/script import karein.',
     'Script component ko body ke andar children ke baad place karein.',
-    'Logged-in user change par Tinfin("update") call karein.',
+    'Logged-in user change par Tinfiz("update") call karein.',
   ],
   react: [
     'App shell/root component mein loader useEffect add karein.',
-    'Route change ya login change par Tinfin("update") call karein.',
-    'Logout par Tinfin("shutdown") call karna na bhoolen.',
+    'Route change ya login change par Tinfiz("update") call karein.',
+    'Logout par Tinfiz("shutdown") call karna na bhoolen.',
   ],
   custom: [
     'Universal snippet ko closing body tag se pehle paste karein.',
     'Deploy/publish ke baad verifier run karein.',
-    'Console se Tinfin("show") run karke widget open test karein.',
+    'Console se Tinfiz("show") run karke widget open test karein.',
   ],
 }
 
@@ -202,19 +202,19 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
   )
 
   const snippets = useMemo<Record<SnippetKey, string>>(() => {
-    const basic = `<!-- Tinfin Widget -->\n<script\n  src="${SCRIPT_SRC}"\n  data-org-id="${orgId}"\n  async\n></script>`
+    const basic = `<!-- Tinfiz Widget -->\n<script\n  src="${SCRIPT_SRC}"\n  data-org-id="${orgId}"\n  async\n></script>`
 
-    const loader = `<script>\n  window.tinfinSettings = {\n    orgId: '${orgId}',\n    companyName: 'Your Company'\n  };\n\n  (function () {\n    var w = window;\n    if (typeof w.Tinfin === 'function') {\n      w.Tinfin('update', w.tinfinSettings);\n      return;\n    }\n\n    var tinfin = function () {\n      tinfin.q.push(Array.prototype.slice.call(arguments));\n    };\n    tinfin.q = [];\n    w.Tinfin = tinfin;\n\n    var script = document.createElement('script');\n    script.async = true;\n    script.src = '${SCRIPT_SRC}';\n    script.setAttribute('data-auto-boot', 'false');\n    document.head.appendChild(script);\n\n    tinfin('boot', w.tinfinSettings);\n  })();\n</script>`
+    const loader = `<script>\n  window.tinfizSettings = {\n    orgId: '${orgId}',\n    companyName: 'Your Company'\n  };\n\n  (function () {\n    var w = window;\n    if (typeof w.Tinfiz === 'function') {\n      w.Tinfiz('update', w.tinfizSettings);\n      return;\n    }\n\n    var Tinfiz = function () {\n      Tinfiz.q.push(Array.prototype.slice.call(arguments));\n    };\n    Tinfiz.q = [];\n    w.Tinfiz = Tinfiz;\n\n    var script = document.createElement('script');\n    script.async = true;\n    script.src = '${SCRIPT_SRC}';\n    script.setAttribute('data-auto-boot', 'false');\n    document.head.appendChild(script);\n\n    Tinfiz('boot', w.tinfizSettings);\n  })();\n</script>`
 
     const next = `// app/layout.tsx\nimport Script from 'next/script'\n\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return (\n    <html lang="en">\n      <body>\n        {children}\n        <Script\n          src="${SCRIPT_SRC}"\n          data-org-id="${orgId}"\n          strategy="lazyOnload"\n        />\n      </body>\n    </html>\n  )\n}`
 
-    const react = `// src/TinfinWidget.tsx\nimport { useEffect } from 'react'\n\ndeclare global {\n  interface Window {\n    Tinfin?: (command: string, ...args: unknown[]) => void\n  }\n}\n\nexport function TinfinWidget({ user }: { user?: { id: string; email: string; name: string } }) {\n  useEffect(() => {\n    if (document.getElementById('tinfin-widget-loader')) return\n\n    const script = document.createElement('script')\n    script.id = 'tinfin-widget-loader'\n    script.src = '${SCRIPT_SRC}'\n    script.dataset.orgId = '${orgId}'\n    script.async = true\n    document.body.appendChild(script)\n  }, [])\n\n  useEffect(() => {\n    if (!user || !window.Tinfin) return\n    window.Tinfin('update', {\n      user: { id: user.id, email: user.email, name: user.name },\n      page: { url: window.location.href, title: document.title },\n    })\n  }, [user])\n\n  return null\n}`
+    const react = `// src/TinfizWidget.tsx\nimport { useEffect } from 'react'\n\ndeclare global {\n  interface Window {\n    Tinfiz?: (command: string, ...args: unknown[]) => void\n  }\n}\n\nexport function TinfizWidget({ user }: { user?: { id: string; email: string; name: string } }) {\n  useEffect(() => {\n    if (document.getElementById('Tinfiz-widget-loader')) return\n\n    const script = document.createElement('script')\n    script.id = 'Tinfiz-widget-loader'\n    script.src = '${SCRIPT_SRC}'\n    script.dataset.orgId = '${orgId}'\n    script.async = true\n    document.body.appendChild(script)\n  }, [])\n\n  useEffect(() => {\n    if (!user || !window.Tinfiz) return\n    window.Tinfiz('update', {\n      user: { id: user.id, email: user.email, name: user.name },\n      page: { url: window.location.href, title: document.title },\n    })\n  }, [user])\n\n  return null\n}`
 
-    const gtm = `<!-- Google Tag Manager > Custom HTML tag -->\n<script>\n  window.tinfinSettings = { orgId: '${orgId}' };\n  (function () {\n    var t = function () { t.q.push(Array.prototype.slice.call(arguments)); };\n    t.q = [];\n    window.Tinfin = window.Tinfin || t;\n\n    var s = document.createElement('script');\n    s.async = true;\n    s.src = '${SCRIPT_SRC}';\n    s.setAttribute('data-auto-boot', 'false');\n    document.head.appendChild(s);\n\n    window.Tinfin('boot', window.tinfinSettings);\n  })();\n</script>`
+    const gtm = `<!-- Google Tag Manager > Custom HTML tag -->\n<script>\n  window.tinfizSettings = { orgId: '${orgId}' };\n  (function () {\n    var t = function () { t.q.push(Array.prototype.slice.call(arguments)); };\n    t.q = [];\n    window.Tinfiz = window.Tinfiz || t;\n\n    var s = document.createElement('script');\n    s.async = true;\n    s.src = '${SCRIPT_SRC}';\n    s.setAttribute('data-auto-boot', 'false');\n    document.head.appendChild(s);\n\n    window.Tinfiz('boot', window.tinfizSettings);\n  })();\n</script>`
 
     const platformHtml = `${basic}\n\n<!-- Optional visual overrides -->\n<!--\n<script\n  src="${SCRIPT_SRC}"\n  data-org-id="${orgId}"\n  data-color="#2563eb"\n  data-company="Your Company"\n  data-position="bottom-right"\n  async\n></script>\n-->`
 
-    const identity = `// Logged-in user boot/update example\nTinfin('boot', {\n  orgId: '${orgId}',\n  user: {\n    id: 'user_123',\n    email: 'customer@example.com',\n    name: 'Customer Name',\n    // userHash should be generated on your backend if identity verification is enabled later.\n    userHash: 'hmac_sha256_from_backend',\n    traits: { plan: 'pro', signupDate: '2026-05-02' },\n  },\n  company: {\n    id: 'company_123',\n    name: 'Acme Inc',\n    plan: 'business',\n  },\n  customAttributes: { source: 'app_dashboard' },\n})\n\n// On route/user changes\nTinfin('update', {\n  page: { url: window.location.href, title: document.title },\n})\n\n// On logout\nTinfin('shutdown')`
+    const identity = `// Logged-in user boot/update example\nTinfiz('boot', {\n  orgId: '${orgId}',\n  user: {\n    id: 'user_123',\n    email: 'customer@example.com',\n    name: 'Customer Name',\n    // userHash should be generated on your backend if identity verification is enabled later.\n    userHash: 'hmac_sha256_from_backend',\n    traits: { plan: 'pro', signupDate: '2026-05-02' },\n  },\n  company: {\n    id: 'company_123',\n    name: 'Acme Inc',\n    plan: 'business',\n  },\n  customAttributes: { source: 'app_dashboard' },\n})\n\n// On route/user changes\nTinfiz('update', {\n  page: { url: window.location.href, title: document.title },\n})\n\n// On logout\nTinfiz('shutdown')`
 
     const dev = `<!-- Local Development -->\n<script\n  type="module"\n  src="${LOCAL_SCRIPT_SRC}"\n  data-org-id="${orgId}"\n></script>`
 
@@ -237,7 +237,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
     : 'basic'
 
   const developerBrief = useMemo(() => {
-    return `Install Tinfin widget for org ${orgId}\n\n1. Add this script before </body> on every page.\n\n${snippets.basic}\n\n2. Publish the site.\n3. Open the Tinfin dashboard > Embedding > Verify install.\n4. Test from console:\n   Tinfin('show')\n   Tinfin('openNewMessage', 'I need help')\n   Tinfin('shutdown')`
+    return `Install Tinfiz widget for org ${orgId}\n\n1. Add this script before </body> on every page.\n\n${snippets.basic}\n\n2. Publish the site.\n3. Open the Tinfiz dashboard > Embedding > Verify install.\n4. Test from console:\n   Tinfiz('show')\n   Tinfiz('openNewMessage', 'I need help')\n   Tinfiz('shutdown')`
   }, [orgId, snippets.basic])
 
   const handleCopy = async (key: string, value: string) => {
@@ -273,7 +273,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
               Installation Studio
             </Badge>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Install Tinfin widget anywhere</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Install Tinfiz widget anywhere</h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Universal script, JS API boot flow, platform instructions, and live install verification in one place.
               </p>
@@ -435,7 +435,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
             <Alert>
               <SparklesIcon className="size-4" />
               <AlertDescription>
-                JS API commands: <code>Tinfin('boot')</code>, <code>Tinfin('update')</code>, <code>Tinfin('show')</code>, <code>Tinfin('hide')</code>, <code>Tinfin('openNewMessage')</code>, and <code>Tinfin('shutdown')</code>.
+                JS API commands: <code>Tinfiz('boot')</code>, <code>Tinfiz('update')</code>, <code>Tinfiz('show')</code>, <code>Tinfiz('hide')</code>, <code>Tinfiz('openNewMessage')</code>, and <code>Tinfiz('shutdown')</code>.
               </AlertDescription>
             </Alert>
           </CardContent>
@@ -478,7 +478,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
 
                 {verifyQuery.data.scripts.length > 0 && (
                   <div className="rounded-xl border p-3">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Detected Tinfin scripts</div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Detected Tinfiz scripts</div>
                     <div className="mt-2 space-y-2">
                       {verifyQuery.data.scripts.map((script, index) => (
                         <div key={`${script.src ?? 'inline'}-${index}`} className="rounded-lg bg-muted/30 p-2 font-mono text-xs">
@@ -515,9 +515,9 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
           <CardContent className="space-y-4">
             <CodePanel
               lang="js"
-              code={`Tinfin('show')\nTinfin('hide')\nTinfin('openNewMessage', 'I need help with pricing')\nTinfin('update', { user: { id: 'test_1', email: 'test@example.com', name: 'Test User' } })\nTinfin('newChat')\nTinfin('shutdown')\nTinfin('boot', { orgId: '${orgId}' })`}
+              code={`Tinfiz('show')\nTinfiz('hide')\nTinfiz('openNewMessage', 'I need help with pricing')\nTinfiz('update', { user: { id: 'test_1', email: 'test@example.com', name: 'Test User' } })\nTinfiz('newChat')\nTinfiz('shutdown')\nTinfiz('boot', { orgId: '${orgId}' })`}
               copied={copiedKey === 'qa-console'}
-              onCopy={() => handleCopy('qa-console', `Tinfin('show')\nTinfin('hide')\nTinfin('openNewMessage', 'I need help with pricing')\nTinfin('update', { user: { id: 'test_1', email: 'test@example.com', name: 'Test User' } })\nTinfin('newChat')\nTinfin('shutdown')\nTinfin('boot', { orgId: '${orgId}' })`)}
+              onCopy={() => handleCopy('qa-console', `Tinfiz('show')\nTinfiz('hide')\nTinfiz('openNewMessage', 'I need help with pricing')\nTinfiz('update', { user: { id: 'test_1', email: 'test@example.com', name: 'Test User' } })\nTinfiz('newChat')\nTinfiz('shutdown')\nTinfiz('boot', { orgId: '${orgId}' })`)}
             />
 
             <div className="rounded-xl border p-4">
@@ -528,7 +528,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
               <div className="mt-3 flex flex-wrap gap-2">
                 <CopyButton text={developerBrief} id="developer-brief" copiedKey={copiedKey} onCopy={handleCopy} />
                 <Button variant="outline" size="sm" className="h-8 gap-1.5" asChild>
-                  <a href={`mailto:?subject=${encodeURIComponent('Install Tinfin widget')}&body=${encodeURIComponent(developerBrief)}`}>
+                  <a href={`mailto:?subject=${encodeURIComponent('Install Tinfiz widget')}&body=${encodeURIComponent(developerBrief)}`}>
                     Email brief
                   </a>
                 </Button>
@@ -538,7 +538,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
             <Alert>
               <RefreshCwIcon className="size-4" />
               <AlertDescription>
-                SPA apps mein logout par <code>Tinfin('shutdown')</code> zaroor call karein, warna previous logged-in user ka widget context browser mein reh sakta hai.
+                SPA apps mein logout par <code>Tinfiz('shutdown')</code> zaroor call karein, warna previous logged-in user ka widget context browser mein reh sakta hai.
               </AlertDescription>
             </Alert>
           </CardContent>
@@ -547,3 +547,5 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
     </div>
   )
 }
+
+

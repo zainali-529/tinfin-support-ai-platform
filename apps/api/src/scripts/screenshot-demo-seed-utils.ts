@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 export const SCREENSHOT_DEMO_FLAG = 'screenshotDemoSeed'
-export const DEFAULT_SCREENSHOT_DEMO_SEED_ID = 'launch-screenshot-demo'
+export const DEFAULT_SCREENSHOT_DEMO_SEED_ID = 'docs-screenshot-demo'
 
 export type CliOptions = {
   orgId: string

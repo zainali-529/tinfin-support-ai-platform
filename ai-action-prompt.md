@@ -1,27 +1,27 @@
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CONTEXT & EXISTING STACK
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-Tinfin is an AI-powered customer support SaaS (Turborepo monorepo):
-  apps/api   → Express + tRPC v11, Supabase JS, BullMQ, ioredis
-  apps/web   → Next.js 16 App Router, Tailwind v4, shadcn/ui
-  packages/ai → queryRAG() RAG pipeline (OpenAI gpt-4o-mini + pgvector)
-  packages/ui → Full shadcn component library
+Tinfiz is an AI-powered customer support SaaS (Turborepo monorepo):
+  apps/api   â†’ Express + tRPC v11, Supabase JS, BullMQ, ioredis
+  apps/web   â†’ Next.js 16 App Router, Tailwind v4, shadcn/ui
+  packages/ai â†’ queryRAG() RAG pipeline (OpenAI gpt-4o-mini + pgvector)
+  packages/ui â†’ Full shadcn component library
 
 EXISTING AI flow (apps/api/src/ws/wsServer.ts):
-  Customer message → queryRAG() → response
+  Customer message â†’ queryRAG() â†’ response
   queryRAG returns: { type: 'answer'|'handoff'|'ask_handoff'|'casual', message, confidence }
 
 EXISTING voice flow (Vapi tool-calls):
-  Customer speaks → vapi-webhook tool-calls → searchKnowledgeBase → response
+  Customer speaks â†’ vapi-webhook tool-calls â†’ searchKnowledgeBase â†’ response
 
 GOAL:
-  AI can now TAKE ACTIONS during conversations — not just answer.
+  AI can now TAKE ACTIONS during conversations â€” not just answer.
   Same tools architecture as searchKnowledgeBase but org-configurable.
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 WHAT "AI ACTIONS" MEANS
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 Examples of what AI can now DO (not just say):
 
@@ -33,7 +33,7 @@ Examples of what AI can now DO (not just say):
   AI: [needs confirmation]
   AI: "I can cancel your subscription ending Dec 31st. Should I proceed?"
   Customer: "Yes"
-  AI: [calls cancelSubscription] → "Done, your subscription has been cancelled."
+  AI: [calls cancelSubscription] â†’ "Done, your subscription has been cancelled."
 
   Customer: "Book me an appointment for tomorrow 3pm"
   AI: [calls bookAppointment with parsed date/time]
@@ -41,9 +41,9 @@ Examples of what AI can now DO (not just say):
 
 This is what Intercom calls "Fin AI Actions" (they charge $99+/seat for this).
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 DATABASE SCHEMA
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 Run this SQL migration:
 
@@ -81,7 +81,7 @@ CREATE TABLE ai_action_secrets (
   UNIQUE(action_id, key_name)
 );
 
--- Execution log — full audit trail
+-- Execution log â€” full audit trail
 CREATE TABLE ai_action_logs (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id          UUID NOT NULL REFERENCES organizations(id),
@@ -131,9 +131,9 @@ CREATE INDEX idx_ai_action_approvals_conv ON ai_action_approvals (conversation_i
 --   }
 -- ]
 
-────────────────────────────────────────────────────────────────────
-PACKAGES/AI — CORE ENGINE
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+PACKAGES/AI â€” CORE ENGINE
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 FILE: packages/ai/src/actions.service.ts
 
@@ -227,7 +227,7 @@ FILE: packages/ai/src/actions.service.ts
     - Replace {secretName} with secrets[secretName]
     - Handle URL encoding for URL templates
     - Example: "https://api.shop.com/orders/{orderId}" + {orderId: "12345"}
-      → "https://api.shop.com/orders/12345"
+      â†’ "https://api.shop.com/orders/12345"
 
   async function executeAction(
     action: ActionConfig,
@@ -238,15 +238,15 @@ FILE: packages/ai/src/actions.service.ts
     - Build body from bodyTemplate + parameters (if method is POST/PUT/PATCH)
     - Fetch with AbortSignal.timeout(action.timeoutSeconds * 1000)
     - Parse JSON response
-    - If responsePath → extract nested value (use lodash.get or simple dot-path resolver)
+    - If responsePath â†’ extract nested value (use lodash.get or simple dot-path resolver)
     - Return { success, data, error }
 
   async function formatActionResponse(
     action: ActionConfig,
     rawResponse: unknown
   ): Promise<string>
-    - If action.responseTemplate exists → fill template with response fields
-    - Else → JSON.stringify(rawResponse, null, 2) (let AI figure it out)
+    - If action.responseTemplate exists â†’ fill template with response fields
+    - Else â†’ JSON.stringify(rawResponse, null, 2) (let AI figure it out)
 
   async function queryWithActions(params: QueryWithActionsParams): Promise<QueryWithActionsResult>
     
@@ -275,43 +275,43 @@ FILE: packages/ai/src/actions.service.ts
     
     5. Check completion.choices[0].finish_reason:
     
-       If 'stop' → AI answered without tools → return answer as-is
+       If 'stop' â†’ AI answered without tools â†’ return answer as-is
     
-       If 'tool_calls' → AI wants to use a tool:
+       If 'tool_calls' â†’ AI wants to use a tool:
          For each tool call in completion.choices[0].message.tool_calls:
          
          a) If toolName === 'requestHumanAgent':
-            → return { type: 'handoff', message: AI's message }
+            â†’ return { type: 'handoff', message: AI's message }
          
          b) If toolName === 'searchKnowledgeBase':
-            → call queryRAG with the query parameter
-            → add result as tool_result message
-            → make SECOND OpenAI call with tool result
-            → return final answer
+            â†’ call queryRAG with the query parameter
+            â†’ add result as tool_result message
+            â†’ make SECOND OpenAI call with tool result
+            â†’ return final answer
          
          c) If it's a custom action:
             - Get ActionConfig by name
             - If action.requiresConfirmation:
-              → DON'T execute yet
-              → Log with status='pending_confirmation'
-              → return { type: 'action_confirmation', 
+              â†’ DON'T execute yet
+              â†’ Log with status='pending_confirmation'
+              â†’ return { type: 'action_confirmation', 
                          message: "Should I [action description] with [params]?",
                          confirmationMessage: "...",
                          actionLog: { logId, actionName } }
             
             - If action.humanApprovalRequired:
-              → Log with status='pending_approval'
-              → Insert into ai_action_approvals
-              → return { type: 'action_pending_approval',
+              â†’ Log with status='pending_approval'
+              â†’ Insert into ai_action_approvals
+              â†’ return { type: 'action_pending_approval',
                          message: "I've requested agent approval for this. 
                                   You'll be notified once approved." }
             
             - Else: execute immediately:
-              → const result = await executeAction(action, parameters)
-              → Log with status = result.success ? 'success' : 'failed'
-              → Add tool_result to messages
-              → Make second OpenAI call to get natural language response
-              → return { type: 'action', message: naturalResponse }
+              â†’ const result = await executeAction(action, parameters)
+              â†’ Log with status = result.success ? 'success' : 'failed'
+              â†’ Add tool_result to messages
+              â†’ Make second OpenAI call to get natural language response
+              â†’ return { type: 'action', message: naturalResponse }
     
     System prompt for queryWithActions:
     
@@ -330,7 +330,7 @@ FILE: packages/ai/src/actions.service.ts
     3. If an action needs confirmation, describe what you'll do and ask first.
     4. After executing an action, report the result clearly.
     5. If you cannot help, use requestHumanAgent.
-    6. Never fabricate information — always use tools for real data.
+    6. Never fabricate information â€” always use tools for real data.
     7. Respond in the same language as the customer."
 
   async function executeApprovedAction(logId: string, approvedBy: string): Promise<void>
@@ -345,78 +345,78 @@ FILE: packages/ai/src/actions.service.ts
     logId: string,
     confirmed: boolean
   ): Promise<string>
-    - If !confirmed → update log status = 'cancelled' → return "No problem, let me know if you need anything else."
-    - If confirmed → executeAction → update log → return formatted result
+    - If !confirmed â†’ update log status = 'cancelled' â†’ return "No problem, let me know if you need anything else."
+    - If confirmed â†’ executeAction â†’ update log â†’ return formatted result
 
 Export: getOrgActions, queryWithActions, executeApprovedAction, handleConfirmedAction
 
 Update packages/ai/src/index.ts to export from actions.service.ts
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 BACKEND API
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 FILE: apps/api/src/routers/actions.router.ts
 
   All procedures require protectedProcedure.
 
-  getActions → SELECT all ai_actions for userOrgId
+  getActions â†’ SELECT all ai_actions for userOrgId
     Returns: ActionConfig[] (WITHOUT secrets values, just key names)
     Include: execution count from ai_action_logs in last 30 days per action
 
-  getAction({ id }) → Single action with parameter details
+  getAction({ id }) â†’ Single action with parameter details
     Admin only
 
-  createAction({ ...ActionConfig fields }) → INSERT
+  createAction({ ...ActionConfig fields }) â†’ INSERT
     Admin only
     Validate: name must be unique per org, snake_case only
     Validate: urlTemplate must be valid URL after variable replacement
     Validate: max 20 actions per org (plan limit)
 
-  updateAction({ id, ...fields }) → UPDATE
+  updateAction({ id, ...fields }) â†’ UPDATE
     Admin only
     Can update any field except org_id
 
-  deleteAction({ id }) → DELETE (cascade deletes secrets and logs)
+  deleteAction({ id }) â†’ DELETE (cascade deletes secrets and logs)
     Admin only
 
-  setActionSecret({ actionId, keyName, keyValue }) → UPSERT ai_action_secrets
+  setActionSecret({ actionId, keyName, keyValue }) â†’ UPSERT ai_action_secrets
     Admin only
     keyValue is stored as-is for MVP (add encryption in v2)
 
-  deleteActionSecret({ actionId, keyName }) → DELETE from ai_action_secrets
+  deleteActionSecret({ actionId, keyName }) â†’ DELETE from ai_action_secrets
 
-  testAction({ id, testParameters }) → Execute action with test params
+  testAction({ id, testParameters }) â†’ Execute action with test params
     Admin only
     Does NOT log to ai_action_logs
     Returns { success, responseData, error, durationMs }
     Use this in UI to let admins test before enabling
 
-  getActionLogs({ limit, offset, actionId?, status? }) → Paginated logs
+  getActionLogs({ limit, offset, actionId?, status? }) â†’ Paginated logs
     Admin only
     Returns recent executions with status, parameters, response
 
-  getPendingApprovals → SELECT from ai_action_approvals JOIN logs
+  getPendingApprovals â†’ SELECT from ai_action_approvals JOIN logs
     Returns pending approvals for this org
     Show in agent dashboard as notifications
 
-  approveAction({ logId }) → calls executeApprovedAction
+  approveAction({ logId }) â†’ calls executeApprovedAction
     Agent or admin
     Broadcasts result via WebSocket
 
-  rejectAction({ logId }) → Update log status = 'rejected', delete approval
+  rejectAction({ logId }) â†’ Update log status = 'rejected', delete approval
     Agent or admin
 
-  getActionStats → Execution counts, success rates, avg duration by action
+  getActionStats â†’ Execution counts, success rates, avg duration by action
     Admin only
 
 Add to apps/api/src/trpc/router.ts:
   import { actionsRouter } from './routers/actions.router'
   actions: actionsRouter
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 WEBSOCKET UPDATES
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 In apps/api/src/ws/wsServer.ts:
 
@@ -489,8 +489,8 @@ In apps/api/src/ws/wsServer.ts:
 3. Handle confirmation responses:
 
    When socket.pendingActionLogId is set and next message arrives:
-   - If isHandoffConfirmation(content) → execute the pending action
-   - Else → cancel action, respond normally
+   - If isHandoffConfirmation(content) â†’ execute the pending action
+   - Else â†’ cancel action, respond normally
 
 4. Add new message type handler:
    case 'action:approve':
@@ -503,9 +503,9 @@ In apps/api/src/ws/wsServer.ts:
      await rejectAction(msg.logId)
      break
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 VAPI INTEGRATION (Voice Actions)
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 In apps/api/src/routes/vapi-webhook.route.ts,
 in the tool-calls handler, add action execution:
@@ -524,7 +524,7 @@ async function handleToolCalls(supabase, orgId, assistantId, toolCalls):
         continue
       }
       if (action.humanApprovalRequired) {
-        // Cannot do approval during voice — gracefully decline
+        // Cannot do approval during voice â€” gracefully decline
         results.push({ toolCallId, result: 'This action requires human approval. An agent will follow up.' })
         // Create approval log in DB for agent to handle
         continue
@@ -532,7 +532,7 @@ async function handleToolCalls(supabase, orgId, assistantId, toolCalls):
       if (action.requiresConfirmation) {
         // For voice: AI will ask customer verbally (no separate confirm step needed
         // because voice is back-and-forth naturally)
-        // Just execute if AI called the tool — assume it asked already
+        // Just execute if AI called the tool â€” assume it asked already
       }
       const result = await executeAction(action, toolCall.function.arguments)
       results.push({
@@ -562,57 +562,57 @@ In buildOrgAssistantPayload (vapi.service.ts):
   }))
   model.tools = [...existingTools, ...actionTools]
 
-────────────────────────────────────────────────────────────────────
-FRONTEND — AI ACTIONS MANAGEMENT
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+FRONTEND â€” AI ACTIONS MANAGEMENT
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 ROUTE: apps/web/app/(dashboard)/ai-actions/page.tsx
   Admin only gate (server component)
   
 MAIN PAGE LAYOUT:
 
-  ┌─────────────────────────────────────────────────────────┐
-  │  AI Actions                              [+ New Action] │
-  │  "Actions let your AI take real steps for customers"    │
-  │                                                         │
-  │  ┌─── Stats bar ───────────────────────────────────┐   │
-  │  │ 234 executions  │  96% success  │  1.2s avg     │   │
-  │  └──────────────────────────────────────────────────┘   │
-  │                                                         │
-  │  Filter: [All] [E-commerce] [Scheduling] [Account]     │
-  │          [Custom]                                       │
-  │                                                         │
-  │  ┌── ActionCard ────────────────────────────────────┐  │
-  │  │  📦 Get Order Status              ✅ Active       │  │
-  │  │  "Looks up real-time order status"               │  │
-  │  │  GET api.shop.com/orders/{orderId}               │  │
-  │  │  Used 156 times · 98% success · 0.8s avg        │  │
-  │  │                          [Test] [Edit] [Delete]  │  │
-  │  └──────────────────────────────────────────────────┘  │
-  │                                                         │
-  │  ┌── ActionCard ────────────────────────────────────┐  │
-  │  │  ❌ Cancel Order               ✅ Active + ⚠️ Approval│
-  │  │  "Cancels a customer order by ID"                │  │
-  │  │  POST api.shop.com/orders/{orderId}/cancel       │  │
-  │  │  Used 23 times · 100% success · 1.1s avg        │  │
-  │  │                          [Test] [Edit] [Delete]  │  │
-  │  └──────────────────────────────────────────────────┘  │
-  └─────────────────────────────────────────────────────────┘
+  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+  â”‚  AI Actions                              [+ New Action] â”‚
+  â”‚  "Actions let your AI take real steps for customers"    â”‚
+  â”‚                                                         â”‚
+  â”‚  â”Œâ”€â”€â”€ Stats bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”‚
+  â”‚  â”‚ 234 executions  â”‚  96% success  â”‚  1.2s avg     â”‚   â”‚
+  â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â”‚
+  â”‚                                                         â”‚
+  â”‚  Filter: [All] [E-commerce] [Scheduling] [Account]     â”‚
+  â”‚          [Custom]                                       â”‚
+  â”‚                                                         â”‚
+  â”‚  â”Œâ”€â”€ ActionCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+  â”‚  â”‚  ðŸ“¦ Get Order Status              âœ… Active       â”‚  â”‚
+  â”‚  â”‚  "Looks up real-time order status"               â”‚  â”‚
+  â”‚  â”‚  GET api.shop.com/orders/{orderId}               â”‚  â”‚
+  â”‚  â”‚  Used 156 times Â· 98% success Â· 0.8s avg        â”‚  â”‚
+  â”‚  â”‚                          [Test] [Edit] [Delete]  â”‚  â”‚
+  â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+  â”‚                                                         â”‚
+  â”‚  â”Œâ”€â”€ ActionCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+  â”‚  â”‚  âŒ Cancel Order               âœ… Active + âš ï¸ Approvalâ”‚
+  â”‚  â”‚  "Cancels a customer order by ID"                â”‚  â”‚
+  â”‚  â”‚  POST api.shop.com/orders/{orderId}/cancel       â”‚  â”‚
+  â”‚  â”‚  Used 23 times Â· 100% success Â· 1.1s avg        â”‚  â”‚
+  â”‚  â”‚                          [Test] [Edit] [Delete]  â”‚  â”‚
+  â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
 COMPONENTS:
 
 FILE: apps/web/components/actions/ActionBuilder.tsx
-  (Used for both create and edit — Dialog/Sheet form)
+  (Used for both create and edit â€” Dialog/Sheet form)
   
   Section 1: Basic Info
     Display Name (text input)
     Name (auto-generated from display name, editable, snake_case validation)
     Category (select: E-commerce / Scheduling / Account / Custom)
-    Description (textarea — IMPORTANT label: "AI reads this to decide when to use")
+    Description (textarea â€” IMPORTANT label: "AI reads this to decide when to use")
     Is Active toggle
   
   Section 2: API Configuration  
-    Method (GET / POST / PUT / PATCH / DELETE) — select
+    Method (GET / POST / PUT / PATCH / DELETE) â€” select
     URL Template (text input with variable hint)
       Show: "Use {variableName} for dynamic values"
       Example placeholder: "https://api.yoursite.com/orders/{orderId}"
@@ -649,7 +649,7 @@ FILE: apps/web/components/actions/ActionBuilder.tsx
       Example: "Your order status is: {status}. Expected delivery: {estimatedDelivery}"
   
   Footer:
-    [Test Action] → opens test panel
+    [Test Action] â†’ opens test panel
     [Cancel] [Save Action]
 
 FILE: apps/web/components/actions/ActionTestPanel.tsx
@@ -657,10 +657,10 @@ FILE: apps/web/components/actions/ActionTestPanel.tsx
   Sheet/Dialog that appears when clicking Test:
   
   Shows each parameter as an input field
-  [Run Test] button → trpc.actions.testAction.mutate()
+  [Run Test] button â†’ trpc.actions.testAction.mutate()
   
   Results:
-    Status: Success ✅ / Failed ❌
+    Status: Success âœ… / Failed âŒ
     Duration: 1.23s
     Request sent: { method, url, headers (masked), body }
     Response received: (JSON formatted)
@@ -670,21 +670,21 @@ FILE: apps/web/components/actions/ActionTemplates.tsx
 
   Pre-built templates users can import:
   
-  ┌─────────────────────────────────────────────────────────┐
-  │  Quick Start Templates                                  │
-  │                                                         │
-  │  📦 Shopify                                             │
-  │  ├── Get Order Status      [Import]                     │
-  │  ├── Cancel Order          [Import]                     │
-  │  └── Track Shipment        [Import]                     │
-  │                                                         │
-  │  📅 Calendly                                            │
-  │  ├── Check Availability    [Import]                     │
-  │  └── Book Appointment      [Import]                     │
-  │                                                         │
-  │  🔔 Generic Webhook                                     │
-  │  └── Trigger Webhook       [Import]                     │
-  └─────────────────────────────────────────────────────────┘
+  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+  â”‚  Quick Start Templates                                  â”‚
+  â”‚                                                         â”‚
+  â”‚  ðŸ“¦ Shopify                                             â”‚
+  â”‚  â”œâ”€â”€ Get Order Status      [Import]                     â”‚
+  â”‚  â”œâ”€â”€ Cancel Order          [Import]                     â”‚
+  â”‚  â””â”€â”€ Track Shipment        [Import]                     â”‚
+  â”‚                                                         â”‚
+  â”‚  ðŸ“… Calendly                                            â”‚
+  â”‚  â”œâ”€â”€ Check Availability    [Import]                     â”‚
+  â”‚  â””â”€â”€ Book Appointment      [Import]                     â”‚
+  â”‚                                                         â”‚
+  â”‚  ðŸ”” Generic Webhook                                     â”‚
+  â”‚  â””â”€â”€ Trigger Webhook       [Import]                     â”‚
+  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
   
   Templates are hardcoded JSON in the frontend.
   Import pre-fills the ActionBuilder form.
@@ -694,56 +694,56 @@ FILE: apps/web/components/actions/PendingApprovals.tsx
   
   Shows in agent inbox as a notification panel:
   
-  ⚠️ Action Approval Required
-  ──────────────────────────────
+  âš ï¸ Action Approval Required
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Conversation: Ahmed Hassan (WhatsApp)
   Action: Cancel Order
   Parameters: { orderId: "12345" }
   Customer said: "Yes please cancel my order"
   Requested: 2 minutes ago (expires in 28 minutes)
   
-  [✅ Approve & Execute]  [❌ Reject]
+  [âœ… Approve & Execute]  [âŒ Reject]
   
-  On approve → trpc.actions.approveAction → WebSocket broadcasts result to conversation
+  On approve â†’ trpc.actions.approveAction â†’ WebSocket broadcasts result to conversation
 
 SIDEBAR UPDATE:
   Add "AI Actions" link in sidebar under a new "Automation" section:
   
   Automation
-  ├── AI Actions         (new)
-  └── [Knowledge Base already here]
+  â”œâ”€â”€ AI Actions         (new)
+  â””â”€â”€ [Knowledge Base already here]
 
-────────────────────────────────────────────────────────────────────
-INBOX — ACTION BADGES IN CONVERSATION VIEW
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+INBOX â€” ACTION BADGES IN CONVERSATION VIEW
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 In ConversationView / WhatsAppConversationView,
 when a message has actionLog metadata, show a badge:
 
-┌──────────────────────────────────────────────┐
-│  🤖 AI                                       │
-│  "Your order #12345 is out for delivery,     │
-│   arriving today by 6pm."                    │
-│                                              │
-│  [⚡ Action: getOrderStatus] [Success ✅]   │
-└──────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  ðŸ¤– AI                                       â”‚
+â”‚  "Your order #12345 is out for delivery,     â”‚
+â”‚   arriving today by 6pm."                    â”‚
+â”‚                                              â”‚
+â”‚  [âš¡ Action: getOrderStatus] [Success âœ…]   â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
 And for pending approvals:
-┌──────────────────────────────────────────────┐
-│  🤖 AI                                       │
-│  "I've sent a cancellation request for order │
-│   #12345 for agent approval."                │
-│                                              │
-│  [⚡ Cancel Order] [⏳ Awaiting Approval]   │
-│  [✅ Approve]  [❌ Reject]                  │
-└──────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  ðŸ¤– AI                                       â”‚
+â”‚  "I've sent a cancellation request for order â”‚
+â”‚   #12345 for agent approval."                â”‚
+â”‚                                              â”‚
+â”‚  [âš¡ Cancel Order] [â³ Awaiting Approval]   â”‚
+â”‚  [âœ… Approve]  [âŒ Reject]                  â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CODE QUALITY REQUIREMENTS
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 - All existing chat, email, voice, KB features continue working unchanged
-- Action execution is fully async — never block WebSocket or webhook response
+- Action execution is fully async â€” never block WebSocket or webhook response
 - All HTTP calls to external APIs have timeout enforcement
 - Secrets NEVER logged or returned to frontend
 - Full audit trail in ai_action_logs for every execution attempt
@@ -754,9 +754,9 @@ CODE QUALITY REQUIREMENTS
 - Test action endpoint only callable by admins, not during real conversations
 - Prettier: singleQuote: false, printWidth: 80, semi: false
 
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 DELIVERABLES CHECKLIST
-────────────────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 SQL:
 [ ] ai_actions table

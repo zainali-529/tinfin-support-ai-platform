@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import Widget from './Widget'
 import type { WidgetConfig } from './types'
 
-type TinfinCommand =
+type TinfizCommand =
   | 'boot'
   | 'update'
   | 'shutdown'
@@ -17,9 +17,9 @@ type TinfinCommand =
   | 'on'
   | 'off'
 
-type TinfinQueuedCall = [TinfinCommand, ...unknown[]]
+type TinfizQueuedCall = [TinfizCommand, ...unknown[]]
 
-type TinfinEventName =
+type TinfizEventName =
   | 'ready'
   | 'booted'
   | 'updated'
@@ -27,9 +27,9 @@ type TinfinEventName =
   | 'track'
   | 'error'
 
-type TinfinApi = {
-  (command: TinfinCommand, ...args: unknown[]): unknown
-  q?: TinfinQueuedCall[]
+type TinfizApi = {
+  (command: TinfizCommand, ...args: unknown[]): unknown
+  q?: TinfizQueuedCall[]
   boot: (options?: Partial<WidgetConfig>) => void
   update: (patch?: Partial<WidgetConfig>) => void
   shutdown: () => void
@@ -40,8 +40,8 @@ type TinfinApi = {
   newChat: () => void
   openNewMessage: (message?: string) => void
   trackEvent: (name: string, metadata?: Record<string, unknown>) => void
-  on: (eventName: TinfinEventName, handler: EventListener) => void
-  off: (eventName: TinfinEventName, handler: EventListener) => void
+  on: (eventName: TinfizEventName, handler: EventListener) => void
+  off: (eventName: TinfizEventName, handler: EventListener) => void
   version: string
   initialized: boolean
 }
@@ -55,14 +55,14 @@ type RuntimeState = {
 
 declare global {
   interface Window {
-    Tinfin?: TinfinApi | ((command: TinfinCommand, ...args: unknown[]) => void) & { q?: TinfinQueuedCall[] }
-    tinfinSettings?: Partial<WidgetConfig>
-    TinfinSettings?: Partial<WidgetConfig>
+    Tinfiz?: TinfizApi | ((command: TinfizCommand, ...args: unknown[]) => void) & { q?: TinfizQueuedCall[] }
+    tinfizSettings?: Partial<WidgetConfig>
+    TinfizSettings?: Partial<WidgetConfig>
   }
 }
 
 const VERSION = '1.0.0'
-const HOST_ID = 'tinfin-widget-host'
+const HOST_ID = 'Tinfiz-widget-host'
 let runtime: RuntimeState | null = null
 
 function resolveWidgetScript() {
@@ -73,15 +73,15 @@ function resolveWidgetScript() {
   return scripts.find((item) =>
     item.hasAttribute('data-org-id') ||
     item.hasAttribute('data-organization-id') ||
-    item.hasAttribute('data-tinfin-widget') ||
-    /tinfin|widget/i.test(item.src)
+    item.hasAttribute('data-Tinfiz-widget') ||
+    /Tinfiz|widget/i.test(item.src)
   ) as HTMLScriptElement | undefined
 }
 
 function injectFonts() {
-  if (document.getElementById('tinfin-widget-fonts')) return
+  if (document.getElementById('Tinfiz-widget-fonts')) return
   const link = document.createElement('link')
-  link.id = 'tinfin-widget-fonts'
+  link.id = 'Tinfiz-widget-fonts'
   link.rel = 'stylesheet'
   link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700&display=swap'
   document.head.appendChild(link)
@@ -93,7 +93,7 @@ function safeJsonAttribute<T>(script: HTMLScriptElement | undefined, name: strin
   try {
     return JSON.parse(raw) as T
   } catch {
-    console.warn(`[tinfin-widget] Ignoring invalid JSON in ${name}.`)
+    console.warn(`[Tinfiz-widget] Ignoring invalid JSON in ${name}.`)
     return undefined
   }
 }
@@ -167,12 +167,12 @@ function mergeConfig(base: WidgetConfig, patch: Partial<WidgetConfig>): WidgetCo
   }
 }
 
-function emit(eventName: TinfinEventName, detail?: unknown) {
-  window.dispatchEvent(new CustomEvent(`tinfin:${eventName}`, { detail }))
+function emit(eventName: TinfizEventName, detail?: unknown) {
+  window.dispatchEvent(new CustomEvent(`Tinfiz:${eventName}`, { detail }))
 }
 
 function dispatchWidgetCommand(type: string, payload?: unknown) {
-  window.dispatchEvent(new CustomEvent('tinfin:command', { detail: { type, payload } }))
+  window.dispatchEvent(new CustomEvent('Tinfiz:command', { detail: { type, payload } }))
 }
 
 function getOrCreateMount(): Pick<RuntimeState, 'host' | 'mount' | 'root'> {
@@ -199,14 +199,14 @@ function renderWidget(config: WidgetConfig) {
   const mount = getOrCreateMount()
   mount.root.render(createElement(Widget, { config }))
   runtime = { ...mount, config }
-  if (window.Tinfin && typeof window.Tinfin === 'function') {
-    ;(window.Tinfin as TinfinApi).initialized = true
+  if (window.Tinfiz && typeof window.Tinfiz === 'function') {
+    ;(window.Tinfiz as TinfizApi).initialized = true
   }
 }
 
 function boot(options: Partial<WidgetConfig> = {}) {
   const base = runtime?.config ?? readScriptConfig(resolveWidgetScript())
-  const globalSettings = window.TinfinSettings ?? window.tinfinSettings ?? {}
+  const globalSettings = window.TinfizSettings ?? window.tinfizSettings ?? {}
   const config = mergeConfig(
     {
       ...base,
@@ -217,8 +217,8 @@ function boot(options: Partial<WidgetConfig> = {}) {
   )
 
   if (!config.orgId?.trim()) {
-    const message = 'Missing orgId. Provide data-org-id on the script tag or call Tinfin("boot", { orgId }).'
-    console.error(`[tinfin-widget] ${message}`)
+    const message = 'Missing orgId. Provide data-org-id on the script tag or call Tinfiz("boot", { orgId }).'
+    console.error(`[Tinfiz-widget] ${message}`)
     emit('error', { message })
     return
   }
@@ -247,8 +247,8 @@ function shutdown() {
   runtime.root.unmount()
   runtime.host.remove()
   runtime = null
-  if (window.Tinfin && typeof window.Tinfin === 'function') {
-    ;(window.Tinfin as TinfinApi).initialized = false
+  if (window.Tinfiz && typeof window.Tinfiz === 'function') {
+    ;(window.Tinfiz as TinfizApi).initialized = false
   }
   emit('shutdown')
 }
@@ -264,7 +264,7 @@ function trackEvent(name: string, metadata: Record<string, unknown> = {}) {
   emit('track', event)
 }
 
-function invoke(command: TinfinCommand, ...args: unknown[]) {
+function invoke(command: TinfizCommand, ...args: unknown[]) {
   switch (command) {
     case 'boot':
       boot((args[0] ?? {}) as Partial<WidgetConfig>)
@@ -294,21 +294,21 @@ function invoke(command: TinfinCommand, ...args: unknown[]) {
       break
     case 'on':
       if (typeof args[0] === 'string' && typeof args[1] === 'function') {
-        window.addEventListener(`tinfin:${args[0]}`, args[1] as EventListener)
+        window.addEventListener(`Tinfiz:${args[0]}`, args[1] as EventListener)
       }
       break
     case 'off':
       if (typeof args[0] === 'string' && typeof args[1] === 'function') {
-        window.removeEventListener(`tinfin:${args[0]}`, args[1] as EventListener)
+        window.removeEventListener(`Tinfiz:${args[0]}`, args[1] as EventListener)
       }
       break
     default:
-      console.warn(`[tinfin-widget] Unknown command: ${String(command)}`)
+      console.warn(`[Tinfiz-widget] Unknown command: ${String(command)}`)
   }
 }
 
-function createTinfinApi(queuedCalls: TinfinQueuedCall[]): TinfinApi {
-  const api = ((command: TinfinCommand, ...args: unknown[]) => invoke(command, ...args)) as TinfinApi
+function createTinfizApi(queuedCalls: TinfizQueuedCall[]): TinfizApi {
+  const api = ((command: TinfizCommand, ...args: unknown[]) => invoke(command, ...args)) as TinfizApi
   api.q = queuedCalls
   api.boot = boot
   api.update = update
@@ -320,20 +320,20 @@ function createTinfinApi(queuedCalls: TinfinQueuedCall[]): TinfinApi {
   api.newChat = () => invoke('newChat')
   api.openNewMessage = (message = '') => invoke('openNewMessage', message)
   api.trackEvent = trackEvent
-  api.on = (eventName, handler) => window.addEventListener(`tinfin:${eventName}`, handler)
-  api.off = (eventName, handler) => window.removeEventListener(`tinfin:${eventName}`, handler)
+  api.on = (eventName, handler) => window.addEventListener(`Tinfiz:${eventName}`, handler)
+  api.off = (eventName, handler) => window.removeEventListener(`Tinfiz:${eventName}`, handler)
   api.version = VERSION
   api.initialized = false
   return api
 }
 
 function installGlobalApi() {
-  const previous = window.Tinfin
+  const previous = window.Tinfiz
   const queuedCalls = typeof previous === 'function' && Array.isArray(previous.q)
     ? previous.q
     : []
 
-  window.Tinfin = createTinfinApi(queuedCalls)
+  window.Tinfiz = createTinfizApi(queuedCalls)
   queuedCalls.forEach((call) => invoke(...call))
 }
 
@@ -348,13 +348,13 @@ function bootWhenReady() {
 
   const config = readScriptConfig(script)
   if (!config.orgId) {
-    const globalSettings = window.TinfinSettings ?? window.tinfinSettings
+    const globalSettings = window.TinfizSettings ?? window.tinfizSettings
     if (globalSettings?.orgId) {
       boot(globalSettings)
       return
     }
     if (!globalSettings?.orgId) {
-      console.error('[tinfin-widget] Missing org id. Provide data-org-id or call Tinfin("boot", { orgId }).')
+      console.error('[Tinfiz-widget] Missing org id. Provide data-org-id or call Tinfiz("boot", { orgId }).')
     }
     return
   }
@@ -370,3 +370,5 @@ if (document.readyState === 'loading') {
 }
 
 export { boot as initWidget, boot, update, shutdown }
+
+

@@ -7,7 +7,7 @@ export interface Attachment {
   type: string
 }
 
-export interface TinfinSocket extends WebSocket {
+export interface TinfizSocket extends WebSocket {
   orgId?: string
   visitorId?: string
   conversationId?: string
@@ -31,3 +31,4 @@ export interface VisitorConversationSummary {
   lastMessage: string
   lastMessageAt: string
 }
+

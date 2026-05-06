@@ -1,5 +1,5 @@
 -- 0001_baseline.sql
--- Canonical baseline for a fresh Tinfin database.
+-- Canonical baseline for a fresh Tinfiz database.
 -- Source of truth: repository migrations only (no manual SQL editor drift).
 
 -- ============================================================
@@ -980,3 +980,4 @@ BEGIN
     END IF;
   END IF;
 END $$;
+

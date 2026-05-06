@@ -22,7 +22,7 @@ Best practice:
 - Capture the same page state in both light and dark mode when possible.
 - Keep both theme variants aligned: same page, same data, same viewport, same filename.
 - Avoid secrets, API keys, real customer names, real emails, and payment details.
-- Run screenshot demo seed data before capturing filled dashboard screens.
+- Capture a populated workspace state when possible so the screenshots show real product context instead of empty states.
 
 Recommended screenshot filenames:
 - dashboard-overview.png

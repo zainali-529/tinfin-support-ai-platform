@@ -10,7 +10,7 @@
 
 import crypto from 'crypto'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface SendEmailParams {
   resendApiKey: string
@@ -58,7 +58,7 @@ interface ResendResponse {
   id: string
 }
 
-// ─── Resend Email Sending ─────────────────────────────────────────────────────
+// â”€â”€â”€ Resend Email Sending â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const RESEND_API_URL = 'https://api.resend.com/emails'
 
@@ -78,7 +78,7 @@ export async function sendEmailViaResend(params: SendEmailParams): Promise<SendE
     signature,
   } = params
 
-  const messageId = `<${crypto.randomUUID()}@mail.tinfin.com>`
+  const messageId = `<${crypto.randomUUID()}@mail.Tinfiz.com>`
 
   const finalHtml = buildHtmlWithSignature(htmlBody, signature)
   const finalText = buildTextWithSignature(textBody, signature)
@@ -120,7 +120,7 @@ export async function sendEmailViaResend(params: SendEmailParams): Promise<SendE
   return { messageId, resendId: data.id }
 }
 
-// ─── Postmark Inbound Parser ──────────────────────────────────────────────────
+// â”€â”€â”€ Postmark Inbound Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface PostmarkInboundHeader {
   Name: string
@@ -174,7 +174,7 @@ export function parsePostmarkInbound(body: unknown): ParsedInboundEmail {
   }
 }
 
-// ─── Mailgun Inbound Parser ───────────────────────────────────────────────────
+// â”€â”€â”€ Mailgun Inbound Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function parseMailgunInbound(body: Record<string, string>): ParsedInboundEmail {
   const fromRaw = body['From'] ?? body['from'] ?? body['sender'] ?? ''
@@ -207,7 +207,7 @@ export function parseMailgunInbound(body: Record<string, string>): ParsedInbound
   }
 }
 
-// ─── Mailgun Signature Verification ──────────────────────────────────────────
+// â”€â”€â”€ Mailgun Signature Verification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function verifyMailgunSignature(params: MailgunSignatureParams): boolean {
   try {
@@ -223,7 +223,7 @@ export function verifyMailgunSignature(params: MailgunSignatureParams): boolean 
   }
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function generateWebhookToken(): string {
   return crypto.randomBytes(32).toString('hex')
@@ -266,7 +266,7 @@ export function buildReferences(
   return parts.length > 0 ? parts.join(' ') : null
 }
 
-// ─── Private helpers ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Private helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function extractEmail(raw: string): string | null {
   if (!raw) return null

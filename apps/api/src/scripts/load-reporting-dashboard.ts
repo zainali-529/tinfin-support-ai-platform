@@ -6,7 +6,7 @@ type LoadResult = {
 }
 
 const API_URL = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
-const TOKEN = process.env.SUPABASE_ACCESS_TOKEN ?? process.env.TINFIN_LOAD_AUTH_TOKEN
+const TOKEN = process.env.SUPABASE_ACCESS_TOKEN ?? process.env.TINFIZ_LOAD_AUTH_TOKEN
 const PERIOD = process.env.LOAD_PERIOD ?? '30d'
 const TOTAL_REQUESTS = Number(process.env.LOAD_REQUESTS ?? 80)
 const CONCURRENCY = Number(process.env.LOAD_CONCURRENCY ?? 8)
@@ -64,7 +64,7 @@ async function worker(total: number, claimNext: () => number, results: LoadResul
 
 async function main() {
   if (!TOKEN) {
-    console.warn('Warning: SUPABASE_ACCESS_TOKEN/TINFIN_LOAD_AUTH_TOKEN is missing. Protected endpoint should return 401.')
+    console.warn('Warning: SUPABASE_ACCESS_TOKEN/TINFIZ_LOAD_AUTH_TOKEN is missing. Protected endpoint should return 401.')
   }
 
   const results: LoadResult[] = []

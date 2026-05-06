@@ -56,7 +56,7 @@ const CONTENT_SELECTORS = [
 export async function crawlUrl(url: string): Promise<CrawlResult> {
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'TinfinBot/1.0 (+https://tinfin.com/bot)',
+      'User-Agent': 'TinfizBot/1.0 (+https://Tinfiz.com/bot)',
       Accept: 'text/html,application/xhtml+xml',
     },
     signal: AbortSignal.timeout(20_000),
@@ -93,7 +93,7 @@ export function parseHtml(html: string, sourceUrl: string): CrawlResult {
     $('h1').first().text().trim() ||
     'Untitled'
 
-  // Extract body text — prefer semantic content containers
+  // Extract body text â€” prefer semantic content containers
   let rawText = ''
 
   for (const selector of CONTENT_SELECTORS) {
@@ -143,7 +143,7 @@ export async function crawlMultipleUrls(urls: string[]): Promise<CrawlResult[]> 
   return results
 }
 
-// ─── Playwright stub (optional dynamic page support) ─────────────────────────
+// â”€â”€â”€ Playwright stub (optional dynamic page support) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * Placeholder for Playwright-based dynamic crawling.
  * Install `playwright` and uncomment to enable:
@@ -159,3 +159,4 @@ export async function crawlMultipleUrls(urls: string[]): Promise<CrawlResult[]> 
  *   return parseHtml(html, url)
  * }
  */
+

@@ -1,207 +1,240 @@
 "use client"
 
+import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
 
-// ─── Grid Configuration ───────────────────────────────────────────────────────
-// Grid is 14 cols × 10 rows — positioned using % of viewport so it's responsive
-const COLS = 14
-const ROWS = 10
-const CW = 100 / COLS // vw per column cell
-const CH = 100 / ROWS // vh per row cell
+const COLS = 16
+const ROWS = 11
+const CW = 100 / COLS
+const CH = 100 / ROWS
 
-// ─── Block Definitions ────────────────────────────────────────────────────────
-// c = col (0-based), r = row (0-based)
-// w = colSpan, h = rowSpan
-// op = opacity % (0–100) of primary color
-// d = animation delay (s), t = animation duration (s)
-// gradient = special feature block with diagonal gradient
-
-interface GridBlock {
+type GridBlock = {
   c: number
   r: number
   w: number
   h: number
-  op: number
-  d: number
-  t: number
-  gradient?: boolean
-  neutral?: boolean // muted/gray tinted block
+  tone: "primary" | "muted"
 }
 
-const BLOCKS: GridBlock[] = [
-  // ── Top area: col 5 single accent ──
-  { c: 5,  r: 1, w: 1, h: 1, op: 18, d: 0.4, t: 3.6 },
+type ProductShot = {
+  src: string
+  alt: string
+  className: string
+  cardClassName?: string
+  imageClassName?: string
+  delay: string
+}
 
-  // ── Top-right feature cluster (darker, gradient) ──
-  { c: 10, r: 1, w: 1, h: 1, op: 25, d: 0.0, t: 3.2 },
-  { c: 10, r: 2, w: 2, h: 2, op: 40, d: 0.3, t: 4.8, gradient: true },
-
-  // ── Top-left cluster ──
-  { c: 1,  r: 2, w: 2, h: 1, op: 14, d: 0.6, t: 4.0 },
-  { c: 1,  r: 3, w: 1, h: 2, op: 9,  d: 1.0, t: 4.5 },
-  { c: 2,  r: 3, w: 1, h: 1, op: 13, d: 1.6, t: 3.8 },
-
-  // ── Right-side subtle neutral blocks ──
-  { c: 12, r: 4, w: 2, h: 1, op: 10, d: 2.0, t: 5.0, neutral: true },
-  { c: 12, r: 5, w: 1, h: 1, op: 8,  d: 2.8, t: 4.5, neutral: true },
-
-  // ── Mid-left accent ──
-  { c: 1,  r: 6, w: 1, h: 1, op: 15, d: 3.2, t: 4.2 },
-
-  // ── Center-lower subtle ──
-  { c: 7,  r: 8, w: 1, h: 1, op: 10, d: 2.6, t: 4.8, neutral: true },
-
-  // ── Far-right lower ──
-  { c: 13, r: 7, w: 1, h: 1, op: 20, d: 0.9, t: 3.4 },
-
-  // ── Bottom-left cluster ──
-  { c: 2,  r: 8, w: 2, h: 1, op: 15, d: 0.2, t: 4.1 },
-  { c: 2,  r: 9, w: 1, h: 1, op: 10, d: 2.0, t: 3.9 },
-
-  // ── Bottom-right accents ──
-  { c: 11, r: 8, w: 1, h: 1, op: 14, d: 1.4, t: 4.3 },
-  { c: 12, r: 9, w: 1, h: 1, op: 11, d: 0.5, t: 3.6 },
+const GRID_BLOCKS: GridBlock[] = [
+  { c: 1, r: 2, w: 2, h: 1, tone: "primary" },
+  { c: 2, r: 3, w: 2, h: 1, tone: "primary" },
+  { c: 5, r: 1, w: 1, h: 1, tone: "primary" },
+  { c: 10, r: 1, w: 1, h: 1, tone: "primary" },
+  { c: 11, r: 2, w: 2, h: 1, tone: "primary" },
+  { c: 13, r: 4, w: 2, h: 1, tone: "muted" },
+  { c: 13, r: 5, w: 1, h: 1, tone: "muted" },
+  { c: 2, r: 8, w: 2, h: 1, tone: "primary" },
+  { c: 12, r: 8, w: 1, h: 1, tone: "primary" },
+  { c: 14, r: 8, w: 1, h: 1, tone: "muted" },
 ]
 
-// ─── Block Background Resolver ────────────────────────────────────────────────
-function blockBg(b: GridBlock): string {
-  if (b.neutral) {
-    return `color-mix(in oklch, var(--muted-foreground) ${Math.round(b.op * 0.55)}%, transparent)`
+const PRODUCT_SHOTS: ProductShot[] = [
+  {
+    src: "/marketing/images/light/inbox.png",
+    alt: "Tinfiz unified inbox interface",
+    className:
+      "left-0 top-[15%] z-10 w-[52rem] max-w-[52vw] -translate-x-[18%] rotate-[-1.2deg] opacity-80 sm:top-[11%] lg:opacity-[0.88]",
+    delay: "180ms",
+  },
+  {
+    src: "/marketing/images/light/analytics.png",
+    alt: "Tinfiz analytics reporting interface",
+    className:
+      "right-0 top-[15%] z-10 w-[52rem] max-w-[52vw] translate-x-[18%] rotate-[1.2deg] opacity-80 sm:top-[11%] lg:opacity-[0.88]",
+    delay: "260ms",
+  },
+  {
+    src: "/marketing/images/light/dashboard.png",
+    alt: "Tinfiz dashboard overview interface",
+    className:
+      "left-1/2 top-0 z-20 w-[48rem] max-w-[76vw] -translate-x-1/2 sm:max-w-[68vw] lg:max-w-[49rem]",
+    cardClassName: "[filter:drop-shadow(0_34px_62px_rgba(15,23,42,0.22))_drop-shadow(0_14px_24px_rgba(15,23,42,0.12))]",
+    delay: "90ms",
+  },
+]
+
+function blockBackground(block: GridBlock) {
+  if (block.tone === "muted") {
+    return "color-mix(in oklch, var(--muted-foreground) 7%, transparent)"
   }
-  if (b.gradient) {
-    return `linear-gradient(148deg, color-mix(in oklch, var(--primary) ${b.op}%, transparent) 0%, color-mix(in oklch, var(--primary) ${Math.round(b.op * 0.38)}%, transparent) 100%)`
-  }
-  return `color-mix(in oklch, var(--primary) ${b.op}%, transparent)`
+
+  return "color-mix(in oklch, var(--primary) 12%, transparent)"
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+function ProductScreenshot({ shot }: { shot: ProductShot }) {
+  return (
+    <div className={cn("absolute", shot.className)}>
+      <div
+        className={cn(
+          "hero-shot-reveal [filter:drop-shadow(0_26px_46px_rgba(15,23,42,0.16))_drop-shadow(0_10px_18px_rgba(15,23,42,0.10))]",
+          shot.cardClassName
+        )}
+        style={{ animationDelay: shot.delay }}
+      >
+        <img
+          src={shot.src}
+          alt={shot.alt}
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
+          className={cn("h-auto w-full select-none object-contain", shot.imageClassName)}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function HeroSection() {
   return (
-    <>
-      {/* Keyframes injected once — SSR-safe in a client component */}
+    <section className="relative isolate min-h-[calc(100vh-3.5rem)] overflow-hidden bg-background">
+      <link rel="preload" as="image" href="/marketing/images/light/dashboard.png" />
+      <link rel="preload" as="image" href="/marketing/images/light/inbox.png" />
+      <link rel="preload" as="image" href="/marketing/images/light/analytics.png" />
+
       <style>{`
-        @keyframes hero-block-pulse {
-          0%,  100% { opacity: 0; }
-          30%, 70%  { opacity: 1; }
+        @keyframes hero-content-reveal {
+          from {
+            opacity: 0;
+            transform: translateY(14px);
+            filter: blur(8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+            filter: blur(0);
+          }
         }
-        @keyframes hero-block-flicker {
-          0%         { opacity: 0; }
-          8%         { opacity: 1; }
-          22%        { opacity: 0.35; }
-          38%        { opacity: 1; }
-          88%, 100%  { opacity: 0; }
+
+        @keyframes hero-shot-reveal {
+          from {
+            opacity: 0;
+            transform: translateY(22px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .hero-content-reveal {
+          animation: hero-content-reveal 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .hero-shot-reveal {
+          animation: hero-shot-reveal 820ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .hero-content-reveal,
+          .hero-shot-reveal {
+            animation: none !important;
+            opacity: 1 !important;
+            transform: none !important;
+          }
         }
       `}</style>
 
-      <section className="relative min-h-screen overflow-hidden bg-background">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-20"
+        style={{
+          backgroundImage: [
+            "linear-gradient(to right, color-mix(in oklch, var(--primary) 7%, transparent) 1px, transparent 1px)",
+            "linear-gradient(to bottom, color-mix(in oklch, var(--primary) 7%, transparent) 1px, transparent 1px)",
+          ].join(", "),
+          backgroundSize: `${CW}vw ${CH}vh`,
+        }}
+      />
 
-        {/* ── Grid lines (start at very top, covered by nav's solid bg) ── */}
+      {GRID_BLOCKS.map((block, index) => (
         <div
+          key={`${block.c}-${block.r}-${index}`}
           aria-hidden="true"
-          className="absolute inset-0 pointer-events-none select-none"
+          className="absolute -z-10 select-none"
           style={{
-            backgroundImage: [
-              `linear-gradient(to right, color-mix(in oklch, var(--primary) 5%, transparent) 1px, transparent 1px)`,
-              `linear-gradient(to bottom, color-mix(in oklch, var(--primary) 5%, transparent) 1px, transparent 1px)`,
-            ].join(", "),
-            backgroundSize: `${CW}vw ${CH}vh`,
+            left: `${block.c * CW}vw`,
+            top: `${block.r * CH}vh`,
+            width: `${block.w * CW}vw`,
+            height: `${block.h * CH}vh`,
+            background: blockBackground(block),
           }}
         />
+      ))}
 
-        {/* ── Animated grid blocks ── */}
-        {BLOCKS.map((b, i) => (
-          <div
-            key={i}
-            aria-hidden="true"
-            className="absolute pointer-events-none select-none"
-            style={{
-              left:       `${b.c * CW}vw`,
-              top:        `${b.r * CH}vh`,
-              width:      `${b.w * CW}vw`,
-              height:     `${b.h * CH}vh`,
-              background: blockBg(b),
-              // Gradient block gets a subtle flicker, others pulse smoothly
-              animation: b.gradient
-                ? `hero-block-flicker ${b.t + 1.5}s ease-in-out ${b.d}s infinite`
-                : `hero-block-pulse ${b.t}s ease-in-out ${b.d}s infinite`,
-            }}
-          />
-        ))}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse 58% 42% at 50% 34%, oklch(from var(--background) l c h / 0.98) 0%, oklch(from var(--background) l c h / 0.88) 44%, oklch(from var(--background) l c h / 0) 76%)",
+        }}
+      />
 
-        {/* ── Center radial glow — feathered clearing for content ── */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 pointer-events-none select-none"
-          style={{
-            background: [
-              // Core — fully opaque background colour
-              `radial-gradient(ellipse 62% 48% at 50% 56%,`,
-              `  oklch(from var(--background) l c h / 1) 10%,`,
-              `  oklch(from var(--background) l c h / 0.88) 38%,`,
-              `  oklch(from var(--background) l c h / 0.50) 58%,`,
-              `  oklch(from var(--background) l c h / 0) 76%`,
-              `)`,
-            ].join(" "),
-          }}
-        />
-
-        {/* ── Hero content — vertically centred in remaining viewport ── */}
-        <div className="relative z-20 flex min-h-[calc(100vh-4rem)] w-full items-center justify-center px-4 py-16 text-center">
-          <div className="mx-auto flex w-full max-w-[86rem] flex-col items-center">
-
-          {/* Badge pill */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 backdrop-blur-sm px-4 py-1.5 text-xs text-muted-foreground mb-8">
-            Manage Your AI on Your Own
+      <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] w-full max-w-[90rem] flex-col items-center px-4 pt-16 text-center sm:px-6 sm:pt-[4.5rem] lg:px-8 lg:pt-20">
+        <div className="hero-content-reveal relative z-20 flex max-w-6xl flex-col items-center">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-4 py-1.5 text-xs text-muted-foreground backdrop-blur-sm">
+            Grounded AI support, human control, realtime visibility
           </div>
 
-          {/* Headline */}
-          <h1 className="max-w-4xl lg:max-w-6xl xl:max-w-7xl text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[1.1] mb-6">
-            {/* "Support" — primary colour */}
-            <span className="text-primary">Support</span>
-            {" "}
-
-            {/* "that" — foreground */}
+          <h1 className="max-w-5xl text-5xl font-bold leading-[1.05] tracking-tight text-balance sm:text-5xl md:text-7xl">
+            <span className="text-primary">AI support</span>{" "}
             <span className="text-foreground">that </span>
-
-            {/* "works" — foreground + underline */}
-            <span className="relative inline-block text-foreground">
-              works
+            <span className="relative inline-block text-foreground" >
+              stays grounded
               <span
                 aria-hidden="true"
-                className="absolute left-0 right-0 bg-foreground rounded-full"
+                className="absolute left-0 right-0 rounded-full bg-foreground"
                 style={{ height: "2px", bottom: "0.08em" }}
               />
             </span>
-
             <br />
-
-            {/* "while you" — foreground */}
-            <span className="text-foreground">while you </span>
-
-            {/* "sleep" — primary colour */}
-            <span className="text-primary">sleep</span>
+            <span className="text-foreground">and keeps </span>
+            <span className="text-primary">humans in control</span>
           </h1>
 
-          {/* Subtitle */}
-          <p className="max-w-xl lg:max-w-3xl text-base md:text-lg lg:text-xl text-muted-foreground leading-relaxed mb-10">
-            It is a long established fact that a reader will be distracted by the
-            readable content of a page when looking at its layout. The point of
-            using Lorem Ipsum is that it has a more-or-less normal distribution
-            of letters, as opposed to using &lsquo;Content here
+          <p className="mt-6 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg">
+            Tinfiz brings your website widget, unified inbox, knowledge base, AI actions, email, WhatsApp, voice, CSAT, and analytics into one calm support workspace.
           </p>
 
-          {/* CTA buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 lg:gap-6">
-            <Button variant="outline" className="min-w-[128px] lg:min-w-[160px] lg:h-12 lg:text-lg rounded-full">
-              Explore us
+          <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row">
+            <Button asChild variant="outline" className="h-11 min-w-[142px] rounded-full bg-background/80 px-7 text-sm backdrop-blur-sm">
+              <Link href="/docs">View docs</Link>
             </Button>
-            <Button className="min-w-[128px] lg:min-w-[160px] lg:h-12 lg:text-lg rounded-full">
-              Free Trial
+            <Button asChild className="h-11 min-w-[142px] rounded-full px-7 text-sm">
+              <Link href="/signup">Start free</Link>
             </Button>
           </div>
-          </div>
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            Free plan available. No credit card required.
+          </p>
         </div>
-      </section>
-    </>
+
+        <div className="relative z-10 mt-12 h-[310px] w-full max-w-[88rem] sm:h-[390px] md:mt-14 md:h-[470px] lg:h-[545px] xl:h-[580px]">
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 bottom-0 mx-auto h-[68%] max-w-6xl rounded-[999px] bg-primary/10 blur-3xl dark:bg-primary/[0.08]"
+          />
+          <div className="absolute inset-x-[-16%] bottom-0 h-28 bg-gradient-to-t from-background via-background/88 to-transparent sm:h-36" />
+          <div className="absolute inset-x-0 bottom-0 h-px bg-border/70" />
+
+          {PRODUCT_SHOTS.map((shot) => (
+            <ProductScreenshot key={shot.src} shot={shot} />
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
+

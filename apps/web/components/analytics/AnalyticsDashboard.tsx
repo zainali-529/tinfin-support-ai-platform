@@ -307,7 +307,7 @@ export function AnalyticsDashboard() {
             </div>
             <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">Performance and satisfaction</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              A focused reporting view for demand, SLA pressure, customer satisfaction, AI/action reliability, and launch signals.
+              A focused reporting view for demand, SLA pressure, customer satisfaction, AI/action reliability, and workspace signals.
             </p>
           </div>
 
@@ -553,7 +553,7 @@ export function AnalyticsDashboard() {
           )}
         </GraphPanel>
 
-        <GraphPanel title="Launch readiness" description="Compact QA gates, kept visible but not dominating analytics." icon={ShieldCheckIcon}>
+        <GraphPanel title="Workspace readiness" description="Compact operational checks, kept visible but not dominating analytics." icon={ShieldCheckIcon}>
           {isLoading ? (
             <ChartSkeleton height="h-72" />
           ) : (

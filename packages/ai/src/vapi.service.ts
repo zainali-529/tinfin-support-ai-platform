@@ -2,7 +2,7 @@
  * packages/ai/src/vapi.service.ts
  *
  * FIXES:
- *   - tools moved from assistant root → model.tools (Vapi API requirement)
+ *   - tools moved from assistant root â†’ model.tools (Vapi API requirement)
  *   - silenceTimeoutSeconds minimum raised to 10 (Vapi API requirement)
  *   - artifactPlan kept at root (correct location per Vapi docs)
  */
@@ -15,13 +15,13 @@ import {
 
 const VAPI_BASE_URL = 'https://api.vapi.ai'
 
-// ─── Provider types ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Provider types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type VapiVoiceProvider = 'openai' | 'deepgram' | '11labs' | 'azure' | 'cartesia'
 export type VapiModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4-turbo' | string
 export type VapiTranscriptionProvider = 'deepgram' | 'talkscriber' | 'gladia'
 
-// ─── Tool types ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tool types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface VapiToolMessage {
   type: 'request-start' | 'request-response-delayed' | 'request-failed' | 'request-complete'
@@ -39,7 +39,7 @@ export interface VapiToolFunction {
   }
 }
 
-/** Tool definition — goes inside model.tools[] NOT at assistant root */
+/** Tool definition â€” goes inside model.tools[] NOT at assistant root */
 export interface VapiTool {
   type: 'function'
   messages?: VapiToolMessage[]
@@ -66,7 +66,7 @@ export interface VapiToolResult {
   error?: string
 }
 
-// ─── Voice catalogue ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Voice catalogue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface VapiVoiceOption {
   id: string
@@ -79,7 +79,7 @@ export interface VapiVoiceOption {
 }
 
 export const VAPI_VOICE_CATALOGUE: VapiVoiceOption[] = [
-  { id: 'openai:alloy',   label: 'Alloy',   provider: 'openai',   voiceId: 'alloy',   gender: 'Neutral', accent: 'American', description: 'Balanced, versatile — great default' },
+  { id: 'openai:alloy',   label: 'Alloy',   provider: 'openai',   voiceId: 'alloy',   gender: 'Neutral', accent: 'American', description: 'Balanced, versatile â€” great default' },
   { id: 'openai:nova',    label: 'Nova',    provider: 'openai',   voiceId: 'nova',    gender: 'Female',  accent: 'American', description: 'Friendly and warm' },
   { id: 'openai:shimmer', label: 'Shimmer', provider: 'openai',   voiceId: 'shimmer', gender: 'Female',  accent: 'American', description: 'Soft and professional' },
   { id: 'openai:echo',    label: 'Echo',    provider: 'openai',   voiceId: 'echo',    gender: 'Male',    accent: 'American', description: 'Clear and confident' },
@@ -97,7 +97,7 @@ export const VAPI_VOICE_CATALOGUE: VapiVoiceOption[] = [
 
 export const DEFAULT_VOICE_ID = 'openai:alloy'
 
-// ─── Payload types ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Payload types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface VapiTranscriber {
   provider: VapiTranscriptionProvider
@@ -138,9 +138,9 @@ export interface VapiAssistantPayload {
     speed?: number
   }
   transcriber?: VapiTranscriber
-  /** Recording settings — stays at assistant root (correct per Vapi docs) */
+  /** Recording settings â€” stays at assistant root (correct per Vapi docs) */
   artifactPlan?: VapiArtifactPlan
-  /** Interruption control — stays at assistant root */
+  /** Interruption control â€” stays at assistant root */
   stopSpeakingPlan?: VapiStopSpeakingPlan
   endCallMessage?: string
   endCallPhrases?: string[]
@@ -230,7 +230,7 @@ export interface VapiWebhookEvent {
   }
 }
 
-// ─── HTTP Client ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ HTTP Client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function resolveApiKey(orgPrivateKey?: string | null): string {
   const key = orgPrivateKey?.trim() || process.env.VAPI_PRIVATE_KEY?.trim()
@@ -255,13 +255,13 @@ async function vapiRequest<T>(
   })
   if (!res.ok) {
     const text = await res.text().catch(() => `HTTP ${res.status}`)
-    throw new Error(`Vapi API ${method} ${path} → ${res.status}: ${text}`)
+    throw new Error(`Vapi API ${method} ${path} â†’ ${res.status}: ${text}`)
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
-// ─── Assistant CRUD ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Assistant CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function createVapiAssistant(
   payload: VapiAssistantPayload,
@@ -292,7 +292,7 @@ export async function deleteVapiAssistant(
   await vapiRequest<void>('DELETE', `/assistant/${assistantId}`, undefined, orgPrivateKey)
 }
 
-// ─── Call Management ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Call Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getVapiCall(vapiCallId: string, orgPrivateKey?: string | null): Promise<VapiCall> {
   return vapiRequest<VapiCall>('GET', `/call/${vapiCallId}`, undefined, orgPrivateKey)
@@ -319,7 +319,7 @@ export async function listVapiPhoneNumbers(orgPrivateKey?: string | null): Promi
   return vapiRequest<VapiPhoneNumber[]>('GET', '/phone-number', undefined, orgPrivateKey)
 }
 
-// ─── Voice ID utilities ───────────────────────────────────────────────────────
+// â”€â”€â”€ Voice ID utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function parseVoiceId(raw: string): { provider: VapiVoiceProvider; voiceId: string } {
   const colonIdx = raw.indexOf(':')
@@ -347,11 +347,11 @@ export function normalizeDeepgramVoiceId(voiceId: string): string {
     .replace(/-[a-z]{2}$/, '')
 }
 
-// ─── Tool builder ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tool builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Build the Knowledge Base search tool.
- * This goes inside model.tools[] — NOT at assistant root.
+ * This goes inside model.tools[] â€” NOT at assistant root.
  */
 export function buildKnowledgeBaseTool(webhookBaseUrl: string, webhookSecret: string): VapiTool {
   return {
@@ -377,7 +377,7 @@ export function buildKnowledgeBaseTool(webhookBaseUrl: string, webhookSecret: st
         'Search the company knowledge base to find accurate, up-to-date information about ' +
         'products, services, pricing, policies, and procedures. ' +
         'Use this tool whenever a customer asks a specific factual question. ' +
-        'Do NOT fabricate answers — always use this tool for factual queries.',
+        'Do NOT fabricate answers â€” always use this tool for factual queries.',
       parameters: {
         type: 'object',
         properties: {
@@ -397,7 +397,7 @@ export function buildKnowledgeBaseTool(webhookBaseUrl: string, webhookSecret: st
   }
 }
 
-// ─── Assistant Builder ────────────────────────────────────────────────────────
+// â”€â”€â”€ Assistant Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface BuildAssistantOptions {
   name: string
@@ -417,7 +417,7 @@ export interface BuildAssistantOptions {
   // Transcription
   transcriptionProvider?: VapiTranscriptionProvider
   transcriptionLanguage?: string
-  // Timing — silenceTimeoutSeconds MINIMUM is 10 per Vapi API
+  // Timing â€” silenceTimeoutSeconds MINIMUM is 10 per Vapi API
   silenceTimeoutSeconds?: number
   responseDelaySeconds?: number
   // Behavior
@@ -448,24 +448,24 @@ export function buildOrgAssistantPayload(opts: BuildAssistantOptions): VapiAssis
     normalizeAiChannelBehaviorConfig(opts.channelBehavior)
   )
 
-  // ── System prompt ─────────────────────────────────────────────────────────
+  // â”€â”€ System prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const kbInstructions = toolsEnabled
     ? `
 ## Knowledge Base Access
 You have a 'searchKnowledgeBase' tool. Use it for ANY factual question about our products, pricing, policies, or procedures.
 Rules:
-  1. Call the tool before answering factual questions — do NOT guess.
+  1. Call the tool before answering factual questions â€” do NOT guess.
   2. After getting results, summarize concisely for voice (1-2 sentences).
   3. If the tool returns no result, say you don't have that info and offer to connect to a human.
-  4. Natural phrasing: "Let me check that..." → wait → "I found that..."
+  4. Natural phrasing: "Let me check that..." â†’ wait â†’ "I found that..."
 `
     : ''
 
   const defaultSystemPrompt = `You are a helpful, professional, and warm customer support voice assistant for ${opts.companyName}.
 ${kbInstructions}
 ## Core Behaviors
-- This is a voice call — be conversational and concise. 2–3 sentences max per response.
+- This is a voice call â€” be conversational and concise. 2â€“3 sentences max per response.
 - Never recite long lists; summarize and offer to elaborate.
 - Speak in English by default.
 - If you cannot help, offer to connect to a human agent.
@@ -480,19 +480,19 @@ ${kbInstructions}
     voiceChannelInstructions,
   ].join('\n\n')
 
-  // ── Voice ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Voice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const { provider, voiceId: rawVoiceId } = parseVoiceId(opts.voiceId ?? DEFAULT_VOICE_ID)
   const vapiVoiceId = provider === 'deepgram' ? normalizeDeepgramVoiceId(rawVoiceId) : rawVoiceId
 
-  // ── Tools → go inside model.tools[] ──────────────────────────────────────
+  // â”€â”€ Tools â†’ go inside model.tools[] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const baseTools: VapiTool[] = toolsEnabled
     ? [buildKnowledgeBaseTool(opts.webhookBaseUrl, opts.webhookSecret)]
     : []
   const modelTools: VapiTool[] = [...baseTools, ...extraTools]
 
-  // ── Transcriber ───────────────────────────────────────────────────────────
+  // â”€â”€ Transcriber â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const transcriber: VapiTranscriber = {
     provider: transcriptionProvider,
@@ -500,7 +500,7 @@ ${kbInstructions}
     ...(transcriptionProvider === 'deepgram' ? { smartFormat: true } : {}),
   }
 
-  // ── Build payload ─────────────────────────────────────────────────────────
+  // â”€â”€ Build payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const payload: VapiAssistantPayload = {
     name: opts.name,
@@ -554,14 +554,14 @@ ${kbInstructions}
     serverUrlSecret: opts.webhookSecret,
     metadata: {
       orgId: opts.orgId,
-      source: 'tinfin',
+      source: 'Tinfiz',
     },
   }
 
   return payload
 }
 
-// ─── Webhook Verification ─────────────────────────────────────────────────────
+// â”€â”€â”€ Webhook Verification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function verifyVapiWebhookSignature(params: {
   rawBody: string
@@ -580,7 +580,7 @@ export function verifyVapiWebhookSignature(params: {
   }
 }
 
-// ─── Call Status Helpers ──────────────────────────────────────────────────────
+// â”€â”€â”€ Call Status Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CallStatus = 'created' | 'queued' | 'ringing' | 'in-progress' | 'forwarding' | 'ended'
 
@@ -594,3 +594,4 @@ export function formatCallDuration(seconds: number | null | undefined): string {
   const s = seconds % 60
   return `${m}:${String(s).padStart(2, '0')}`
 }
+

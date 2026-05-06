@@ -27,7 +27,7 @@ function SignupForm() {
 
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
 
-  // Detect if arriving from an invite link — skip org creation in that case
+  // Detect if arriving from an invite link â€” skip org creation in that case
   const isFromInvite = callbackUrl.startsWith('/invite/')
 
   async function handleSignup(e: React.FormEvent) {
@@ -64,7 +64,7 @@ function SignupForm() {
         <p className="text-base text-muted-foreground">
           {isFromInvite
             ? "Sign up to accept your team invitation."
-            : "Create your free Tinfin account today."
+            : "Create your free Tinfiz account today."
           }
         </p>
       </div>
@@ -115,7 +115,7 @@ function SignupForm() {
 
             <InputGroup>
               <InputGroupInput
-                placeholder="••••••••"
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}

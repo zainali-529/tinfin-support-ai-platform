@@ -401,7 +401,7 @@ export function WidgetPreview({ config }: Props) {
 
           {config.showBranding && (
             <div className="shrink-0 border-t py-1 text-center text-[9px]" style={{ color: activeTheme.mutedTextColor, background: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }}>
-              Powered by <span className="font-medium">Tinfin</span>
+              Powered by <span className="font-medium">Tinfiz</span>
             </div>
           )}
         </div>
@@ -440,3 +440,4 @@ export function WidgetPreview({ config }: Props) {
     </div>
   )
 }
+

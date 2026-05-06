@@ -48,7 +48,7 @@ function LoginForm() {
       <div className="flex flex-col space-y-1">
         <h1 className="font-bold text-2xl tracking-wide">Welcome Back!</h1>
         <p className="text-base text-muted-foreground">
-          Sign in to your Tinfin account.
+          Sign in to your Tinfiz account.
         </p>
       </div>
 
@@ -71,7 +71,7 @@ function LoginForm() {
 
             <InputGroup>
               <InputGroupInput
-                placeholder="••••••••"
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}

@@ -1,15 +1,15 @@
 import { WebSocket } from 'ws'
-import type { TinfinSocket } from './types'
+import type { TinfizSocket } from './types'
 
-const rooms = new Map<string, Set<TinfinSocket>>()
+const rooms = new Map<string, Set<TinfizSocket>>()
 
-export function send(socket: TinfinSocket, data: unknown) {
+export function send(socket: TinfizSocket, data: unknown) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(data))
   }
 }
 
-export function addSocketToRoom(orgId: string, socket: TinfinSocket) {
+export function addSocketToRoom(orgId: string, socket: TinfizSocket) {
   const existingRoom = rooms.get(orgId)
   if (existingRoom) {
     existingRoom.add(socket)
@@ -19,7 +19,7 @@ export function addSocketToRoom(orgId: string, socket: TinfinSocket) {
   rooms.set(orgId, new Set([socket]))
 }
 
-export function removeSocketFromRoom(orgId: string, socket: TinfinSocket) {
+export function removeSocketFromRoom(orgId: string, socket: TinfizSocket) {
   const room = rooms.get(orgId)
   if (!room) return
 
@@ -47,3 +47,4 @@ export function sendToVisitorSocket(orgId: string, visitorId: string, data: unkn
 
   return delivered
 }
+

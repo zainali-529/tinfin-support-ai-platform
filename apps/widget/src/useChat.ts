@@ -18,7 +18,7 @@ function uid() {
 }
 
 function getStorageKey(orgId: string) {
-  return `tinfin_chat_${orgId}`
+  return `tinfiz_chat_${orgId}`
 }
 
 function loadStoredChat(orgId: string): StoredChat {
@@ -222,7 +222,7 @@ export function useChat(orgId: string) {
     })
 
     const preview = msg.attachments?.length
-      ? `📎 ${msg.attachments[0]?.name ?? 'File'}`
+      ? `ðŸ“Ž ${msg.attachments[0]?.name ?? 'File'}`
       : msg.content
 
     updateConversation(conversationId, {
@@ -395,7 +395,7 @@ export function useChat(orgId: string) {
               const latest = history[history.length - 1]
               if (!latest) break
               const preview = latest.attachments?.length
-                ? `📎 ${latest.attachments[0]?.name ?? 'File'}`
+                ? `ðŸ“Ž ${latest.attachments[0]?.name ?? 'File'}`
                 : latest.content
               updateConversation(cid, {
                 lastMessage: preview,
@@ -451,7 +451,7 @@ export function useChat(orgId: string) {
               addMessage(cid, {
                 id: uid(),
                 role: 'assistant',
-                content: '— A support agent has joined the chat —',
+                content: 'â€” A support agent has joined the chat â€”',
                 createdAt: new Date(),
                 attachments: [],
               })
@@ -529,7 +529,7 @@ export function useChat(orgId: string) {
     }
   }, [orgId, addMessage, clearVisitorTypingTimer, persist, requestInbox, setConversationList, setConversationMessages, updateConversation])
 
-  // ── Send text message ─────────────────────────────────────────────────────
+  // â”€â”€ Send text message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const sendMessage = useCallback((content: string, attachments?: Attachment[]) => {
     const message: Message = {
@@ -569,7 +569,7 @@ export function useChat(orgId: string) {
     }))
   }, [addMessage])
 
-  // ── Upload file to storage ────────────────────────────────────────────────
+  // â”€â”€ Upload file to storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const uploadFile = useCallback(async (file: File): Promise<Attachment> => {
     const conversationId = activeConversationIdRef.current
@@ -740,3 +740,4 @@ export function useChat(orgId: string) {
     initWithVisitorInfo,
   }
 }
+

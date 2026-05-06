@@ -33,7 +33,7 @@ import {
 import { WidgetPreview } from './WidgetPreview'
 import { LaunchErrorState } from '@/components/launch/LaunchState'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface WidgetSettings {
   primaryColor: string
@@ -120,7 +120,7 @@ const DEFAULT_DARK_THEME: WidgetThemeColors = {
 
 const DEFAULT_SETTINGS: WidgetSettings = {
   primaryColor: '#6366f1',
-  welcomeMessage: 'Hi 👋 How can we help you today?',
+  welcomeMessage: 'Hi ðŸ‘‹ How can we help you today?',
   companyName: '',
   logoUrl: '',
   position: 'bottom-right',
@@ -130,7 +130,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   darkTheme: DEFAULT_DARK_THEME,
   botName: 'AI Assistant',
   inputPlaceholder: 'Type a message...',
-  responseTimeText: 'AI · We reply instantly',
+  responseTimeText: 'AI Â· We reply instantly',
   launcherSize: 'md',
   borderRadius: 20,
   widgetWidth: 380,
@@ -261,7 +261,7 @@ function normalizeHelpItems(items: WidgetHelpItem[]): WidgetHelpItem[] {
     .slice(0, 8)
 }
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [hex, setHex] = useState(value)
@@ -437,7 +437,7 @@ function SettingRow({ label, description, children }: { label: string; descripti
   )
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Props {
   orgId: string
@@ -669,7 +669,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
   return (
     <div className="flex h-[calc(100svh-5.25rem)] max-h-[calc(100svh-5.25rem)] min-h-0 flex-1 flex-col gap-3 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-4 duration-500 sm:h-[calc(100svh-6rem)] sm:max-h-[calc(100svh-6rem)] sm:gap-4">
 
-      {/* ── Page Header ── */}
+      {/* â”€â”€ Page Header â”€â”€ */}
       <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
@@ -719,7 +719,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
         </Alert>
       )}
 
-      {/* ── Main Layout: 50/50 ── */}
+      {/* â”€â”€ Main Layout: 50/50 â”€â”€ */}
       {error && !isLoading && (
         <LaunchErrorState
           error={error}
@@ -751,7 +751,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-sm xl:flex">
 
-        {/* ── Left: Settings (50%) ── */}
+        {/* â”€â”€ Left: Settings (50%) â”€â”€ */}
         <div
           className={`min-h-0 flex-col overflow-hidden transition-all xl:flex xl:w-[48%] xl:shrink-0 xl:border-r 2xl:w-[46%] ${
             activeWorkspacePanel === 'settings' ? 'flex h-full w-full' : 'hidden xl:flex'
@@ -781,10 +781,10 @@ export function WidgetCustomizationPage({ orgId }: Props) {
               </TabsList>
             </div>
 
-            {/* Tab content — scrollable */}
+            {/* Tab content â€” scrollable */}
             <div className="flex-1 overflow-y-auto" onPointerDownCapture={handleRestrictedInteractCapture}>
 
-              {/* ── STYLE TAB ── */}
+              {/* â”€â”€ STYLE TAB â”€â”€ */}
               <TabsContent value="style" className="m-0 space-y-4 p-3 sm:p-4">
                 <Card>
                   <CardHeader className="pb-3">
@@ -929,10 +929,10 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                                   background: settings.primaryColor,
                                   fontSize: 10,
                                 }}>
-                                💬
+                                ðŸ’¬
                               </div>
                               <div className={`text-[10px] font-semibold uppercase ${settings.launcherSize === size ? 'text-primary' : 'text-muted-foreground'}`}>
-                                {size.toUpperCase()} · {px}px
+                                {size.toUpperCase()} Â· {px}px
                               </div>
                             </button>
                           )
@@ -955,7 +955,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                       <Slider min={8} max={28} step={2} value={[settings.borderRadius]}
                         onValueChange={([v]) => update({ borderRadius: v! })} />
                       <div className="flex justify-between text-[10px] text-muted-foreground">
-                        <span>8 · Sharp</span><span>28 · Very Round</span>
+                        <span>8 Â· Sharp</span><span>28 Â· Very Round</span>
                       </div>
                     </div>
                   </CardContent>
@@ -974,7 +974,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                       <Slider min={300} max={440} step={10} value={[settings.widgetWidth]}
                         onValueChange={([v]) => update({ widgetWidth: v! })} />
                       <div className="flex justify-between text-[10px] text-muted-foreground">
-                        <span>300 · Compact</span><span>440 · Wide</span>
+                        <span>300 Â· Compact</span><span>440 Â· Wide</span>
                       </div>
                     </div>
                   </CardContent>
@@ -1014,7 +1014,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                 </Card>
               </TabsContent>
 
-              {/* ── CONTENT TAB ── */}
+              {/* â”€â”€ CONTENT TAB â”€â”€ */}
               <TabsContent value="content" className="m-0 space-y-4 p-3 sm:p-4">
                 <Card>
                   <CardHeader className="pb-3">
@@ -1047,7 +1047,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-medium">Response Time Text</Label>
-                      <Input placeholder="AI · We reply instantly" value={settings.responseTimeText}
+                      <Input placeholder="AI Â· We reply instantly" value={settings.responseTimeText}
                         onChange={e => update({ responseTimeText: e.target.value })} className="h-8 text-sm" />
                     </div>
                   </CardContent>
@@ -1062,7 +1062,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                       <Label className="text-xs text-muted-foreground font-medium">Welcome Message</Label>
                       <Textarea value={settings.welcomeMessage}
                         onChange={e => update({ welcomeMessage: e.target.value })}
-                        placeholder="Hi 👋 How can we help you today?"
+                        placeholder="Hi ðŸ‘‹ How can we help you today?"
                         className="min-h-[72px] text-sm resize-none" maxLength={200} />
                       <p className="text-[11px] text-muted-foreground text-right">{settings.welcomeMessage.length}/200</p>
                     </div>
@@ -1260,12 +1260,12 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                 </Card>
               </TabsContent>
 
-              {/* ── BEHAVIOR TAB ── */}
+              {/* â”€â”€ BEHAVIOR TAB â”€â”€ */}
               <TabsContent value="behavior" className="m-0 space-y-4 p-3 sm:p-4">
                 <Card>
                   <CardHeader className="pb-3"><CardTitle className="text-sm">Display</CardTitle></CardHeader>
                   <CardContent className="divide-y divide-border">
-                    <SettingRow label="Show &quot;Powered by Tinfin&quot;" description="Display Tinfin branding in the widget footer.">
+                    <SettingRow label="Show &quot;Powered by Tinfiz&quot;" description="Display Tinfiz branding in the widget footer.">
                       <Switch checked={settings.showBranding} onCheckedChange={v => update({ showBranding: v })} />
                     </SettingRow>
                     <SettingRow label="Show Typing Indicator" description="Show animated dots when AI is generating a reply.">
@@ -1295,7 +1295,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
                         <Slider min={0} max={60} step={1} value={[settings.autoOpenDelay]}
                           onValueChange={([v]) => update({ autoOpenDelay: v! })} />
                         <div className="flex justify-between text-[10px] text-muted-foreground">
-                          <span>0 · Immediate</span><span>60s</span>
+                          <span>0 Â· Immediate</span><span>60s</span>
                         </div>
                       </div>
                     )}
@@ -1307,7 +1307,7 @@ export function WidgetCustomizationPage({ orgId }: Props) {
           </Tabs>
         </div>
 
-        {/* ── Right: Live Preview (50%) ── */}
+        {/* â”€â”€ Right: Live Preview (50%) â”€â”€ */}
         <div
           className={`min-h-0 flex-col overflow-hidden bg-muted/20 xl:flex xl:flex-1 ${
             activeWorkspacePanel === 'preview' ? 'flex h-full w-full' : 'hidden xl:flex'
@@ -1349,3 +1349,4 @@ export function WidgetCustomizationPage({ orgId }: Props) {
     </div>
   )
 }
+

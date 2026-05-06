@@ -1,4 +1,4 @@
-﻿# AI Actions and AI Training Playbook (Tinfin)
+# AI Actions and AI Training Playbook (Tinfiz)
 
 Last updated: April 29, 2026
 Audience: Product, Engineering, CX, Sales
@@ -198,13 +198,13 @@ As of April 29, 2026, Intercom Fin documents highlight a broader training-contro
 - Procedure triggering is intent-driven, not deterministic workflow call-in.
 - Some feature gaps are documented in their own FAQs (for example certain procedure capabilities still evolving).
 
-### 8.3 Tinfin vs Intercom capability view
+### 8.3 Tinfiz vs Intercom capability view
 - Custom action execution: competitive baseline achieved.
 - Training controls depth: Intercom ahead.
 - Simulation/testing framework: Intercom ahead.
 - Attribute-based routing intelligence: Intercom ahead.
 - Action analytics depth: Intercom ahead.
-- Flexibility/customization potential: Tinfin good potential due open custom API model.
+- Flexibility/customization potential: Tinfiz good potential due open custom API model.
 
 ## 9. Are we ready to sell this strongly?
 
@@ -217,7 +217,7 @@ Position carefully (avoid overclaim):
 - "Enterprise-grade fully autonomous multi-step agentic workflows" is not yet complete.
 
 Recommended pitch line:
-- "Tinfin delivers practical AI automation now: grounded answers, real API actions, and human-controlled safety rails."
+- "Tinfiz delivers practical AI automation now: grounded answers, real API actions, and human-controlled safety rails."
 
 ## 10. 60-day professional roadmap (high impact)
 
@@ -263,4 +263,5 @@ Recommended pitch line:
 - https://www.intercom.com/help/en/articles/7022438-reporting-metrics-attributes
 - https://www.intercom.com/help/en/articles/9929230-the-fin-ai-engine
 - https://www.intercom.com/blog/whats-new-with-fin-3/
+
 

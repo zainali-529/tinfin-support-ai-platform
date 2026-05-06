@@ -107,9 +107,9 @@ function parseEmailAddress(value: string | undefined): string | null {
 
 function notificationEmailConfig() {
   const apiKey = process.env.NOTIFICATION_RESEND_API_KEY ?? process.env.RESEND_API_KEY ?? ''
-  const fromRaw = process.env.NOTIFICATION_EMAIL_FROM ?? 'notifications@tinfin.com'
+  const fromRaw = process.env.NOTIFICATION_EMAIL_FROM ?? 'notifications@Tinfiz.com'
   const from = parseEmailAddress(fromRaw) ?? fromRaw
-  const fromName = process.env.NOTIFICATION_EMAIL_FROM_NAME ?? 'Tinfin AI'
+  const fromName = process.env.NOTIFICATION_EMAIL_FROM_NAME ?? 'Tinfiz'
   const replyTo = process.env.NOTIFICATION_EMAIL_REPLY_TO ?? null
 
   return { apiKey, from, fromName, replyTo }
@@ -147,12 +147,12 @@ function buildNotificationEmailHtml(input: {
   href: string | null
 }) {
   const cta = input.href
-    ? `<p style="margin:24px 0 0;"><a href="${escapeHtml(input.href)}" style="display:inline-block;border-radius:10px;background:#0f172a;color:#ffffff;padding:11px 16px;text-decoration:none;font-weight:600;">Open in Tinfin AI</a></p>`
+    ? `<p style="margin:24px 0 0;"><a href="${escapeHtml(input.href)}" style="display:inline-block;border-radius:10px;background:#0f172a;color:#ffffff;padding:11px 16px;text-decoration:none;font-weight:600;">Open in Tinfiz</a></p>`
     : ''
 
   return `
     <div style="font-family:Inter,Arial,sans-serif;line-height:1.5;color:#111827;max-width:560px;margin:0 auto;padding:28px 20px;">
-      <p style="margin:0 0 12px;color:#64748b;font-size:13px;">Tinfin AI notification</p>
+      <p style="margin:0 0 12px;color:#64748b;font-size:13px;">Tinfiz notification</p>
       <h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;">${escapeHtml(input.title)}</h1>
       <p style="margin:0;color:#334155;font-size:15px;">${escapeHtml(input.body)}</p>
       ${cta}
@@ -301,7 +301,7 @@ async function sendNotificationEmail(params: {
       fromName: config.fromName,
       replyTo: config.replyTo,
       to: [recipient.email],
-      subject: `[Tinfin AI] ${params.title}`,
+      subject: `[Tinfiz] ${params.title}`,
       htmlBody: buildNotificationEmailHtml({
         title: params.title,
         body: params.body,
@@ -741,3 +741,4 @@ export async function scanSlaNotifications(
 
   return { scanned: rows.length, created }
 }
+

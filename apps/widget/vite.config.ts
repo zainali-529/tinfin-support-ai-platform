@@ -11,7 +11,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: 'src/main.ts',
-      name: 'TinfinWidget',
+      name: 'TinfizWidget',
       fileName: 'widget',
       formats: ['iife'],
     },

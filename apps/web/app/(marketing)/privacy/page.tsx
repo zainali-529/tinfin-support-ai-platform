@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | Tinfin",
+  title: "Privacy Policy | Tinfiz",
   description:
-    "Tinfin Privacy Policy describing how we collect, use, and protect customer and end-user data.",
+    "Tinfiz Privacy Policy describing how we collect, use, and protect customer and end-user data.",
 }
 
 const EFFECTIVE_DATE = "April 26, 2026"
@@ -25,7 +25,7 @@ export default function PrivacyPage() {
               1. Who We Are
             </h2>
             <p>
-              Tinfin is a customer support SaaS platform that helps businesses
+              Tinfiz is a customer support SaaS platform that helps businesses
               manage conversations across channels including chat, email, voice,
               and WhatsApp.
             </p>
@@ -50,7 +50,7 @@ export default function PrivacyPage() {
               3. How We Use Data
             </h2>
             <ul className="list-disc space-y-1 pl-5">
-              <li>Provide and maintain the Tinfin service</li>
+              <li>Provide and maintain the Tinfiz service</li>
               <li>Route and manage customer support conversations</li>
               <li>Generate AI responses and workflow automations</li>
               <li>Improve security, reliability, and product performance</li>
@@ -131,10 +131,10 @@ export default function PrivacyPage() {
             <p>
               To request deletion of personal data, contact us at{" "}
               <a
-                href="mailto:privacy@tinfin.ai"
+                href="mailto:privacy@Tinfiz.ai"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                privacy@tinfin.ai
+                privacy@Tinfiz.ai
               </a>
               . We may verify identity and request scope details before
               completing deletion.
@@ -158,10 +158,10 @@ export default function PrivacyPage() {
             <p>
               For privacy questions, contact{" "}
               <a
-                href="mailto:privacy@tinfin.ai"
+                href="mailto:privacy@Tinfiz.ai"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                privacy@tinfin.ai
+                privacy@Tinfiz.ai
               </a>
               .
             </p>
@@ -171,4 +171,5 @@ export default function PrivacyPage() {
     </section>
   )
 }
+
 

@@ -6,12 +6,12 @@ import {
   BookOpen,
   Bot,
   Code2,
+  Compass,
   CreditCard,
   ExternalLink,
   HelpCircle,
   Inbox,
   MessageCircle,
-  Rocket,
 } from 'lucide-react'
 
 import type { DocsPage } from '@/lib/docs'
@@ -39,7 +39,7 @@ import { DocsArticle } from './DocsArticle'
 import { DocsSearchLauncher } from './DocsSearchLauncher'
 
 const sectionIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  'Get Started': Rocket,
+  'Get Started': Compass,
   Widget: MessageCircle,
   'Inbox Operations': Inbox,
   'AI Support': Bot,
@@ -58,8 +58,8 @@ function DocsSidebar({ activeSlug }: { activeSlug: string }) {
             <BookOpen className="size-4" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold tracking-tight text-sidebar-foreground">Tinfin AI Docs</span>
-            <span className="block truncate text-[11px] text-sidebar-foreground/55">Launch and product guides</span>
+            <span className="block truncate text-sm font-semibold tracking-tight text-sidebar-foreground">Tinfiz Docs</span>
+            <span className="block truncate text-[11px] text-sidebar-foreground/55">Setup and product guides</span>
           </span>
         </Link>
       </SidebarHeader>
@@ -108,7 +108,7 @@ function DocsSidebar({ activeSlug }: { activeSlug: string }) {
 
       <SidebarSeparator />
       <div className="px-3 py-3 text-[11px] leading-5 text-sidebar-foreground/55 group-data-[collapsible=offcanvas]:hidden">
-        Keep these docs updated as launch workflows change.
+        Keep these docs updated as product workflows change.
       </div>
       <SidebarRail />
     </Sidebar>
@@ -162,3 +162,4 @@ export function DocsShell({ page }: { page: DocsPage }) {
     </SidebarProvider>
   )
 }
+

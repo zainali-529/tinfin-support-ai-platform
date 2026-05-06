@@ -641,7 +641,7 @@ function WidgetPreview() {
 
         <div className="relative rounded-lg border border-border/70 bg-background/90 p-1.5">
           <div className="rounded-md bg-primary px-2 py-1 text-[9px] font-semibold text-primary-foreground">
-            Tinfin Assistant
+            Tinfiz Assistant
           </div>
           <div className="mt-1.5 space-y-1">
             <div
@@ -782,3 +782,4 @@ function AnalyticsPreview() {
     </div>
   )
 }
+

@@ -192,7 +192,7 @@ export function NotificationBell() {
             void utils.notifications.list.invalidate()
 
             if (permissionState() === 'granted') {
-              const title = typeof row.title === 'string' ? row.title : 'Tinfin AI notification'
+              const title = typeof row.title === 'string' ? row.title : 'Tinfiz notification'
               const body = typeof row.body === 'string' ? row.body : ''
               const tag = typeof row.id === 'string' ? row.id : undefined
               new Notification(title, {
@@ -347,3 +347,4 @@ export function NotificationBell() {
     </DropdownMenu>
   )
 }
+

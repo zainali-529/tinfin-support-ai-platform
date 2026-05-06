@@ -35,28 +35,28 @@ Wizard ab in platforms ke liye guidance/snippets deta hai:
 
 ## 3. Widget JS API
 
-Widget runtime ab global `Tinfin` API expose karta hai.
+Widget runtime ab global `Tinfiz` API expose karta hai.
 
 Available commands:
 
 ```js
-Tinfin('boot', { orgId: 'ORG_ID' })
-Tinfin('update', { user: { id: 'u_1', email: 'user@example.com', name: 'User' } })
-Tinfin('show')
-Tinfin('hide')
-Tinfin('openNewMessage', 'I need help')
-Tinfin('newChat')
-Tinfin('shutdown')
+Tinfiz('boot', { orgId: 'ORG_ID' })
+Tinfiz('update', { user: { id: 'u_1', email: 'user@example.com', name: 'User' } })
+Tinfiz('show')
+Tinfiz('hide')
+Tinfiz('openNewMessage', 'I need help')
+Tinfiz('newChat')
+Tinfiz('shutdown')
 ```
 
 Direct helper methods bhi supported hain:
 
 ```js
-Tinfin.show()
-Tinfin.hide()
-Tinfin.openNewMessage('I need help')
-Tinfin.shutdown()
-Tinfin.boot({ orgId: 'ORG_ID' })
+Tinfiz.show()
+Tinfiz.hide()
+Tinfiz.openNewMessage('I need help')
+Tinfiz.shutdown()
+Tinfiz.boot({ orgId: 'ORG_ID' })
 ```
 
 ## 4. Logged-In User Identity
@@ -64,7 +64,7 @@ Tinfin.boot({ orgId: 'ORG_ID' })
 Agar customer ka app logged-in users rakhta hai, wo widget ko identity pass kar sakta hai:
 
 ```js
-Tinfin('boot', {
+Tinfiz('boot', {
   orgId: 'ORG_ID',
   user: {
     id: 'user_123',
@@ -87,14 +87,14 @@ Iska benefit:
 - Pre-chat form skip ho sakta hai.
 - Contact record mein name/email ke sath external user id, phone, company, traits, page context aur custom attributes save hotay hain.
 - Inbox agents ko better context milta hai.
-- SPA apps route change par `Tinfin('update')` call kar sakti hain.
+- SPA apps route change par `Tinfiz('update')` call kar sakti hain.
 
 ## 5. Install Verification Kaise Work Karta Hai
 
 Backend router `widgetInstall.verifyInstall` ye checks karta hai:
 
 1. Website reachable hai ya nahi.
-2. HTML mein Tinfin script visible hai ya nahi.
+2. HTML mein Tinfiz script visible hai ya nahi.
 3. `data-org-id` current organization se match karta hai ya nahi.
 4. Script async load ho raha hai ya nahi.
 5. Agar GTM detect ho aur direct script HTML mein visible na ho to warning deta hai, because unpublished/custom GTM tags raw HTML mein visible nahi hotay.
@@ -102,7 +102,7 @@ Backend router `widgetInstall.verifyInstall` ye checks karta hai:
 Possible statuses:
 
 - `installed`: script found aur org id match.
-- `wrong_org`: Tinfin script found lekin org id different.
+- `wrong_org`: Tinfiz script found lekin org id different.
 - `missing`: script nahi mila ya org id visible nahi.
 - `unreachable`: website scan nahi ho saki.
 
@@ -153,13 +153,13 @@ pnpm --filter web dev
 Live site par console mein run karein:
 
 ```js
-Tinfin('show')
-Tinfin('hide')
-Tinfin('openNewMessage', 'I need help with pricing')
-Tinfin('update', { user: { id: 'test_1', email: 'test@example.com', name: 'Test User' } })
-Tinfin('newChat')
-Tinfin('shutdown')
-Tinfin('boot', { orgId: 'ORG_ID' })
+Tinfiz('show')
+Tinfiz('hide')
+Tinfiz('openNewMessage', 'I need help with pricing')
+Tinfiz('update', { user: { id: 'test_1', email: 'test@example.com', name: 'Test User' } })
+Tinfiz('newChat')
+Tinfiz('shutdown')
+Tinfiz('boot', { orgId: 'ORG_ID' })
 ```
 
 ### Verification Test
@@ -182,3 +182,4 @@ Tinfin('boot', { orgId: 'ORG_ID' })
 3. GTM community template banayein.
 4. Identity verification secret UI add karein.
 5. Widget install status ko database mein store karke dashboard health badge show karein.
+

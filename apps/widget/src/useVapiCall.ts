@@ -3,7 +3,7 @@
  *
  * React hook wrapping the @vapi-ai/web SDK.
  * Manages the full lifecycle of a browser-based voice call:
- *   idle → connecting → active → ended
+ *   idle â†’ connecting â†’ active â†’ ended
  *
  * The PUBLIC key is safe to bundle in widget code.
  * It allows initiating calls but cannot manage resources.
@@ -12,7 +12,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type Vapi from '@vapi-ai/web'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CallState = 'idle' | 'connecting' | 'active' | 'ending' | 'ended' | 'error'
 
@@ -45,7 +45,7 @@ export interface TranscriptEntry {
   timestamp: Date
 }
 
-// ─── Dynamic import helper ────────────────────────────────────────────────────
+// â”€â”€â”€ Dynamic import helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let vapiModule: typeof Vapi | null = null
 
@@ -56,7 +56,7 @@ async function loadVapi(): Promise<typeof Vapi> {
   return vapiModule
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn {
   const vapiRef = useRef<InstanceType<typeof Vapi> | null>(null)
@@ -113,7 +113,7 @@ export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn 
       const vapi = new VapiClass(options.publicKey)
       vapiRef.current = vapi
 
-      // ── Event listeners ─────────────────────────────────────────────────
+      // â”€â”€ Event listeners â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
       vapi.on('call-start', () => {
         setCallState('active')
@@ -164,7 +164,7 @@ export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn 
         vapiRef.current = null
       })
 
-      // ── Start the call ──────────────────────────────────────────────────
+      // â”€â”€ Start the call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
       const callContext = {
         orgId: options.orgId,
@@ -173,7 +173,7 @@ export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn 
         ...(options.contactId ? { contactId: options.contactId } : {}),
         ...(options.visitorName ? { visitorName: options.visitorName } : {}),
         ...(options.visitorEmail ? { visitorEmail: options.visitorEmail } : {}),
-        source: 'tinfin-widget',
+        source: 'Tinfiz-widget',
       }
 
       await vapi.start(options.assistantId, {
@@ -199,7 +199,7 @@ export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn 
     try {
       vapiRef.current?.stop()
     } catch {
-      // Ignore — onCallEnd will fire
+      // Ignore â€” onCallEnd will fire
     }
   }, [callState, stopDurationTimer])
 
@@ -223,7 +223,7 @@ export function useVapiCall(options: VapiCallOptions | null): UseVapiCallReturn 
   }
 }
 
-// ─── Duration formatter ───────────────────────────────────────────────────────
+// â”€â”€â”€ Duration formatter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)

@@ -42,7 +42,7 @@ export type ResolvedConfig = {
   helpItems: WidgetHelpItem[]
   talkToHumanLabel: string
   talkToHumanMessage: string
-  // ── Voice / Vapi ────────────────────────────────────────────────────────
+  // â”€â”€ Voice / Vapi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   vapiPublicKey: string | null
   vapiAssistantId: string | null
   voiceEnabled: boolean
@@ -145,10 +145,11 @@ export function useWidgetConfig(orgId: string, staticOverrides: Partial<WidgetCo
         }))
       })
       .catch(err => {
-        console.warn('[tinfin-widget] Could not fetch remote config:', (err as Error).message)
+        console.warn('[Tinfiz-widget] Could not fetch remote config:', (err as Error).message)
       })
       .finally(() => setLoading(false))
   }, [orgId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return { config, loading }
 }
+

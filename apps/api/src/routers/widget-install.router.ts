@@ -191,7 +191,7 @@ async function fetchHtml(rawUrl: string, redirectCount = 0): Promise<{
       redirect: 'manual',
       signal: controller.signal,
       headers: {
-        'user-agent': 'TinfinInstallVerifier/1.0 (+https://tinfin.ai)',
+        'user-agent': 'TinfizInstallVerifier/1.0 (+https://Tinfiz.ai)',
         accept: 'text/html,application/xhtml+xml',
       },
     })
@@ -313,9 +313,9 @@ function getRecommendedMethod(platform: PlatformKey): string {
     case 'wix': return 'Use Settings > Custom Code and load it on all pages in Body end.'
     case 'squarespace': return 'Use Settings > Advanced > Code Injection > Footer.'
     case 'google_tag_manager': return 'Use a GTM Custom HTML tag with All Pages trigger.'
-    case 'segment': return 'Install script normally, then pass identified user data through Tinfin("update").'
+    case 'segment': return 'Install script normally, then pass identified user data through Tinfiz("update").'
     case 'nextjs': return 'Use next/script in app/layout.tsx with strategy="lazyOnload".'
-    case 'react': return 'Load once in your app shell and use Tinfin("update") on route/user changes.'
+    case 'react': return 'Load once in your app shell and use Tinfiz("update") on route/user changes.'
     default: return 'Paste the universal script before the closing body tag.'
   }
 }
@@ -346,12 +346,12 @@ function extractScriptTags(html: string): MatchedScript[] {
       : typeof attrs['data-organization-id'] === 'string'
         ? attrs['data-organization-id']
         : null
-    const looksLikeTinfin =
-      /tinfin/i.test(src ?? '') ||
-      /Tinfin\(|tinfinSettings|data-tinfin-widget/i.test(body) ||
-      Boolean(orgId && /tinfin|widget/i.test(src ?? body))
+    const looksLikeTinfiz =
+      /Tinfiz/i.test(src ?? '') ||
+      /Tinfiz\(|tinfizSettings|data-Tinfiz-widget/i.test(body) ||
+      Boolean(orgId && /Tinfiz|widget/i.test(src ?? body))
 
-    if (looksLikeTinfin) {
+    if (looksLikeTinfiz) {
       scripts.push({
         src,
         orgId,
@@ -371,7 +371,7 @@ function buildInstallChecks(params: {
   scripts: MatchedScript[]
   signals: DetectionSignal[]
 }): { status: InstallStatus; checks: InstallCheck[] } {
-  const hasTinfinScript = params.scripts.length > 0
+  const hasTinfizScript = params.scripts.length > 0
   const correctOrg = params.scripts.some((script) => script.orgId === params.expectedOrgId)
   const hasWrongOrg = params.scripts.some((script) => script.orgId && script.orgId !== params.expectedOrgId)
   const hasGtm = params.signals.some((signal) => signal.key === 'google_tag_manager' && signal.matched)
@@ -385,13 +385,13 @@ function buildInstallChecks(params: {
     },
     {
       key: 'script_found',
-      label: 'Tinfin script found',
-      status: hasTinfinScript ? 'pass' : hasGtm ? 'warn' : 'fail',
-      detail: hasTinfinScript
-        ? `${params.scripts.length} Tinfin script tag(s) found.`
+      label: 'Tinfiz script found',
+      status: hasTinfizScript ? 'pass' : hasGtm ? 'warn' : 'fail',
+      detail: hasTinfizScript
+        ? `${params.scripts.length} Tinfiz script tag(s) found.`
         : hasGtm
           ? 'Direct script was not visible in HTML. If installed through GTM, preview the tag or publish the container.'
-          : 'No Tinfin widget script was found in the page HTML.',
+          : 'No Tinfiz widget script was found in the page HTML.',
     },
     {
       key: 'org_match',
@@ -400,7 +400,7 @@ function buildInstallChecks(params: {
       detail: correctOrg
         ? 'data-org-id matches this workspace.'
         : hasWrongOrg
-          ? 'A Tinfin script exists but uses a different organization ID.'
+          ? 'A Tinfiz script exists but uses a different organization ID.'
           : 'No data-org-id was found on the detected script.',
     },
     {
@@ -413,7 +413,7 @@ function buildInstallChecks(params: {
     },
   ]
 
-  const status: InstallStatus = !hasTinfinScript
+  const status: InstallStatus = !hasTinfizScript
     ? 'missing'
     : correctOrg
       ? 'installed'
@@ -488,3 +488,5 @@ export const widgetInstallRouter = router({
       }
     }),
 })
+
+

@@ -14,7 +14,7 @@ import { STYLES } from './styles'
 import { MessageMarkdown } from './MessageMarkdown'
 import type { WidgetConfig, VisitorInfo } from './types'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function formatTime(d: Date) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -23,7 +23,7 @@ function formatTime(d: Date) {
 function formatDate(d: Date) {
   const now = new Date()
   if (d.toDateString() === now.toDateString()) return formatTime(d)
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + formatTime(d)
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' Â· ' + formatTime(d)
 }
 
 function formatRelativeTimestamp(value?: string | null) {
@@ -65,7 +65,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 type ActiveTab = 'inbox' | 'chat' | 'help' | 'call'
 
-// ── Attachment Card ───────────────────────────────────────────────────────────
+// â”€â”€ Attachment Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AttachmentCard({ attachment, isUser }: { attachment: Attachment; isUser: boolean }) {
   const isImage = isImageType(attachment.type)
@@ -97,22 +97,22 @@ function AttachmentCard({ attachment, isUser }: { attachment: Attachment; isUser
       className={`attachment-file-card ${isUser ? 'user' : ''}`}
     >
       <span className="attachment-file-icon">
-        {attachment.type === 'application/pdf' ? '📄' :
-          attachment.type.includes('word') ? '📝' :
-          attachment.type.includes('excel') || attachment.type.includes('spreadsheet') ? '📊' :
-          attachment.type.startsWith('audio') ? '🎵' :
-          attachment.type.startsWith('video') ? '🎬' : '📎'}
+        {attachment.type === 'application/pdf' ? 'ðŸ“„' :
+          attachment.type.includes('word') ? 'ðŸ“' :
+          attachment.type.includes('excel') || attachment.type.includes('spreadsheet') ? 'ðŸ“Š' :
+          attachment.type.startsWith('audio') ? 'ðŸŽµ' :
+          attachment.type.startsWith('video') ? 'ðŸŽ¬' : 'ðŸ“Ž'}
       </span>
       <span className="attachment-file-info">
         <span className="attachment-file-name">{attachment.name}</span>
         <span className="attachment-file-size">{formatFileSize(attachment.size)}</span>
       </span>
-      <span className="attachment-download-icon">↓</span>
+      <span className="attachment-download-icon">â†“</span>
     </a>
   )
 }
 
-// ── Pending Upload Preview ────────────────────────────────────────────────────
+// â”€â”€ Pending Upload Preview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface PendingFile {
   id: string
@@ -131,7 +131,7 @@ function PendingFilePreview({ pf, onRemove }: { pf: PendingFile; onRemove: () =>
       {isImage && pf.previewUrl ? (
         <img src={pf.previewUrl} alt={pf.file.name} className="pending-file-thumb" />
       ) : (
-        <span className="pending-file-icon">📎</span>
+        <span className="pending-file-icon">ðŸ“Ž</span>
       )}
       <span className="pending-file-name">{pf.file.name}</span>
       {pf.uploading && <span className="pending-file-spinner" />}
@@ -145,7 +145,7 @@ function PendingFilePreview({ pf, onRemove }: { pf: PendingFile; onRemove: () =>
   )
 }
 
-// ── Main Widget ───────────────────────────────────────────────────────────────
+// â”€â”€ Main Widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function Widget({ config: staticConfig }: { config: WidgetConfig }) {
   const { config } = useWidgetConfig(staticConfig.orgId, staticConfig)
@@ -173,7 +173,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     sendMessage, uploadFile, sendTyping, submitCsat, startNewChat, openConversation, refreshInbox, initWithVisitorInfo,
   } = useChat(config.orgId)
 
-  // ── Vapi ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Vapi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const vapiCallOptions = (config.voiceEnabled && config.vapiPublicKey && config.vapiAssistantId)
     ? {
         publicKey: config.vapiPublicKey,
@@ -205,7 +205,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     return () => query.removeEventListener?.('change', sync)
   }, [])
 
-  // ── Config values ─────────────────────────────────────────────────────────
+  // â”€â”€ Config values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const color = config.primaryColor || '#6366f1'
   const userBubbleColor = config.userBubbleColor || color
   const launcherPx = LAUNCHER_PX[config.launcherSize || 'md'] ?? 56
@@ -215,8 +215,8 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   const headerStyle = config.headerStyle ?? 'gradient'
   const showTyping = config.showTypingIndicator !== false
   const botName = config.botName || 'AI Assistant'
-  const inputPlaceholder = config.inputPlaceholder || 'Type a message…'
-  const responseTimeText = config.responseTimeText || 'AI · We reply instantly'
+  const inputPlaceholder = config.inputPlaceholder || 'Type a messageâ€¦'
+  const responseTimeText = config.responseTimeText || 'AI Â· We reply instantly'
   const talkToHumanLabel = config.talkToHumanLabel || 'Talk to Human'
   const talkToHumanMessage = typeof config.talkToHumanMessage === 'string'
     ? config.talkToHumanMessage.trim()
@@ -341,7 +341,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     initWithVisitorInfo(identity)
   }, [config.user, config.company, config.page, config.customAttributes, identityResetVersion, initWithVisitorInfo])
 
-  // ── Auto-open ─────────────────────────────────────────────────────────────
+  // â”€â”€ Auto-open â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!config.autoOpen || autoOpenDone.current) return
     const delay = (config.autoOpenDelay ?? 5) * 1000
@@ -352,14 +352,14 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     return () => clearTimeout(timer)
   }, [config.autoOpen, config.autoOpenDelay])
 
-  // ── Call ended → switch tab ───────────────────────────────────────────────
+  // â”€â”€ Call ended â†’ switch tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (callState === 'ended' || callState === 'error') {
       if (tab === 'call') setTimeout(() => setTab('chat'), 1500)
     }
   }, [callState, tab])
 
-  // ── Scroll to bottom on new messages ─────────────────────────────────────
+  // â”€â”€ Scroll to bottom on new messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (open) {
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60)
@@ -375,14 +375,14 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     setCsatComment('')
   }, [activeConversationId, activeConversationCsat?.submittedAt])
 
-  // ── Revoke object URLs ────────────────────────────────────────────────────
+  // â”€â”€ Revoke object URLs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     return () => {
       pendingFiles.forEach(pf => { if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl) })
     }
   }, [])
 
-  // ── Dynamic styles ────────────────────────────────────────────────────────
+  // â”€â”€ Dynamic styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const dynamicStyles = `
     :host {
       --brand: ${color};
@@ -418,7 +418,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     }
   `
 
-  // ── File handling ─────────────────────────────────────────────────────────
+  // â”€â”€ File handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleFileSelect = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -483,7 +483,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     })
   }, [])
 
-  // ── Send ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleSend = useCallback(() => {
     if (!activeConversationId) return
@@ -568,8 +568,8 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
       }
     }
 
-    window.addEventListener('tinfin:command', onCommand)
-    return () => window.removeEventListener('tinfin:command', onCommand)
+    window.addEventListener('Tinfiz:command', onCommand)
+    return () => window.removeEventListener('Tinfiz:command', onCommand)
   }, [activeConversationId, handleStartChat, startNewChat])
 
   const handleStartCall = useCallback(async () => {
@@ -603,7 +603,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
     : agentActive ? '#22c55e' : '#4ade80'
 
   const statusLabel = !connected
-    ? (config.offlineMessage || 'Connecting…')
+    ? (config.offlineMessage || 'Connectingâ€¦')
     : agentActive ? 'Agent is online'
     : isCallActive ? `Call - ${formatDuration(callDurationSeconds)}`
     : responseTimeText
@@ -639,7 +639,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
         }}
       />
 
-      {/* ── Chat Window ── */}
+      {/* â”€â”€ Chat Window â”€â”€ */}
       <div className={`window ${isLeft ? 'left' : ''} ${expanded ? 'expanded' : ''} ${open ? '' : 'hidden'}`}>
 
         {/* Header */}
@@ -647,7 +647,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
           <div className="header-avatar">
             {config.logoUrl
               ? <img src={config.logoUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-              : agentActive ? <AgentIcon /> : '💬'
+              : agentActive ? <AgentIcon /> : 'ðŸ’¬'
             }
           </div>
           <div className="header-info">
@@ -692,11 +692,11 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
           </div>
         )}
 
-        {/* ── Pre-chat Form ── */}
+        {/* â”€â”€ Pre-chat Form â”€â”€ */}
         {showPreChat ? (
           <div className="prechat">
             <div className="prechat-hero">
-              <div className="prechat-emoji">👋</div>
+              <div className="prechat-emoji">ðŸ‘‹</div>
               <h2 className="prechat-title">Hello there!</h2>
               <p className="prechat-desc">{config.welcomeMessage || 'Fill in your details to get started with support.'}</p>
             </div>
@@ -722,7 +722,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
               </div>
               {formError && <p className="prechat-error">{formError}</p>}
               <button type="submit" className="prechat-submit">
-                Start Chatting →
+                Start Chatting â†’
               </button>
             </form>
           </div>
@@ -733,7 +733,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
               <div className="inbox-list">
                 <div className="inbox-ctas">
                   <button className="inbox-start-btn" onClick={handleStartChat}>
-                    💬 New Chat
+                    ðŸ’¬ New Chat
                   </button>
                   {voiceEnabled && (
                     <button
@@ -741,15 +741,15 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                       onClick={isCallActive ? () => setTab('call') : handleStartCall}
                     >
                       <PhoneIcon />
-                      {isCallActive ? `Live · ${formatDuration(callDurationSeconds)}` : (config.callButtonLabel || 'Talk to AI')}
+                      {isCallActive ? `Live Â· ${formatDuration(callDurationSeconds)}` : (config.callButtonLabel || 'Talk to AI')}
                     </button>
                   )}
-                  <button className="inbox-refresh-btn" onClick={refreshInbox}>↺</button>
+                  <button className="inbox-refresh-btn" onClick={refreshInbox}>â†º</button>
                 </div>
 
                 {conversations.length === 0 ? (
                   <div className="inbox-empty">
-                    <div className="inbox-empty-icon">💬</div>
+                    <div className="inbox-empty-icon">ðŸ’¬</div>
                     <p className="inbox-empty-title">No conversations yet</p>
                     <p className="inbox-empty-sub">Start a chat and it'll appear here</p>
                   </div>
@@ -757,7 +757,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                   conversations.map(conversation => {
                     const selected = conversation.id === activeConversationId
                     const title = conversation.contactName || conversation.contactEmail || visitorInfo?.name || 'Conversation'
-                    const preview = conversation.lastMessage || 'Start chatting…'
+                    const preview = conversation.lastMessage || 'Start chattingâ€¦'
 
                     return (
                       <button
@@ -778,7 +778,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
               </div>
             )}
 
-            {/* ── Chat Tab ── */}
+            {/* â”€â”€ Chat Tab â”€â”€ */}
             {tab === 'help' && (
               <div className="help-panel">
                 <div className="help-intro">
@@ -836,17 +836,17 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                 <div className="messages">
                   {!activeConversationId ? (
                     <div className="messages-empty">
-                      <div className="messages-empty-icon">✨</div>
+                      <div className="messages-empty-icon">âœ¨</div>
                       <p>Hi {visitorInfo?.name?.split(' ')[0]}! How can we help?</p>
                     </div>
                   ) : messages.length === 0 ? (
                     <div className="messages-empty">
-                      <div className="messages-empty-icon">💬</div>
+                      <div className="messages-empty-icon">ðŸ’¬</div>
                       <p>Send your first message to begin</p>
                     </div>
                   ) : (
                     messages.map((msg, idx) => {
-                      const isSystem = msg.content.startsWith('—') && msg.content.endsWith('—')
+                      const isSystem = msg.content.startsWith('â€”') && msg.content.endsWith('â€”')
                       const prevMsg = messages[idx - 1]
                       const showDate = !prevMsg || msg.createdAt.getTime() - prevMsg.createdAt.getTime() > 5 * 60 * 1000
                       const isUser = msg.role === 'user'
@@ -1041,9 +1041,9 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
                           rows={1}
                           placeholder={
                             !connected
-                              ? (config.offlineMessage || 'Reconnecting…')
+                              ? (config.offlineMessage || 'Reconnectingâ€¦')
                               : !activeConversationId
-                              ? 'Start a chat first…'
+                              ? 'Start a chat firstâ€¦'
                               : inputPlaceholder
                           }
                           value={input}
@@ -1067,7 +1067,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
               </div>
             )}
 
-            {/* ── Voice Call Tab ── */}
+            {/* â”€â”€ Voice Call Tab â”€â”€ */}
             {tab === 'call' && voiceEnabled && (
               <VoiceCallPanel
                 color={color}
@@ -1119,12 +1119,12 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
         {/* Branding */}
         {config.showBranding !== false && (
           <div className="branding">
-            Powered by <a href="https://tinfin.com" target="_blank" rel="noopener">Tinfin</a>
+            Powered by <a href="https://Tinfiz.com" target="_blank" rel="noopener">Tinfiz</a>
           </div>
         )}
       </div>
 
-      {/* ── Launcher ── */}
+      {/* â”€â”€ Launcher â”€â”€ */}
       <button
         className={`launcher ${isLeft ? 'left' : ''} ${isCallActive ? 'launcher-live' : ''}`}
         style={{ background: isCallActive ? '#16a34a' : headerBg }}
@@ -1137,7 +1137,7 @@ export default function Widget({ config: staticConfig }: { config: WidgetConfig 
   )
 }
 
-// ── Voice Call Panel ──────────────────────────────────────────────────────────
+// â”€â”€ Voice Call Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface VoiceCallPanelProps {
   color: string
@@ -1289,3 +1289,4 @@ function VoiceCallPanel({
     </div>
   )
 }
+

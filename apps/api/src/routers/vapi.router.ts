@@ -28,7 +28,7 @@ import type { Context } from '../trpc/context'
 import { requireFeature } from '../lib/plan-guards'
 import { requirePermissionFromContext } from '../lib/org-permissions'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getOrgVapiKey(
   supabase: Context['supabase'],
@@ -58,7 +58,7 @@ function asString(value: unknown): string | null {
   return next.length > 0 ? next : null
 }
 
-// ─── Input schemas ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Input schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const upsertAssistantSchema = z.object({
   // Identity
@@ -73,29 +73,29 @@ const upsertAssistantSchema = z.object({
   maxDurationSeconds: z.number().int().min(60).max(3600).optional(),
   backgroundSound: z.enum(['off', 'office', 'cafe']).optional(),
   isActive: z.boolean().optional(),
-  // ── Knowledge Base integration ──────────────────────────────────────────────
+  // â”€â”€ Knowledge Base integration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** UUIDs of knowledge bases this assistant should search */
   kbIds: z.array(z.string().uuid()).optional(),
   /** Enable real-time KB tool calls during calls */
   toolsEnabled: z.boolean().optional(),
-  // ── Transcription ───────────────────────────────────────────────────────────
+  // â”€â”€ Transcription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   transcriptionProvider: z.enum(['deepgram', 'talkscriber', 'gladia']).optional(),
   transcriptionLanguage: z.string().min(2).max(10).optional(),
-  // ── Timing & behavior ───────────────────────────────────────────────────────
+  // â”€â”€ Timing & behavior â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   silenceTimeoutSeconds: z.number().int().min(5).max(120).optional(),
   responseDelaySeconds: z.number().min(0).max(5).optional(),
   interruptionsEnabled: z.boolean().optional(),
-  // ── Recording ───────────────────────────────────────────────────────────────
+  // â”€â”€ Recording â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   recordingEnabled: z.boolean().optional(),
-  // ── Call control ────────────────────────────────────────────────────────────
+  // â”€â”€ Call control â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   endCallPhrases: z.array(z.string().max(50)).max(10).optional(),
 })
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const vapiRouter = router({
 
-  // ── READ ─────────────────────────────────────────────────────────────────────
+  // â”€â”€ READ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   getAssistantConfig: protectedProcedure.query(async ({ ctx }) => {
     requirePermissionFromContext(ctx, 'voiceAssistant', 'Voice Assistant access is required.')
@@ -290,7 +290,7 @@ export const vapiRouter = router({
     return { publicKey }
   }),
 
-  // ── WRITE ────────────────────────────────────────────────────────────────────
+  // â”€â”€ WRITE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   upsertAssistantConfig: protectedProcedure
     .input(upsertAssistantSchema)
@@ -327,9 +327,9 @@ export const vapiRouter = router({
 
       const webhookBaseUrl =
         process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3001}`
-      const webhookSecret = process.env.VAPI_WEBHOOK_SECRET || 'tinfin-vapi-secret'
+      const webhookSecret = process.env.VAPI_WEBHOOK_SECRET || 'Tinfiz-vapi-secret'
 
-      // ── Merge fields with existing values ────────────────────────────────────
+      // â”€â”€ Merge fields with existing values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const existingSettings = (existing?.settings as Record<string, unknown>) ?? {}
 
       const finalName = input.name ?? asString(existing?.name) ?? 'Support Assistant'
@@ -346,7 +346,7 @@ export const vapiRouter = router({
         (existing?.background_sound as 'off' | 'office' | 'cafe' | null) ??
         'off'
 
-      // Advanced settings — merge with existing settings JSONB
+      // Advanced settings â€” merge with existing settings JSONB
       const finalToolsEnabled =
         input.toolsEnabled ??
         (existingSettings.toolsEnabled as boolean | undefined) ??
@@ -382,7 +382,7 @@ export const vapiRouter = router({
         (existingSettings.endCallPhrases as string[] | undefined) ??
         ['goodbye', 'bye', 'thanks bye', "that's all", 'end call']
 
-      // ── Build Vapi payload ────────────────────────────────────────────────────
+      // â”€â”€ Build Vapi payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       let actionTools: VapiTool[] = []
       if (finalToolsEnabled) {
         try {
@@ -461,7 +461,7 @@ export const vapiRouter = router({
         endCallPhrases: finalEndCallPhrases,
       })
 
-      // ── Sync with Vapi API ────────────────────────────────────────────────────
+      // â”€â”€ Sync with Vapi API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       let vapiAssistantId =
         asString(existing?.vapi_assistant_id) ?? null
 
@@ -480,7 +480,7 @@ export const vapiRouter = router({
         })
       }
 
-      // ── Persist to DB ─────────────────────────────────────────────────────────
+      // â”€â”€ Persist to DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const upsertPayload = {
         org_id: orgId,
         vapi_assistant_id: vapiAssistantId,
@@ -659,5 +659,6 @@ export const vapiRouter = router({
       return { synced }
     }),
 })
+
 
 

@@ -199,7 +199,7 @@ export function WhatsAppSetupPage() {
                 <Input
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
-                  placeholder="Tinfin Support"
+                  placeholder="Tinfiz Support"
                   className="h-9"
                   disabled={isReadOnly || setupAccount.isPending}
                 />
@@ -441,7 +441,7 @@ export function WhatsAppSetupPage() {
                 create a permanent access token.
               </li>
               <li>Paste those values in this setup form and connect.</li>
-              <li>Copy webhook URL and verify token from Tinfin.</li>
+              <li>Copy webhook URL and verify token from Tinfiz.</li>
               <li>
                 In Meta WhatsApp Configuration, paste webhook URL + verify token,
                 verify, and save.
@@ -457,3 +457,4 @@ export function WhatsAppSetupPage() {
     </div>
   )
 }
+

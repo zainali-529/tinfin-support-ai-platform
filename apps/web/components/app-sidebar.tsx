@@ -213,7 +213,7 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
   const { state: sidebarState } = useSidebar()
   const unreadCount = useUnreadCount(activeOrg.id)
 
-  const identityLabel = user?.name?.trim() || user?.email?.trim() || 'Tinfin User'
+  const identityLabel = user?.name?.trim() || user?.email?.trim() || 'Tinfiz User'
   const initials = identityLabel
     .split(/\s+/)
     .filter(Boolean)
@@ -370,4 +370,5 @@ export function AppSidebar({ user, activeOrg, ...props }: AppSidebarProps) {
     </Sidebar>
   )
 }
+
 
