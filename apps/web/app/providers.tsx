@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { httpBatchLink } from '@trpc/client'
+import * as Sentry from '@sentry/nextjs'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
 import { ThemeProvider } from 'next-themes'
@@ -12,8 +13,32 @@ import { normalizeLaunchError } from '@/lib/launch-errors'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
+    queryCache: new QueryCache({
+      onError(error, query) {
+        Sentry.captureException(error, {
+          tags: {
+            surface: 'react_query',
+            operation: 'query',
+          },
+          extra: {
+            queryHash: query.queryHash,
+            queryKey: query.queryKey,
+          },
+        })
+      },
+    }),
     mutationCache: new MutationCache({
-      onError(error) {
+      onError(error, _variables, _context, mutation) {
+        Sentry.captureException(error, {
+          tags: {
+            surface: 'react_query',
+            operation: 'mutation',
+          },
+          extra: {
+            mutationKey: mutation.options.mutationKey,
+          },
+        })
+
         const info = normalizeLaunchError(error)
         toast.error(info.title, {
           description: info.message,
@@ -46,7 +71,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const warmSession = async () => {
       const supabase = createClient()
-      await supabase.auth.getSession()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (session?.user) {
+        Sentry.setUser({
+          id: session.user.id,
+          email: session.user.email,
+        })
+      } else {
+        Sentry.setUser(null)
+      }
     }
     void warmSession()
   }, [])

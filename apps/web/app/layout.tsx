@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Raleway } from 'next/font/google'
 import { Providers } from './providers'
+import { getSiteUrl } from '@/lib/site-url'
 import '@workspace/ui/globals.css'
 
 const raleway = Raleway({
@@ -10,8 +11,20 @@ const raleway = Raleway({
 })
 
 export const metadata: Metadata = {
-  title: 'Tinfiz',
-  description: 'AI-Powered Customer Support Platform',
+  metadataBase: new URL(getSiteUrl()),
+  applicationName: 'Tinfiz',
+  title: {
+    default: 'Tinfiz',
+    template: '%s | Tinfiz',
+  },
+  description: 'AI-powered customer support platform with grounded AI, unified inbox, channels, voice, and analytics.',
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    siteName: 'Tinfiz',
+    type: 'website',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

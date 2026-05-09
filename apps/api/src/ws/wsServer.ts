@@ -21,6 +21,7 @@ import {
   notifyNewConversation,
 } from '../services/notifications.service'
 import { safeRecordConversationTimelineEvent } from '../services/conversation-timeline.service'
+import { captureWebSocketException } from '../lib/sentry'
 import { startAgentRealtimeBridge } from './agentRealtimeBridge'
 import {
   addSocketToRoom,
@@ -42,6 +43,14 @@ const DEFAULT_WELCOME_MESSAGE = 'Hi Ã°Å¸â€˜â€¹ How can we help?'
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Utils Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
+function logWsError(message: string, error: unknown, context: Record<string, unknown> = {}) {
+  console.error(message, error)
+  captureWebSocketException(error, {
+    message,
+    ...context,
+  })
+}
+
 function getSupabase(): SupabaseClient {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,10 +70,12 @@ function queueNewConversationNotification(params: {
     conversationId: params.conversationId,
     channel: params.channel ?? 'chat',
   }).catch((notificationError) => {
-    console.error(
-      '[ws] new conversation notification failed:',
-      notificationError instanceof Error ? notificationError.message : notificationError
-    )
+    logWsError('[ws] new conversation notification failed:', notificationError, {
+      phase: 'new_conversation_notification',
+      orgId: params.orgId,
+      conversationId: params.conversationId,
+      channel: params.channel ?? 'chat',
+    })
   })
 }
 
@@ -237,7 +248,11 @@ async function resolveVisitorIdentity(
 
     return { visitorId: crypto.randomUUID(), identityReset: true }
   } catch (error) {
-    console.error('[ws] resolveVisitorIdentity:', error)
+    logWsError('[ws] resolveVisitorIdentity:', error, {
+      phase: 'resolve_visitor_identity',
+      orgId,
+      visitorId: requestedVisitorId,
+    })
     return { visitorId: requestedVisitorId, identityReset: false }
   }
 }
@@ -253,7 +268,10 @@ async function getWelcomeMessage(orgId: string): Promise<string> {
     const message = (data?.welcome_message as string | null | undefined)?.trim()
     return message && message.length > 0 ? message : DEFAULT_WELCOME_MESSAGE
   } catch (e) {
-    console.error('[ws] getWelcomeMessage:', e)
+    logWsError('[ws] getWelcomeMessage:', e, {
+      phase: 'get_welcome_message',
+      orgId,
+    })
     return DEFAULT_WELCOME_MESSAGE
   }
 }
@@ -307,7 +325,11 @@ async function authenticateAgentSocket(params: {
     if (!member) return null
     return user.id
   } catch (e) {
-    console.error('[ws] authenticateAgentSocket:', e)
+    logWsError('[ws] authenticateAgentSocket:', e, {
+      phase: 'authenticate_agent_socket',
+      orgId: params.orgId,
+      requestedAgentId: params.requestedAgentId,
+    })
     return null
   }
 }
@@ -329,7 +351,11 @@ async function getConversationVisitorId(orgId: string, conversationId: string): 
     const visitorId = (contact?.meta as { visitorId?: string } | null | undefined)?.visitorId
     return typeof visitorId === 'string' && visitorId.length > 0 ? visitorId : null
   } catch (e) {
-    console.error('[ws] getConversationVisitorId:', e)
+    logWsError('[ws] getConversationVisitorId:', e, {
+      phase: 'get_conversation_visitor_id',
+      orgId,
+      conversationId,
+    })
     return null
   }
 }
@@ -347,7 +373,11 @@ async function getConversationContactId(orgId: string, conversationId: string): 
     const contactId = data?.contact_id as string | null | undefined
     return contactId ?? null
   } catch (e) {
-    console.error('[ws] getConversationContactId:', e)
+    logWsError('[ws] getConversationContactId:', e, {
+      phase: 'get_conversation_contact_id',
+      orgId,
+      conversationId,
+    })
     return null
   }
 }
@@ -391,7 +421,11 @@ async function getVisitorContactIds(orgId: string, visitorId: string): Promise<s
       .eq('org_id', orgId).eq('meta->>visitorId', visitorId)
     return (data ?? []).map((contact: { id: string }) => contact.id)
   } catch (e) {
-    console.error('[ws] getVisitorContactIds:', e)
+    logWsError('[ws] getVisitorContactIds:', e, {
+      phase: 'get_visitor_contact_ids',
+      orgId,
+      visitorId,
+    })
     return []
   }
 }
@@ -462,7 +496,11 @@ async function fetchVisitorConversations(orgId: string, visitorId: string): Prom
       })
       .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
   } catch (e) {
-    console.error('[ws] fetchVisitorConversations:', e)
+    logWsError('[ws] fetchVisitorConversations:', e, {
+      phase: 'fetch_visitor_conversations',
+      orgId,
+      visitorId,
+    })
     return []
   }
 }
@@ -483,7 +521,12 @@ async function visitorOwnsConversation(orgId: string, visitorId: string, convers
 
     return Boolean(contact)
   } catch (e) {
-    console.error('[ws] visitorOwnsConversation:', e)
+    logWsError('[ws] visitorOwnsConversation:', e, {
+      phase: 'visitor_owns_conversation',
+      orgId,
+      visitorId,
+      conversationId,
+    })
     return false
   }
 }
@@ -497,7 +540,11 @@ async function fetchConversationMessages(orgId: string, conversationId: string) 
       .order('created_at', { ascending: true })
     return data ?? []
   } catch (e) {
-    console.error('[ws] fetchConversationMessages:', e)
+    logWsError('[ws] fetchConversationMessages:', e, {
+      phase: 'fetch_conversation_messages',
+      orgId,
+      conversationId,
+    })
     return []
   }
 }
@@ -513,7 +560,12 @@ async function updateConversation(
       .eq('id', conversationId).eq('org_id', orgId).select('id').maybeSingle()
     return Boolean(data)
   } catch (e) {
-    console.error('[ws] updateConversation:', e)
+    logWsError('[ws] updateConversation:', e, {
+      phase: 'update_conversation',
+      orgId,
+      conversationId,
+      fields: Object.keys(fields),
+    })
     return false
   }
 }
@@ -544,7 +596,14 @@ async function persistMessage(params: {
         : [],
       ai_metadata: params.aiMetadata ?? null,
     })
-  } catch (e) { console.error('[ws] persistMessage:', e) }
+  } catch (e) {
+    logWsError('[ws] persistMessage:', e, {
+      phase: 'persist_message',
+      orgId: params.orgId,
+      conversationId: params.conversationId,
+      role: params.role,
+    })
+  }
 }
 
 function normalizeCsatRating(value: unknown): number | null {
@@ -576,7 +635,13 @@ async function getFeedbackConversationContext(orgId: string, conversationId: str
     .maybeSingle()
 
   if (conversationError || !conversation) {
-    if (conversationError) console.error('[ws] getFeedbackConversationContext:', conversationError.message)
+    if (conversationError) {
+      logWsError('[ws] getFeedbackConversationContext:', conversationError, {
+        phase: 'get_feedback_conversation_context',
+        orgId,
+        conversationId,
+      })
+    }
     return null
   }
 
@@ -667,7 +732,12 @@ async function handleVisitorCsat(socket: TinfizSocket, msg: Record<string, unkno
     .maybeSingle()
 
   if (error) {
-    console.error('[ws] visitor csat persist failed:', error.message)
+    logWsError('[ws] visitor csat persist failed:', error, {
+      phase: 'visitor_csat_persist',
+      orgId,
+      conversationId,
+      rating,
+    })
     send(socket, { type: 'error', message: 'Unable to save feedback right now.' })
     return
   }
@@ -854,7 +924,14 @@ async function relinkDuplicateContacts(orgId: string, canonicalId: string, dupli
   try {
     await getSupabase().from('conversations').update({ contact_id: canonicalId })
       .eq('org_id', orgId).in('contact_id', duplicateIds)
-  } catch (e) { console.error('[ws] relinkDuplicateContacts:', e) }
+  } catch (e) {
+    logWsError('[ws] relinkDuplicateContacts:', e, {
+      phase: 'relink_duplicate_contacts',
+      orgId,
+      canonicalId,
+      duplicateCount: duplicateIds.length,
+    })
+  }
 }
 
 async function upsertContact(params: ContactIdentityInput): Promise<string | null> {
@@ -904,7 +981,16 @@ async function upsertContact(params: ContactIdentityInput): Promise<string | nul
       }),
     }).select('id').maybeSingle()
     return created?.id ?? null
-  } catch (e) { console.error('[ws] upsertContact:', e); return null }
+  } catch (e) {
+    logWsError('[ws] upsertContact:', e, {
+      phase: 'upsert_contact',
+      orgId: params.orgId,
+      visitorId: params.visitorId,
+      hasEmail: Boolean(email),
+      hasName: Boolean(params.name),
+    })
+    return null
+  }
 }
 
 async function getOrCreateContactForVisitor(orgId: string, visitorId: string): Promise<string | null> {
@@ -919,7 +1005,14 @@ async function getOrCreateContactForVisitor(orgId: string, visitorId: string): P
     const { data: created } = await getSupabase().from('contacts')
       .insert({ org_id: orgId, meta: { visitorId, lastSeenAt: new Date().toISOString() } }).select('id').maybeSingle()
     return created?.id ?? null
-  } catch (e) { console.error('[ws] getOrCreateContactForVisitor:', e); return null }
+  } catch (e) {
+    logWsError('[ws] getOrCreateContactForVisitor:', e, {
+      phase: 'get_or_create_contact_for_visitor',
+      orgId,
+      visitorId,
+    })
+    return null
+  }
 }
 
 async function getOrCreateConversation(params: { orgId: string; visitorId: string; conversationId?: string | null }): Promise<{ conversationId: string; isNew: boolean }> {
@@ -970,7 +1063,12 @@ async function triggerHandoff(socket: TinfizSocket, conversationId: string, orgI
     })
     routedAssigneeId = routing.assignedTo
   } catch (routingError) {
-    console.error('[ws] triggerHandoff routing failed:', routingError)
+    logWsError('[ws] triggerHandoff routing failed:', routingError, {
+      phase: 'trigger_handoff_routing',
+      orgId,
+      conversationId,
+      visitorId: socket.visitorId,
+    })
   }
   const msg = "I'm connecting you with a human agent now. Please hold on! Ã°Å¸â„¢Â"
   const createdAt = new Date().toISOString()
@@ -995,10 +1093,12 @@ async function triggerHandoff(socket: TinfizSocket, conversationId: string, orgI
     conversationId,
     assignedTo: routedAssigneeId,
   }).catch((notificationError) => {
-    console.error(
-      '[ws] handoff notification failed:',
-      notificationError instanceof Error ? notificationError.message : notificationError
-    )
+    logWsError('[ws] handoff notification failed:', notificationError, {
+      phase: 'handoff_notification',
+      orgId,
+      conversationId,
+      assignedTo: routedAssigneeId,
+    })
   })
   await persistMessage({ conversationId, orgId, role: 'assistant', content: msg, aiMetadata: { shouldHandoff: true } })
 }
@@ -1095,6 +1195,12 @@ async function handleVisitorMessage(socket: TinfizSocket, msg: Record<string, un
         send(socket, { type: 'error', message: 'This workspace is in billing restricted mode. Please contact the site owner.' })
         return
       }
+      logWsError('[ws] conversation create failed:', error, {
+        phase: 'conversation_create',
+        orgId,
+        visitorId: socket.visitorId,
+        requestedConversationId,
+      })
       send(socket, { type: 'error', message: 'Unable to start a new conversation right now.' })
       return
     }
@@ -1147,13 +1253,18 @@ async function handleVisitorMessage(socket: TinfizSocket, msg: Record<string, un
     content,
     attachments,
   }).catch((error) => {
-    console.error('[ws] visitor message persist failed:', error)
+    logWsError('[ws] visitor message persist failed:', error, {
+      phase: 'visitor_message_persist',
+      orgId,
+      conversationId,
+      visitorId: socket.visitorId,
+    })
   })
 
-  // If agent is handling Ã¢â€ â€™ skip AI
+  // If a human agent is handling the conversation, skip AI.
   if (status === 'open') return
 
-  // If only file attachment, no text Ã¢â€ â€™ just acknowledge, don't run AI
+  // If the visitor sent only attachments, do not run AI.
   if (!content && attachments.length > 0) return
 
   // Pending action confirmation flow
@@ -1190,7 +1301,12 @@ async function handleVisitorMessage(socket: TinfizSocket, msg: Record<string, un
         },
       })
     } catch (err) {
-      console.error('[ws] pending action confirmation error:', err)
+      logWsError('[ws] pending action confirmation error:', err, {
+        phase: 'pending_action_confirmation',
+        orgId,
+        conversationId,
+        actionLogId,
+      })
       const fallback = "I couldn't complete that action right now. Would you like a human agent to help?"
       const createdAt = new Date().toISOString()
       send(socket, {
@@ -1372,10 +1488,13 @@ async function handleVisitorMessage(socket: TinfizSocket, msg: Record<string, un
             logId: ragResult.actionLog?.logId,
             actionName: ragResult.actionLog?.actionName,
           }).catch((notificationError) => {
-            console.error(
-              '[ws] action approval notification failed:',
-              notificationError instanceof Error ? notificationError.message : notificationError
-            )
+            logWsError('[ws] action approval notification failed:', notificationError, {
+              phase: 'action_approval_notification',
+              orgId,
+              conversationId,
+              logId: ragResult.actionLog?.logId,
+              actionName: ragResult.actionLog?.actionName,
+            })
           })
 
           const aiMetadata = buildAiResponseMetadata(ragResult, {
@@ -1435,7 +1554,12 @@ async function handleVisitorMessage(socket: TinfizSocket, msg: Record<string, un
           aiMetadata,
         })
       } catch (err) {
-        console.error('[ws] RAG error:', err)
+        logWsError('[ws] RAG error:', err, {
+          phase: 'rag_query',
+          orgId,
+          conversationId,
+          visitorId: socket.visitorId,
+        })
         send(socket, { type: 'typing:stop', source: 'ai', conversationId })
         broadcastToAgents(orgId, { type: 'typing:stop', source: 'ai', conversationId })
         const fallback = "I'm having a little trouble right now. If you'd like, I can connect you with a human agent who can help."
@@ -1813,7 +1937,12 @@ async function handleMessage(socket: TinfizSocket, msg: Record<string, unknown>)
           createdAt: new Date().toISOString(),
         })
       } catch (err) {
-        console.error('[ws] action:approve error:', err)
+        logWsError('[ws] action:approve error:', err, {
+          phase: 'action_approve',
+          orgId: socket.orgId,
+          agentId: socket.agentId,
+          logId,
+        })
       }
 
       break
@@ -1865,7 +1994,12 @@ async function handleMessage(socket: TinfizSocket, msg: Record<string, unknown>)
           createdAt: new Date().toISOString(),
         })
       } catch (err) {
-        console.error('[ws] action:reject error:', err)
+        logWsError('[ws] action:reject error:', err, {
+          phase: 'action_reject',
+          orgId: socket.orgId,
+          agentId: socket.agentId,
+          logId,
+        })
       }
 
       break
@@ -1937,12 +2071,32 @@ export function createWsServer(port: number) {
         try {
           const msg = JSON.parse(raw.toString()) as Record<string, unknown>
           await handleMessage(socket, msg)
-        } catch (e) { console.error('[ws] parse:', e) }
+        } catch (e) {
+          logWsError('[ws] parse:', e, {
+            phase: 'parse_or_handle_message',
+            orgId: socket.orgId,
+            visitorId: socket.visitorId,
+            agentId: socket.agentId,
+            isAgent: socket.isAgent,
+          })
+        }
       })
       socket.on('close', () => removeSocketFromRoom(orgId, socket))
-      socket.on('error', () => socket.terminate())
+      socket.on('error', (error) => {
+        logWsError('[ws] socket error:', error, {
+          phase: 'socket_error',
+          orgId,
+          visitorId,
+          agentId: socket.agentId,
+          isAgent,
+        })
+        socket.terminate()
+      })
     } catch (e) {
-      console.error('[ws] connection setup failed:', e)
+      logWsError('[ws] connection setup failed:', e, {
+        phase: 'connection_setup',
+        url: req.url,
+      })
       socket.close(1011, 'Connection setup failed')
     }
   })

@@ -23,6 +23,7 @@ import { DocsSearchLauncher } from '@/components/docs/DocsSearchLauncher'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { AgentRealtimeProvider } from '@/components/realtime/AgentRealtimeProvider'
 import { RealtimeStatusBanner } from '@/components/launch/RealtimeStatusBanner'
+import { SentryDashboardContext } from '@/components/monitoring/SentryDashboardContext'
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
   const msg = (error?.message ?? '').toLowerCase()
@@ -120,6 +121,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <TooltipProvider delayDuration={0}>
       <OrgProvider org={activeOrgWithRole}>
+        <SentryDashboardContext
+          org={activeOrgWithRole}
+          user={{ id: user.id, email: sidebarUser.email, name: sidebarUser.name }}
+        />
         <AgentRealtimeProvider>
           <SidebarProvider>
             <AppSidebar user={sidebarUser} activeOrg={activeOrgWithRole} />

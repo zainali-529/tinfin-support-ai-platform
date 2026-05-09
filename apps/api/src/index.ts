@@ -1,13 +1,15 @@
 import dotenv from 'dotenv'
 import path from 'path'
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') })
+dotenv.config({ path: path.resolve(process.cwd(), '../../.env') })
 
+import './instrument'
 import express, { type Request, type Response, type NextFunction } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import { createExpressMiddleware } from '@trpc/server/adapters/express'
 import { appRouter } from './trpc/router'
 import { createContext } from './trpc/context'
+import { captureApiException, sentryRequestMiddleware, setupSentryErrorHandler } from './lib/sentry'
 import { createWsServer } from './ws/wsServer'
 import { widgetConfigRoute } from './routes/widget-config.route'
 import { vapiWebhookRoute } from './routes/vapi-webhook.route'
@@ -17,12 +19,14 @@ import { uploadRoute } from './routes/upload.route'
 import { emailInboundRoute } from './routes/email-inbound.route'
 import { whatsappWebhookRoute } from './routes/whatsapp-webhook.route'
 import { actionMockRoute } from './routes/action-mock.route'
+import { sentryTestRoute } from './routes/sentry-test.route'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
 const WS_PORT = Number(process.env.WS_PORT || 3003)
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+app.use(sentryRequestMiddleware)
 
 // ── Custom routes registered BEFORE global express.json ─────────────────────
 
@@ -98,9 +102,31 @@ app.use(express.json())
 
 app.use('/api/voice-preview', voicePreviewRoute)
 app.use('/api/action-mock', actionMockRoute)
-app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }))
+app.use('/api/sentry-test', sentryTestRoute)
+app.use('/trpc', createExpressMiddleware({
+  router: appRouter,
+  createContext,
+  onError({ error, path: trpcPath, type, ctx }) {
+    const actor = ctx as unknown as {
+      user?: { id?: string }
+      userOrgId?: string
+      userRole?: string
+    } | undefined
+
+    captureApiException(error, {
+      surface: 'trpc',
+      path: trpcPath,
+      type,
+      userId: actor?.user?.id,
+      orgId: actor?.userOrgId,
+      role: actor?.userRole,
+    })
+  },
+}))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
+
+setupSentryErrorHandler(app)
 
 app.listen(PORT, () => console.log(`API: http://localhost:${PORT}`))
 createWsServer(WS_PORT)

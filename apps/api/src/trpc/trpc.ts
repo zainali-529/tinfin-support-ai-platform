@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import type { Context } from './context'
 import { getEffectiveTeamPermissions } from '@workspace/types'
 import { getOrgMembershipAccess, toOrgRole } from '../lib/org-permissions'
+import { setSentryActorContext } from '../lib/sentry'
 
 const t = initTRPC.context<Context>().create()
 
@@ -45,6 +46,13 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
 
   const resolvedRole = toOrgRole(membership.role ?? userRecord.role ?? 'agent')
   const resolvedPermissions = membership.permissions ?? getEffectiveTeamPermissions(resolvedRole, null)
+
+  setSentryActorContext({
+    userId: user.id,
+    email: user.email ?? null,
+    orgId: resolvedOrgId,
+    role: resolvedRole,
+  })
 
   return next({
     ctx: {

@@ -4,6 +4,8 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "outDir": "dist",
+    "sourceMap": true,
+    "inlineSources": true,
     "paths": {
       "@workspace/*": [
         "../../packages/*/src"

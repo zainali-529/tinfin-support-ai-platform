@@ -5,20 +5,24 @@
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsc",
-    "start": "node --env-file=../../.env dist/index.js",
+    "start": "node --env-file=../../.env dist/apps/api/src/index.js",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
     "eval:historical": "tsx src/scripts/eval-historical-replay.ts",
     "load:reporting": "tsx src/scripts/load-reporting-dashboard.ts",
     "seed:screenshot-demo": "tsx --env-file=../../.env src/scripts/seed-screenshot-demo.ts",
-    "cleanup:screenshot-demo": "tsx --env-file=../../.env src/scripts/cleanup-screenshot-demo.ts"
+    "cleanup:screenshot-demo": "tsx --env-file=../../.env src/scripts/cleanup-screenshot-demo.ts",
+    "sentry:sourcemaps": "node scripts/upload-sentry-sourcemaps.mjs",
+    "build:sentry": "pnpm run build && pnpm run sentry:sourcemaps"
   },
   "dependencies": {
+    "@sentry/node": "^10.52.0",
+    "@sentry/profiling-node": "^10.52.0",
     "@supabase/supabase-js": "^2.45.0",
+    "@trpc/server": "^11.0.0",
     "@workspace/ai": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/types": "workspace:*",
-    "@trpc/server": "^11.0.0",
     "bullmq": "^5.72.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.0",
@@ -34,12 +38,13 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@workspace/eslint-config": "workspace:*",
-    "@workspace/typescript-config": "workspace:*",
+    "@sentry/cli": "^3.4.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
     "eslint": "^9.39.1",
     "tsx": "^4.16.0",
     "typescript": "5.9.2"
