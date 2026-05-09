@@ -1,6 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "NODE_ENV",
+    "DEMO_REQUEST_WEBHOOK_URL",
+    "DEMO_REQUEST_WEBHOOK_SECRET",
+    "CONTACT_REQUEST_WEBHOOK_URL",
+    "CONTACT_REQUEST_WEBHOOK_SECRET"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

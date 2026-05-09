@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties, type ComponentType } from 'react'
 import { cn } from '@workspace/ui/lib/utils'
 import { PreviewMessageMarkdown } from './PreviewMessageMarkdown'
-import { ArrowLeftIcon, HelpCircleIcon, InboxIcon, MessageCircleIcon, SendIcon, ZapIcon } from 'lucide-react'
+import { ArrowLeftIcon, HelpCircleIcon, InboxIcon, Maximize2Icon, MessageCircleIcon, Minimize2Icon, SendIcon, ZapIcon } from 'lucide-react'
 
 interface WidgetThemeColors {
   backgroundColor: string
@@ -103,6 +103,7 @@ function themeWithFallback(theme: Partial<WidgetThemeColors> | undefined, fallba
 
 export function WidgetPreview({ config }: Props) {
   const [open, setOpen] = useState(true)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState<'inbox' | 'chat' | 'help'>('chat')
   const [systemDark, setSystemDark] = useState(false)
 
@@ -115,8 +116,12 @@ export function WidgetPreview({ config }: Props) {
     : themeWithFallback(config.lightTheme, DEFAULT_LIGHT_THEME)
   const launcherPx = LAUNCHER_PX[config.launcherSize] ?? LAUNCHER_PX.md
   const borderRadius = config.borderRadius ?? 20
-  const widgetWidth = Math.min(config.widgetWidth ?? 380, 340)
-  const widgetHeight = Math.min(config.widgetHeight ?? 580, 390)
+  const compactWidth = Math.max(config.widgetWidth ?? 380, 260)
+  const compactHeight = Math.max(config.widgetHeight ?? 580, 300)
+  const expandedWidth = Math.max(config.expandedWidth ?? 720, compactWidth)
+  const expandedHeight = Math.max(config.expandedHeight ?? 720, compactHeight)
+  const panelTargetWidth = isExpanded ? expandedWidth : compactWidth
+  const panelTargetHeight = isExpanded ? expandedHeight : compactHeight
   const userBubbleColor = config.userBubbleColor || color
   const botName = config.botName || 'AI Assistant'
   const suggestions = (config.suggestions ?? []).slice(0, 3)
@@ -133,6 +138,10 @@ export function WidgetPreview({ config }: Props) {
     query.addEventListener?.('change', sync)
     return () => query.removeEventListener?.('change', sync)
   }, [])
+
+  useEffect(() => {
+    if (!open) setIsExpanded(false)
+  }, [open])
 
   const launcherStyle: CSSProperties = config.position === 'bottom-left'
     ? { bottom: 16, left: 16 }
@@ -185,13 +194,14 @@ export function WidgetPreview({ config }: Props) {
           className="absolute z-40 flex flex-col overflow-hidden border"
           style={{
             ...panelStyle,
-            width: `min(${widgetWidth}px, calc(100% - 32px))`,
-            height: `min(${widgetHeight}px, calc(100% - 106px))`,
+            width: `min(${panelTargetWidth}px, calc(100% - 32px))`,
+            height: `min(${panelTargetHeight}px, calc(100% - 106px))`,
             borderRadius,
             background: activeTheme.surfaceColor,
             borderColor: activeTheme.borderColor,
             color: activeTheme.textColor,
             boxShadow: 'none',
+            transition: 'width 260ms cubic-bezier(0.22, 1, 0.36, 1), height 260ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
           <div className="flex shrink-0 items-center gap-2.5 px-3.5 py-2.5" style={{ background: headerBg }}>
@@ -216,7 +226,18 @@ export function WidgetPreview({ config }: Props) {
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded-full text-white transition-colors hover:bg-white/20"
-              onClick={() => setOpen(false)}
+              onClick={() => setIsExpanded(current => !current)}
+              aria-label={isExpanded ? 'Collapse preview widget' : 'Expand preview widget'}
+            >
+              {isExpanded ? <Minimize2Icon className="h-3.5 w-3.5" /> : <Maximize2Icon className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-white transition-colors hover:bg-white/20"
+              onClick={() => {
+                setOpen(false)
+                setIsExpanded(false)
+              }}
               aria-label="Close preview widget"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

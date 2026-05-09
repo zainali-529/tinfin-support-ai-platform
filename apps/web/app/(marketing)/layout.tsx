@@ -17,6 +17,6 @@ export default function MarketingLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <main>{children}</main>
+  return <main className="marketing-shell">{children}</main>
 }
 

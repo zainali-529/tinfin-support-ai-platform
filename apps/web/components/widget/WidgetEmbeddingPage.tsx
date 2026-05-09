@@ -79,49 +79,49 @@ const PLATFORM_SNIPPET_MAP: Partial<Record<PlatformKey, SnippetKey>> = {
 
 const PLATFORM_STEPS: Partial<Record<PlatformKey, string[]>> = {
   wordpress: [
-    'WordPress admin mein login karein.',
-    'WPCode, Insert Headers and Footers, ya theme footer.php mein Footer/Body End area open karein.',
-    'Universal snippet paste karein, save karein, phir cache/CDN purge karein.',
+    'Log in to your WordPress admin.',
+    'Open WPCode, Insert Headers and Footers, or your theme footer.php Footer/Body End area.',
+    'Paste the universal snippet, save, then purge cache/CDN.',
   ],
   shopify: [
-    'Online Store > Themes > Edit code open karein.',
-    'layout/theme.liquid mein closing body tag se pehle snippet paste karein.',
-    'Agar app embed later banayen to isi script ko app embed block mein move kar sakte hain.',
+    'Open Online Store > Themes > Edit code.',
+    'Paste the snippet before the closing body tag in layout/theme.liquid.',
+    'If you add an app embed later, you can move this script into the app embed block.',
   ],
   webflow: [
-    'Project Settings > Custom Code open karein.',
-    'Footer Code area mein snippet paste karein.',
-    'Save Changes ke baad site publish karein.',
+    'Open Project Settings > Custom Code.',
+    'Paste the snippet in the Footer Code area.',
+    'Save changes and publish the site.',
   ],
   wix: [
-    'Settings > Custom Code open karein.',
-    'Add Custom Code mein snippet paste karein.',
-    'Load on all pages aur Body end select karein.',
+    'Open Settings > Custom Code.',
+    'Paste the snippet in Add Custom Code.',
+    'Select Load on all pages and Body end.',
   ],
   squarespace: [
-    'Settings > Advanced > Code Injection open karein.',
-    'Footer area mein universal snippet paste karein.',
-    'Save karein aur live site verify karein.',
+    'Open Settings > Advanced > Code Injection.',
+    'Paste the universal snippet in the Footer area.',
+    'Save and verify on the live site.',
   ],
   google_tag_manager: [
-    'GTM container mein New Tag create karein.',
-    'Tag Type Custom HTML select karein aur GTM snippet paste karein.',
-    'Trigger All Pages lagayen, Preview test karein, phir Publish karein.',
+    'Create a New Tag in your GTM container.',
+    'Select Tag Type: Custom HTML and paste the GTM snippet.',
+    'Use the All Pages trigger, test in Preview, then Publish.',
   ],
   nextjs: [
-    'app/layout.tsx ya root layout mein next/script import karein.',
-    'Script component ko body ke andar children ke baad place karein.',
-    'Logged-in user change par Tinfiz("update") call karein.',
+    'Import next/script in app/layout.tsx or your root layout.',
+    'Place the Script component inside body after children.',
+    'Call Tinfiz("update") when logged-in user details change.',
   ],
   react: [
-    'App shell/root component mein loader useEffect add karein.',
-    'Route change ya login change par Tinfiz("update") call karein.',
-    'Logout par Tinfiz("shutdown") call karna na bhoolen.',
+    'Add the loader useEffect in your app shell/root component.',
+    'Call Tinfiz("update") on route changes or login state changes.',
+    'Do not forget to call Tinfiz("shutdown") on logout.',
   ],
   custom: [
-    'Universal snippet ko closing body tag se pehle paste karein.',
-    'Deploy/publish ke baad verifier run karein.',
-    'Console se Tinfiz("show") run karke widget open test karein.',
+    'Paste the universal snippet before the closing body tag.',
+    'Run verification after deploy/publish.',
+    'Run Tinfiz("show") in console to test widget open behavior.',
   ],
 }
 
@@ -137,14 +137,19 @@ function CodePanel({
   onCopy: () => void
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
-        <span className="font-mono text-[11px] uppercase tracking-wide text-zinc-400">{lang}</span>
-        <Button variant="ghost" size="icon-sm" onClick={onCopy} className="text-zinc-300 hover:text-white">
+    <div className="overflow-hidden rounded-xl border border-border bg-muted/25 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex items-center justify-between border-b border-border bg-background/45 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+        <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground dark:text-zinc-400">{lang}</span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onCopy}
+          className="text-muted-foreground hover:text-foreground dark:text-zinc-300 dark:hover:text-white"
+        >
           {copied ? <CheckIcon className="size-3.5 text-emerald-400" /> : <CopyIcon className="size-3.5" />}
         </Button>
       </div>
-      <pre className="max-h-[430px] overflow-auto px-4 py-3 text-xs leading-relaxed text-zinc-100">{code}</pre>
+      <pre className="max-h-[430px] overflow-auto px-4 py-3 text-xs leading-relaxed text-foreground dark:text-zinc-100">{code}</pre>
     </div>
   )
 }
@@ -179,6 +184,74 @@ function InstallStatusBadge({ status }: { status?: string }) {
 function normalizeConfidence(value: number | undefined) {
   if (!value) return '45%'
   return `${Math.round(value * 100)}%`
+}
+
+function ProductionSnippetsCard({
+  active,
+  snippets,
+  copiedKey,
+  onActiveChange,
+  onCopy,
+}: {
+  active: SnippetKey
+  snippets: Record<SnippetKey, string>
+  copiedKey: string | null
+  onActiveChange: (value: SnippetKey) => void
+  onCopy: (key: string, value: string) => void
+}) {
+  return (
+    <Card className="shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Code2Icon className="size-4" />
+          Production Snippets
+        </CardTitle>
+        <CardDescription>
+          Ready snippets for basic embed, logged-in identity, and SPA runtime commands.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Tabs value={active} onValueChange={(value) => onActiveChange(value as SnippetKey)}>
+          <TabsList variant="line" className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-none p-0">
+            {SNIPPETS.map((item) => (
+              <TabsTrigger key={item.key} value={item.key} className="h-8 flex-none px-2.5 text-xs">
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {SNIPPETS.map((item) => (
+            <TabsContent key={item.key} value={item.key} className="mt-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium">{item.label}</div>
+                  <div className="text-xs text-muted-foreground">{item.hint}</div>
+                </div>
+                <CopyButton
+                  text={snippets[item.key]}
+                  id={`snippet-${item.key}`}
+                  copiedKey={copiedKey}
+                  onCopy={onCopy}
+                />
+              </div>
+              <CodePanel
+                lang={item.lang}
+                code={snippets[item.key]}
+                copied={copiedKey === `snippet-${item.key}`}
+                onCopy={() => onCopy(`snippet-${item.key}`, snippets[item.key])}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
+
+        <Alert>
+          <SparklesIcon className="size-4" />
+          <AlertDescription>
+            JS API commands: <code>Tinfiz('boot')</code>, <code>Tinfiz('update')</code>, <code>Tinfiz('show')</code>, <code>Tinfiz('hide')</code>, <code>Tinfiz('openNewMessage')</code>, and <code>Tinfiz('shutdown')</code>.
+          </AlertDescription>
+        </Alert>
+      </CardContent>
+    </Card>
+  )
 }
 
 interface Props {
@@ -289,7 +362,15 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+      <ProductionSnippetsCard
+        active={active}
+        snippets={snippets}
+        copiedKey={copiedKey}
+        onActiveChange={setActive}
+        onCopy={handleCopy}
+      />
+
+      <div className="grid grid-cols-1 gap-6">
         <Card className="shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -297,7 +378,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
               Smart Installer
             </CardTitle>
             <CardDescription>
-              Website URL add karein. System platform detect karega aur install verify bhi karega.
+              Enter your website URL. The system detects the platform and verifies the installation.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -388,58 +469,6 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
             )}
           </CardContent>
         </Card>
-
-        <Card className="shadow-none">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Code2Icon className="size-4" />
-              Production Snippets
-            </CardTitle>
-            <CardDescription>
-              Basic embed se lekar logged-in identity aur SPA commands tak ready snippets.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Tabs value={active} onValueChange={(value) => setActive(value as SnippetKey)}>
-              <TabsList variant="line" className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-none p-0">
-                {SNIPPETS.map((item) => (
-                  <TabsTrigger key={item.key} value={item.key} className="h-8 flex-none px-2.5 text-xs">
-                    {item.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {SNIPPETS.map((item) => (
-                <TabsContent key={item.key} value={item.key} className="mt-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-medium">{item.label}</div>
-                      <div className="text-xs text-muted-foreground">{item.hint}</div>
-                    </div>
-                    <CopyButton
-                      text={snippets[item.key]}
-                      id={`snippet-${item.key}`}
-                      copiedKey={copiedKey}
-                      onCopy={handleCopy}
-                    />
-                  </div>
-                  <CodePanel
-                    lang={item.lang}
-                    code={snippets[item.key]}
-                    copied={copiedKey === `snippet-${item.key}`}
-                    onCopy={() => handleCopy(`snippet-${item.key}`, snippets[item.key])}
-                  />
-                </TabsContent>
-              ))}
-            </Tabs>
-
-            <Alert>
-              <SparklesIcon className="size-4" />
-              <AlertDescription>
-                JS API commands: <code>Tinfiz('boot')</code>, <code>Tinfiz('update')</code>, <code>Tinfiz('show')</code>, <code>Tinfiz('hide')</code>, <code>Tinfiz('openNewMessage')</code>, and <code>Tinfiz('shutdown')</code>.
-              </AlertDescription>
-            </Alert>
-          </CardContent>
-        </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_0.9fr]">
@@ -450,7 +479,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
               Install Verification
             </CardTitle>
             <CardDescription>
-              Publish ke baad yahan se confirm karein ke right org ID ke sath script live hai.
+              After publishing, confirm the script is live with the correct organization ID.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -495,7 +524,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
                 <ShieldCheckIcon className="mx-auto size-7 text-muted-foreground" />
                 <div className="mt-2 text-sm font-medium">No verification run yet</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Website URL enter karke Verify press karein. GTM unpublished tags source HTML mein visible nahi hotay, is liye GTM Preview bhi test karein.
+                  Enter a website URL and click Verify. Unpublished GTM tags are not visible in source HTML, so also test with GTM Preview mode.
                 </p>
               </div>
             )}
@@ -509,7 +538,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
               QA Console Tests
             </CardTitle>
             <CardDescription>
-              Install ke baad browser console mein ye commands run karke runtime API verify karein.
+              Run these commands in browser console after install to validate runtime API behavior.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -523,7 +552,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
             <div className="rounded-xl border p-4">
               <div className="text-sm font-medium">Send to developer</div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Non-technical customer ke liye yeh brief developer ko forward kar sakte hain.
+                Forward this brief to a developer for faster setup when needed.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <CopyButton text={developerBrief} id="developer-brief" copiedKey={copiedKey} onCopy={handleCopy} />
@@ -538,7 +567,7 @@ export function WidgetEmbeddingPage({ orgId }: Props) {
             <Alert>
               <RefreshCwIcon className="size-4" />
               <AlertDescription>
-                SPA apps mein logout par <code>Tinfiz('shutdown')</code> zaroor call karein, warna previous logged-in user ka widget context browser mein reh sakta hai.
+                In SPA apps, always call <code>Tinfiz('shutdown')</code> on logout to prevent previous user context from persisting in browser state.
               </AlertDescription>
             </Alert>
           </CardContent>

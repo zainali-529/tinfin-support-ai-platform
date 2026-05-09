@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
@@ -18,7 +19,7 @@ type GridBlock = {
 }
 
 type ProductShot = {
-  src: string
+  image: string
   alt: string
   className: string
   cardClassName?: string
@@ -41,28 +42,32 @@ const GRID_BLOCKS: GridBlock[] = [
 
 const PRODUCT_SHOTS: ProductShot[] = [
   {
-    src: "/marketing/images/light/inbox.png",
+    image: "inbox.png",
     alt: "Tinfiz unified inbox interface",
     className:
-      "left-0 top-[15%] z-10 w-[52rem] max-w-[52vw] -translate-x-[18%] rotate-[-1.2deg] opacity-80 sm:top-[11%] lg:opacity-[0.88]",
+      "left-0 top-[24%] z-10 w-[70rem] max-w-[66vw] -translate-x-[27%] rotate-[-1.2deg] opacity-80 sm:top-[20%] lg:opacity-[0.9]",
     delay: "180ms",
   },
   {
-    src: "/marketing/images/light/analytics.png",
+    image: "analytics.png",
     alt: "Tinfiz analytics reporting interface",
     className:
-      "right-0 top-[15%] z-10 w-[52rem] max-w-[52vw] translate-x-[18%] rotate-[1.2deg] opacity-80 sm:top-[11%] lg:opacity-[0.88]",
+      "right-0 top-[24%] z-10 w-[70rem] max-w-[66vw] translate-x-[27%] rotate-[1.2deg] opacity-80 sm:top-[20%] lg:opacity-[0.9]",
     delay: "260ms",
   },
   {
-    src: "/marketing/images/light/dashboard.png",
+    image: "dashboard.png",
     alt: "Tinfiz dashboard overview interface",
     className:
-      "left-1/2 top-0 z-20 w-[48rem] max-w-[76vw] -translate-x-1/2 sm:max-w-[68vw] lg:max-w-[49rem]",
+      "left-1/2 top-[4%] z-20 w-[72rem] max-w-[94vw] -translate-x-1/2 sm:max-w-[86vw] lg:max-w-[72rem]",
     cardClassName: "[filter:drop-shadow(0_34px_62px_rgba(15,23,42,0.22))_drop-shadow(0_14px_24px_rgba(15,23,42,0.12))]",
     delay: "90ms",
   },
 ]
+
+function heroImageSrc(theme: "light" | "dark", image: string) {
+  return `/marketing/images/${theme}/${image}`
+}
 
 function blockBackground(block: GridBlock) {
   if (block.tone === "muted") {
@@ -82,15 +87,44 @@ function ProductScreenshot({ shot }: { shot: ProductShot }) {
         )}
         style={{ animationDelay: shot.delay }}
       >
-        <img
-          src={shot.src}
-          alt={shot.alt}
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-          className={cn("h-auto w-full select-none object-contain", shot.imageClassName)}
-        />
+        <HeroImageStack shot={shot} />
       </div>
+    </div>
+  )
+}
+
+function HeroImageStack({ shot }: { shot: ProductShot }) {
+  const [darkFailed, setDarkFailed] = useState(false)
+
+  return (
+    <div className={cn("relative aspect-[1902/941] w-full overflow-hidden rounded-[1rem]", shot.imageClassName)}>
+      <img
+        src={heroImageSrc("light", shot.image)}
+        alt={shot.alt}
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+        className={cn(
+          "absolute inset-0 size-full select-none object-cover object-left-top opacity-100 transition-opacity duration-500",
+          !darkFailed && "dark:opacity-0"
+        )}
+      />
+      <img
+        src={heroImageSrc("dark", shot.image)}
+        alt=""
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 size-full select-none object-cover object-left-top opacity-0 transition-opacity duration-500",
+          !darkFailed && "dark:opacity-100"
+        )}
+        onError={(event) => {
+          setDarkFailed(true)
+          event.currentTarget.style.display = "none"
+        }}
+      />
     </div>
   )
 }
@@ -101,6 +135,9 @@ export default function HeroSection() {
       <link rel="preload" as="image" href="/marketing/images/light/dashboard.png" />
       <link rel="preload" as="image" href="/marketing/images/light/inbox.png" />
       <link rel="preload" as="image" href="/marketing/images/light/analytics.png" />
+      <link rel="preload" as="image" href="/marketing/images/dark/dashboard.png" />
+      <link rel="preload" as="image" href="/marketing/images/dark/inbox.png" />
+      <link rel="preload" as="image" href="/marketing/images/dark/analytics.png" />
 
       <style>{`
         @keyframes hero-content-reveal {
@@ -221,7 +258,7 @@ export default function HeroSection() {
           </p>
         </div>
 
-        <div className="relative z-10 mt-12 h-[310px] w-full max-w-[88rem] sm:h-[390px] md:mt-14 md:h-[470px] lg:h-[545px] xl:h-[580px]">
+        <div className="relative z-10 mt-12 h-[360px] w-full max-w-[96rem] sm:h-[460px] md:mt-14 md:h-[560px] lg:h-[650px] xl:h-[700px]">
           <div
             aria-hidden="true"
             className="absolute inset-x-0 bottom-0 mx-auto h-[68%] max-w-6xl rounded-[999px] bg-primary/10 blur-3xl dark:bg-primary/[0.08]"
@@ -230,7 +267,7 @@ export default function HeroSection() {
           <div className="absolute inset-x-0 bottom-0 h-px bg-border/70" />
 
           {PRODUCT_SHOTS.map((shot) => (
-            <ProductScreenshot key={shot.src} shot={shot} />
+            <ProductScreenshot key={shot.image} shot={shot} />
           ))}
         </div>
       </div>
