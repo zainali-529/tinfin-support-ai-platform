@@ -5,6 +5,9 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "env:check": "node scripts/validate-env.mjs",
+    "env:check:staging": "node scripts/validate-env.mjs --mode=staging",
+    "env:check:production": "node scripts/validate-env.mjs --mode=production",
     "lint": "turbo lint",
     "format": "turbo format",
     "typecheck": "turbo typecheck"
