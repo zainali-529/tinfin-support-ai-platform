@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { httpBatchLink } from '@trpc/client'
+import { httpBatchLink, httpLink, splitLink } from '@trpc/client'
 import * as Sentry from '@sentry/nextjs'
 import { trpc } from '@/lib/trpc'
 import { createClient } from '@/lib/supabase'
@@ -10,6 +10,24 @@ import { ThemeProvider } from 'next-themes'
 import { TooltipProvider } from '@workspace/ui/components/tooltip'
 import { Toaster, toast } from '@workspace/ui/components/sonner'
 import { normalizeLaunchError } from '@/lib/launch-errors'
+
+const UNBATCHED_TRPC_PATHS = new Set([
+  'billing.getPlans',
+  'notifications.getUnreadCount',
+  'usage.getUsage',
+])
+
+function shouldUnbatchTrpcPath(path: string): boolean {
+  return path.startsWith('dashboard.') || UNBATCHED_TRPC_PATHS.has(path)
+}
+
+async function authHeaders() {
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token
+    ? { Authorization: `Bearer ${session.access_token}` }
+    : {}
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -88,15 +106,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [
-        httpBatchLink({
-          url: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/trpc`,
-          async headers() {
-            const supabase = createClient()
-            const { data: { session } } = await supabase.auth.getSession()
-            return session?.access_token
-              ? { Authorization: `Bearer ${session.access_token}` }
-              : {}
+        splitLink({
+          condition(operation) {
+            return shouldUnbatchTrpcPath(operation.path)
           },
+          true: httpLink({
+            url: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/trpc`,
+            headers: authHeaders,
+          }),
+          false: httpBatchLink({
+            url: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/trpc`,
+            headers: authHeaders,
+          }),
         }),
       ],
     })

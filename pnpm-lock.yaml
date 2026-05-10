@@ -80,6 +80,9 @@ importers:
       pino-pretty:
         specifier: ^11.2.0
         version: 11.3.0
+      postgres:
+        specifier: ^3.4.0
+        version: 3.4.9
       stripe:
         specifier: ^16.0.0
         version: 16.12.0

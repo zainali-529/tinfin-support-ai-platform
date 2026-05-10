@@ -99,6 +99,13 @@
       "when": 1778745600000,
       "tag": "0014_default_sla_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778832000000,
+      "tag": "0015_dashboard_performance_indexes",
+      "breakpoints": true
     }
   ]
 }

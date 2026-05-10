@@ -6,6 +6,7 @@
     "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsc",
     "start": "node --env-file=../../.env dist/apps/api/src/index.js",
+    "start:cloud": "node dist/apps/api/src/index.js",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
     "eval:historical": "tsx src/scripts/eval-historical-replay.ts",
@@ -33,6 +34,7 @@
     "openai": "^4.52.0",
     "pino": "^9.3.0",
     "pino-pretty": "^11.2.0",
+    "postgres": "^3.4.0",
     "stripe": "^16.0.0",
     "ws": "^8.20.0",
     "zod": "^3.23.0"

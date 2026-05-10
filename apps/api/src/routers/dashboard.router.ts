@@ -1,10 +1,10 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { getApiDb, sql } from '../lib/db'
 import { getPlan } from '../lib/plans'
 import { getOrgSubscription } from '../lib/subscriptions'
 import { protectedProcedure, router } from '../trpc/trpc'
 import { requirePermissionFromContext } from '../lib/org-permissions'
-import { deriveInboxSla } from '../lib/inbox-metrics'
 
 type DashboardPeriod = 'today' | '7d' | '30d'
 
@@ -24,6 +24,49 @@ interface ContactJoin {
   name: string | null
   email: string | null
   phone: string | null
+}
+
+interface DashboardOverviewStatsRow {
+  active_conversations: unknown
+  pending_conversations: unknown
+  total_contacts: unknown
+  current_contacts: unknown
+  prev_contacts: unknown
+  current_resolved: unknown
+  prev_resolved: unknown
+  current_conversations: unknown
+  current_ai_messages: unknown
+  current_agent_messages: unknown
+  prev_ai_messages: unknown
+  prev_agent_messages: unknown
+  queue_bot: unknown
+  queue_pending: unknown
+  queue_open: unknown
+  queue_unassigned: unknown
+  queue_assigned: unknown
+  sla_at_risk: unknown
+  sla_breached: unknown
+  channel_chat: unknown
+  channel_email: unknown
+  channel_whatsapp: unknown
+  channel_voice: unknown
+  current_calls: unknown
+  active_calls: unknown
+  knowledge_base_count: unknown
+  active_ai_actions: unknown
+  current_action_logs: unknown
+  current_successful_action_logs: unknown
+}
+
+interface RecentConversationRow {
+  id: string
+  status: string
+  channel: string
+  started_at: string
+  assigned_to: string | null
+  contact_name: string | null
+  contact_value: string | null
+  preview_text: string | null
 }
 
 function startOfDay(date: Date): Date {
@@ -72,8 +115,14 @@ function getPeriodBounds(period: DashboardPeriod): {
   }
 }
 
-function toCount(value: { count: number | null } | null): number {
-  return value?.count ?? 0
+function toNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
 }
 
 function percentChange(current: number, previous: number): number | null {
@@ -113,6 +162,10 @@ function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function hasRows(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0
+}
+
 export const dashboardRouter = router({
   getHomeOverview: protectedProcedure
     .input(periodSchema)
@@ -123,207 +176,212 @@ export const dashboardRouter = router({
       const { currentStartIso, currentEndIso, prevStartIso } =
         getPeriodBounds(period)
 
-      const [
-        openConversationsResult,
-        pendingConversationsResult,
-        totalContactsResult,
-        currentContactsResult,
-        prevContactsResult,
-        currentResolvedResult,
-        prevResolvedResult,
-        currentConversationsResult,
-        currentAiMessagesResult,
-        currentAgentMessagesResult,
-        prevAiMessagesResult,
-        prevAgentMessagesResult,
-        activeConversationsDetailResult,
-        currentCallsResult,
-        activeCallsResult,
-        knowledgeBaseResult,
-        activeAiActionsResult,
-        currentActionLogsResult,
-        currentSuccessfulActionLogsResult,
-      ] = await Promise.all([
-        ctx.supabase
-          .from('conversations')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .in('status', ['bot', 'pending', 'open']),
+      let stats: DashboardOverviewStatsRow | undefined
 
-        ctx.supabase
-          .from('conversations')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('status', 'pending'),
-
-        ctx.supabase
-          .from('contacts')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId),
-
-        ctx.supabase
-          .from('contacts')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .gte('created_at', currentStartIso)
-          .lt('created_at', currentEndIso),
-
-        ctx.supabase
-          .from('contacts')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .gte('created_at', prevStartIso)
-          .lt('created_at', currentStartIso),
-
-        ctx.supabase
-          .from('conversations')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .in('status', ['resolved', 'closed'])
-          .gte('started_at', currentStartIso)
-          .lt('started_at', currentEndIso),
-
-        ctx.supabase
-          .from('conversations')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .in('status', ['resolved', 'closed'])
-          .gte('started_at', prevStartIso)
-          .lt('started_at', currentStartIso),
-
-        ctx.supabase
-          .from('conversations')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .gte('started_at', currentStartIso)
-          .lt('started_at', currentEndIso),
-
-        ctx.supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('role', 'assistant')
-          .gte('created_at', currentStartIso)
-          .lt('created_at', currentEndIso),
-
-        ctx.supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('role', 'agent')
-          .gte('created_at', currentStartIso)
-          .lt('created_at', currentEndIso),
-
-        ctx.supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('role', 'assistant')
-          .gte('created_at', prevStartIso)
-          .lt('created_at', currentStartIso),
-
-        ctx.supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('role', 'agent')
-          .gte('created_at', prevStartIso)
-          .lt('created_at', currentStartIso),
-
-        ctx.supabase
-          .from('conversations')
-          .select('id,status,queue_state,channel,assigned_to,started_at,queue_entered_at,resolved_at,first_response_due_at,next_response_due_at,resolution_due_at,first_response_at,last_customer_message_at,last_agent_reply_at')
-          .eq('org_id', orgId)
-          .in('status', ['bot', 'pending', 'open'])
-          .limit(1000),
-
-        ctx.supabase
-          .from('calls')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .gte('created_at', currentStartIso)
-          .lt('created_at', currentEndIso),
-
-        ctx.supabase
-          .from('calls')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .in('status', ['created', 'queued', 'ringing', 'in-progress', 'active', 'started']),
-
-        ctx.supabase
-          .from('knowledge_bases')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId),
-
-        ctx.supabase
-          .from('ai_actions')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('is_active', true),
-
-        ctx.supabase
-          .from('ai_action_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .gte('created_at', currentStartIso)
-          .lt('created_at', currentEndIso),
-
-        ctx.supabase
-          .from('ai_action_logs')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .eq('status', 'success')
-          .gte('created_at', currentStartIso)
-          .lt('created_at', currentEndIso),
-      ])
-
-      const queryErrors = [
-        openConversationsResult.error,
-        pendingConversationsResult.error,
-        totalContactsResult.error,
-        currentContactsResult.error,
-        prevContactsResult.error,
-        currentResolvedResult.error,
-        prevResolvedResult.error,
-        currentConversationsResult.error,
-        currentAiMessagesResult.error,
-        currentAgentMessagesResult.error,
-        prevAiMessagesResult.error,
-        prevAgentMessagesResult.error,
-        activeConversationsDetailResult.error,
-        currentCallsResult.error,
-        activeCallsResult.error,
-        knowledgeBaseResult.error,
-        activeAiActionsResult.error,
-        currentActionLogsResult.error,
-        currentSuccessfulActionLogsResult.error,
-      ].filter(Boolean)
-
-      if (queryErrors.length > 0) {
+      try {
+        const rows = await getApiDb().execute(sql<DashboardOverviewStatsRow>`
+          WITH params AS (
+            SELECT
+              CAST(${orgId} AS uuid) AS org_id,
+              CAST(${currentStartIso} AS timestamptz) AS current_start,
+              CAST(${currentEndIso} AS timestamptz) AS current_end,
+              CAST(${prevStartIso} AS timestamptz) AS prev_start,
+              now() AS now_at
+          ),
+          conversation_scope AS (
+            SELECT
+              c.*,
+              CASE
+                WHEN c.status IN ('pending', 'open') AND c.first_response_at IS NULL
+                  THEN c.first_response_due_at
+                WHEN c.status IN ('pending', 'open')
+                  AND c.first_response_at IS NOT NULL
+                  AND c.last_customer_message_at IS NOT NULL
+                  AND (
+                    c.last_agent_reply_at IS NULL
+                    OR c.last_customer_message_at > c.last_agent_reply_at
+                  )
+                  THEN COALESCE(c.next_response_due_at, c.first_response_due_at)
+                ELSE NULL
+              END AS live_sla_target_at
+            FROM public.conversations c
+            JOIN params p ON c.org_id = p.org_id
+            WHERE c.status IN ('bot', 'pending', 'open')
+              OR c.started_at >= p.prev_start
+          ),
+          conversation_stats AS (
+            SELECT
+              COUNT(*) FILTER (WHERE status IN ('bot', 'pending', 'open')) AS active_conversations,
+              COUNT(*) FILTER (WHERE status = 'pending') AS pending_conversations,
+              COUNT(*) FILTER (
+                WHERE status IN ('resolved', 'closed')
+                  AND started_at >= p.current_start
+                  AND started_at < p.current_end
+              ) AS current_resolved,
+              COUNT(*) FILTER (
+                WHERE status IN ('resolved', 'closed')
+                  AND started_at >= p.prev_start
+                  AND started_at < p.current_start
+              ) AS prev_resolved,
+              COUNT(*) FILTER (
+                WHERE started_at >= p.current_start
+                  AND started_at < p.current_end
+              ) AS current_conversations,
+              COUNT(*) FILTER (WHERE status = 'bot') AS queue_bot,
+              COUNT(*) FILTER (WHERE status = 'pending') AS queue_pending,
+              COUNT(*) FILTER (WHERE status = 'open') AS queue_open,
+              COUNT(*) FILTER (
+                WHERE status IN ('bot', 'pending', 'open') AND assigned_to IS NULL
+              ) AS queue_unassigned,
+              COUNT(*) FILTER (
+                WHERE status IN ('bot', 'pending', 'open') AND assigned_to IS NOT NULL
+              ) AS queue_assigned,
+              COUNT(*) FILTER (
+                WHERE live_sla_target_at IS NOT NULL
+                  AND live_sla_target_at <= p.now_at
+              ) AS sla_breached,
+              COUNT(*) FILTER (
+                WHERE live_sla_target_at IS NOT NULL
+                  AND live_sla_target_at > p.now_at
+                  AND live_sla_target_at <= p.now_at + interval '5 minutes'
+              ) AS sla_at_risk,
+              COUNT(*) FILTER (
+                WHERE status IN ('bot', 'pending', 'open')
+                  AND COALESCE(NULLIF(channel, ''), 'chat') NOT IN ('email', 'whatsapp', 'voice')
+              ) AS channel_chat,
+              COUNT(*) FILTER (
+                WHERE status IN ('bot', 'pending', 'open') AND channel = 'email'
+              ) AS channel_email,
+              COUNT(*) FILTER (
+                WHERE status IN ('bot', 'pending', 'open') AND channel = 'whatsapp'
+              ) AS channel_whatsapp,
+              COUNT(*) FILTER (
+                WHERE status IN ('bot', 'pending', 'open') AND channel = 'voice'
+              ) AS channel_voice
+            FROM conversation_scope
+            CROSS JOIN params p
+          ),
+          contact_stats AS (
+            SELECT
+              COUNT(*) AS total_contacts,
+              COUNT(*) FILTER (
+                WHERE c.created_at >= p.current_start AND c.created_at < p.current_end
+              ) AS current_contacts,
+              COUNT(*) FILTER (
+                WHERE c.created_at >= p.prev_start AND c.created_at < p.current_start
+              ) AS prev_contacts
+            FROM public.contacts c
+            CROSS JOIN params p
+            WHERE c.org_id = p.org_id
+          ),
+          message_stats AS (
+            SELECT
+              COUNT(*) FILTER (
+                WHERE role = 'assistant'
+                  AND created_at >= p.current_start
+                  AND created_at < p.current_end
+              ) AS current_ai_messages,
+              COUNT(*) FILTER (
+                WHERE role = 'agent'
+                  AND created_at >= p.current_start
+                  AND created_at < p.current_end
+              ) AS current_agent_messages,
+              COUNT(*) FILTER (
+                WHERE role = 'assistant'
+                  AND created_at >= p.prev_start
+                  AND created_at < p.current_start
+              ) AS prev_ai_messages,
+              COUNT(*) FILTER (
+                WHERE role = 'agent'
+                  AND created_at >= p.prev_start
+                  AND created_at < p.current_start
+              ) AS prev_agent_messages
+            FROM public.messages m
+            CROSS JOIN params p
+            WHERE m.org_id = p.org_id
+              AND m.created_at >= p.prev_start
+              AND m.created_at < p.current_end
+          ),
+          call_stats AS (
+            SELECT
+              COUNT(*) FILTER (
+                WHERE created_at >= p.current_start AND created_at < p.current_end
+              ) AS current_calls,
+              COUNT(*) FILTER (
+                WHERE status IN ('created', 'queued', 'ringing', 'in-progress', 'active', 'started')
+              ) AS active_calls
+            FROM public.calls c
+            CROSS JOIN params p
+            WHERE c.org_id = p.org_id
+          ),
+          kb_stats AS (
+            SELECT COUNT(*) AS knowledge_base_count
+            FROM public.knowledge_bases kb
+            CROSS JOIN params p
+            WHERE kb.org_id = p.org_id
+          ),
+          action_stats AS (
+            SELECT COUNT(*) AS active_ai_actions
+            FROM public.ai_actions a
+            CROSS JOIN params p
+            WHERE a.org_id = p.org_id AND a.is_active = true
+          ),
+          action_log_stats AS (
+            SELECT
+              COUNT(*) AS current_action_logs,
+              COUNT(*) FILTER (WHERE status = 'success') AS current_successful_action_logs
+            FROM public.ai_action_logs l
+            CROSS JOIN params p
+            WHERE l.org_id = p.org_id
+              AND l.created_at >= p.current_start
+              AND l.created_at < p.current_end
+          )
+          SELECT *
+          FROM conversation_stats,
+            contact_stats,
+            message_stats,
+            call_stats,
+            kb_stats,
+            action_stats,
+            action_log_stats
+        `)
+        stats = (rows as unknown as DashboardOverviewStatsRow[])[0]
+      } catch (error) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to load dashboard overview: ${queryErrors[0]?.message ?? 'unknown error'}`,
+          message: `Failed to load dashboard overview: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
         })
       }
 
-      const openConversations = toCount(openConversationsResult)
-      const pendingConversations = toCount(pendingConversationsResult)
-      const totalContacts = toCount(totalContactsResult)
-      const currentContacts = toCount(currentContactsResult)
-      const prevContacts = toCount(prevContactsResult)
-      const currentResolved = toCount(currentResolvedResult)
-      const prevResolved = toCount(prevResolvedResult)
-      const currentConversations = toCount(currentConversationsResult)
-      const currentAiMessages = toCount(currentAiMessagesResult)
-      const currentAgentMessages = toCount(currentAgentMessagesResult)
-      const prevAiMessages = toCount(prevAiMessagesResult)
-      const prevAgentMessages = toCount(prevAgentMessagesResult)
-      const currentCalls = toCount(currentCallsResult)
-      const activeCalls = toCount(activeCallsResult)
-      const knowledgeBaseCount = toCount(knowledgeBaseResult)
-      const activeAiActions = toCount(activeAiActionsResult)
-      const currentActionLogs = toCount(currentActionLogsResult)
-      const currentSuccessfulActionLogs = toCount(currentSuccessfulActionLogsResult)
+      if (!stats) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to load dashboard overview: empty result',
+        })
+      }
+
+      const openConversations = toNumber(stats.active_conversations)
+      const pendingConversations = toNumber(stats.pending_conversations)
+      const totalContacts = toNumber(stats.total_contacts)
+      const currentContacts = toNumber(stats.current_contacts)
+      const prevContacts = toNumber(stats.prev_contacts)
+      const currentResolved = toNumber(stats.current_resolved)
+      const prevResolved = toNumber(stats.prev_resolved)
+      const currentConversations = toNumber(stats.current_conversations)
+      const currentAiMessages = toNumber(stats.current_ai_messages)
+      const currentAgentMessages = toNumber(stats.current_agent_messages)
+      const prevAiMessages = toNumber(stats.prev_ai_messages)
+      const prevAgentMessages = toNumber(stats.prev_agent_messages)
+      const currentCalls = toNumber(stats.current_calls)
+      const activeCalls = toNumber(stats.active_calls)
+      const knowledgeBaseCount = toNumber(stats.knowledge_base_count)
+      const activeAiActions = toNumber(stats.active_ai_actions)
+      const currentActionLogs = toNumber(stats.current_action_logs)
+      const currentSuccessfulActionLogs = toNumber(
+        stats.current_successful_action_logs
+      )
 
       const currentHandledTotal = currentAiMessages + currentAgentMessages
       const prevHandledTotal = prevAiMessages + prevAgentMessages
@@ -345,59 +403,20 @@ export const dashboardRouter = router({
           ? Math.round((currentSuccessfulActionLogs / currentActionLogs) * 100)
           : 0
 
-      const activeConversationRows =
-        (activeConversationsDetailResult.data as Array<{
-          id: string
-          status: string
-          queue_state: string | null
-          channel: string | null
-          assigned_to: string | null
-          started_at: string | null
-          queue_entered_at: string | null
-          resolved_at: string | null
-          first_response_due_at: string | null
-          next_response_due_at: string | null
-          resolution_due_at: string | null
-          first_response_at: string | null
-          last_customer_message_at: string | null
-          last_agent_reply_at: string | null
-        }> | null) ?? []
-
-      const now = new Date()
       const queueBreakdown = {
-        bot: 0,
-        pending: 0,
-        open: 0,
-        unassigned: 0,
-        assigned: 0,
-        slaAtRisk: 0,
-        slaBreached: 0,
+        bot: toNumber(stats.queue_bot),
+        pending: toNumber(stats.queue_pending),
+        open: toNumber(stats.queue_open),
+        unassigned: toNumber(stats.queue_unassigned),
+        assigned: toNumber(stats.queue_assigned),
+        slaAtRisk: toNumber(stats.sla_at_risk),
+        slaBreached: toNumber(stats.sla_breached),
       }
       const channelBreakdown = {
-        chat: 0,
-        email: 0,
-        whatsapp: 0,
-        voice: 0,
-      }
-
-      for (const row of activeConversationRows) {
-        if (row.status === 'bot') queueBreakdown.bot += 1
-        if (row.status === 'pending') queueBreakdown.pending += 1
-        if (row.status === 'open') queueBreakdown.open += 1
-        if (row.assigned_to) queueBreakdown.assigned += 1
-        else queueBreakdown.unassigned += 1
-
-        const channel = row.channel === 'email' || row.channel === 'whatsapp' || row.channel === 'voice'
-          ? row.channel
-          : 'chat'
-        channelBreakdown[channel] += 1
-
-        const sla = deriveInboxSla(row, now.getTime())
-        if (sla.slaState === 'breached' && sla.slaIsLive) {
-          queueBreakdown.slaBreached += 1
-        } else if (sla.slaState === 'at_risk' && sla.slaIsLive) {
-          queueBreakdown.slaAtRisk += 1
-        }
+        chat: toNumber(stats.channel_chat),
+        email: toNumber(stats.channel_email),
+        whatsapp: toNumber(stats.channel_whatsapp),
+        voice: toNumber(stats.channel_voice),
       }
 
       return {
@@ -425,7 +444,7 @@ export const dashboardRouter = router({
           aiActionSuccessRate: clampPercent(actionSuccessRate),
         },
         queue: {
-          totalActive: activeConversationRows.length,
+          totalActive: openConversations,
           ...queueBreakdown,
         },
         channels: channelBreakdown,
@@ -444,117 +463,68 @@ export const dashboardRouter = router({
       requirePermissionFromContext(ctx, 'dashboard', 'Dashboard access is required.')
       const limit = input?.limit ?? 6
 
-      const conversationsResult = await ctx.supabase
-        .from('conversations')
-        .select(
-          'id,status,channel,started_at,assigned_to,contact_id,contacts(name,email,phone)'
-        )
-        .eq('org_id', ctx.userOrgId)
-        .order('started_at', { ascending: false })
-        .limit(limit)
+      let conversations: RecentConversationRow[]
 
-      if (conversationsResult.error) {
+      try {
+        const rows = await getApiDb().execute(sql<RecentConversationRow>`
+          SELECT
+            c.id,
+            CASE WHEN c.status = 'closed' THEN 'resolved' ELSE c.status END AS status,
+            COALESCE(NULLIF(c.channel, ''), 'chat') AS channel,
+            c.started_at,
+            c.assigned_to,
+            COALESCE(
+              NULLIF(ct.name, ''),
+              NULLIF(ct.email, ''),
+              NULLIF(ct.phone, ''),
+              'Anonymous'
+            ) AS contact_name,
+            COALESCE(NULLIF(ct.email, ''), NULLIF(ct.phone, '')) AS contact_value,
+            CASE
+              WHEN c.channel = 'email' THEN COALESCE(em.subject, m.content)
+              ELSE m.content
+            END AS preview_text
+          FROM public.conversations c
+          LEFT JOIN public.contacts ct ON ct.id = c.contact_id
+          LEFT JOIN LATERAL (
+            SELECT m.content
+            FROM public.messages m
+            WHERE m.org_id = c.org_id
+              AND m.conversation_id = c.id
+            ORDER BY m.created_at DESC, m.id DESC
+            LIMIT 1
+          ) m ON true
+          LEFT JOIN LATERAL (
+            SELECT em.subject
+            FROM public.email_messages em
+            WHERE em.org_id = c.org_id
+              AND em.conversation_id = c.id
+            ORDER BY em.created_at DESC, em.id DESC
+            LIMIT 1
+          ) em ON true
+          WHERE c.org_id = CAST(${ctx.userOrgId} AS uuid)
+          ORDER BY c.started_at DESC, c.id DESC
+          LIMIT ${limit}
+        `)
+        conversations = rows as unknown as RecentConversationRow[]
+      } catch (error) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to load recent conversations: ${conversationsResult.error.message}`,
+          message: `Failed to load recent conversations: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
         })
-      }
-
-      const conversations =
-        (conversationsResult.data as Array<{
-          id: string
-          status: string
-          channel: string
-          started_at: string
-          assigned_to: string | null
-          contacts: unknown
-        }> | null) ?? []
-
-      const conversationIds = conversations.map((conversation) => conversation.id)
-      if (conversationIds.length === 0) return []
-
-      const [messagesResult, emailResult] = await Promise.all([
-        ctx.supabase
-          .from('messages')
-          .select('conversation_id,role,content,created_at')
-          .eq('org_id', ctx.userOrgId)
-          .in('conversation_id', conversationIds)
-          .order('created_at', { ascending: false })
-          .limit(200),
-
-        ctx.supabase
-          .from('email_messages')
-          .select('conversation_id,subject,created_at')
-          .eq('org_id', ctx.userOrgId)
-          .in('conversation_id', conversationIds)
-          .order('created_at', { ascending: false })
-          .limit(100),
-      ])
-
-      if (messagesResult.error) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to load conversation previews: ${messagesResult.error.message}`,
-        })
-      }
-      if (emailResult.error) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to load email previews: ${emailResult.error.message}`,
-        })
-      }
-
-      const latestMessageByConversation = new Map<
-        string,
-        { role: string; content: string | null; created_at: string }
-      >()
-      const latestEmailByConversation = new Map<string, string>()
-
-      for (const row of (messagesResult.data ?? []) as Array<{
-        conversation_id: string
-        role: string
-        content: string | null
-        created_at: string
-      }>) {
-        if (!latestMessageByConversation.has(row.conversation_id)) {
-          latestMessageByConversation.set(row.conversation_id, row)
-        }
-      }
-
-      for (const row of (emailResult.data ?? []) as Array<{
-        conversation_id: string
-        subject: string
-      }>) {
-        if (!latestEmailByConversation.has(row.conversation_id)) {
-          latestEmailByConversation.set(row.conversation_id, row.subject)
-        }
       }
 
       return conversations.map((conversation) => {
-        const contact = normalizeContact(conversation.contacts)
-        const contactName =
-          contact?.name?.trim() ||
-          contact?.email?.trim() ||
-          contact?.phone?.trim() ||
-          'Anonymous'
-        const contactValue = contact?.email?.trim() || contact?.phone?.trim() || null
-        const latestMessage = latestMessageByConversation.get(conversation.id)
-        const latestEmailSubject = latestEmailByConversation.get(conversation.id)
-
-        const preview =
-          conversation.channel === 'email'
-            ? previewText(latestEmailSubject ?? latestMessage?.content)
-            : previewText(latestMessage?.content)
-
         return {
           id: conversation.id,
           channel: conversation.channel,
-          status:
-            conversation.status === 'closed' ? 'resolved' : conversation.status,
+          status: conversation.status,
           startedAt: conversation.started_at,
-          contactName,
-          contactValue,
-          previewText: preview,
+          contactName: conversation.contact_name?.trim() || 'Anonymous',
+          contactValue: conversation.contact_value?.trim() || null,
+          previewText: previewText(conversation.preview_text),
           isUnassigned: !conversation.assigned_to,
           href: `/inbox?conversation=${conversation.id}`,
         }
@@ -723,13 +693,15 @@ export const dashboardRouter = router({
 
       ctx.supabase
         .from('knowledge_bases')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', ctx.userOrgId),
+        .select('id')
+        .eq('org_id', ctx.userOrgId)
+        .limit(1),
 
       ctx.supabase
         .from('kb_chunks')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', ctx.userOrgId),
+        .select('id')
+        .eq('org_id', ctx.userOrgId)
+        .limit(1),
 
       ctx.supabase
         .from('email_accounts')
@@ -745,54 +717,63 @@ export const dashboardRouter = router({
 
       ctx.supabase
         .from('conversations')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', ctx.userOrgId),
+        .select('id')
+        .eq('org_id', ctx.userOrgId)
+        .limit(1),
 
       ctx.supabase
         .from('conversations')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('org_id', ctx.userOrgId)
-        .eq('channel', 'chat'),
+        .eq('channel', 'chat')
+        .limit(1),
 
       ctx.supabase
         .from('messages')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('org_id', ctx.userOrgId)
-        .eq('role', 'user'),
+        .eq('role', 'user')
+        .limit(1),
 
       ctx.supabase
         .from('messages')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('org_id', ctx.userOrgId)
-        .eq('role', 'assistant'),
+        .eq('role', 'assistant')
+        .limit(1),
 
       ctx.supabase
         .from('messages')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('org_id', ctx.userOrgId)
-        .eq('role', 'agent'),
+        .eq('role', 'agent')
+        .limit(1),
 
       ctx.supabase
         .from('user_organizations')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', ctx.userOrgId),
+        .select('id')
+        .eq('org_id', ctx.userOrgId)
+        .limit(2),
 
       ctx.supabase
         .from('org_invitations')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('org_id', ctx.userOrgId)
-        .eq('status', 'pending'),
+        .eq('status', 'pending')
+        .limit(1),
 
       ctx.supabase
         .from('inbox_sla_policies')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', ctx.userOrgId),
+        .select('id')
+        .eq('org_id', ctx.userOrgId)
+        .limit(1),
 
       ctx.supabase
         .from('ai_actions')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('org_id', ctx.userOrgId)
-        .eq('is_active', true),
+        .eq('is_active', true)
+        .limit(1),
     ])
 
     const queryErrors = [
@@ -851,22 +832,22 @@ export const dashboardRouter = router({
           cleanText(widgetData.welcome_message) !== '' && cleanText(widgetData.welcome_message) !== 'Hi! How can we help?'
         )
     )
-    const hasKnowledgeBase = toCount(knowledgeBaseResult) > 0
-    const hasKnowledgeSource = toCount(knowledgeChunkResult) > 0
+    const hasKnowledgeBase = hasRows(knowledgeBaseResult.data)
+    const hasKnowledgeSource = hasRows(knowledgeChunkResult.data)
     const hasEmailConnected = Boolean((emailResult.data as { id: string; is_active?: boolean } | null)?.id && (emailResult.data as { is_active?: boolean } | null)?.is_active !== false)
     const hasWhatsAppConnected = Boolean(
       (whatsappResult.data as { id: string; is_active?: boolean } | null)?.id &&
         (whatsappResult.data as { is_active?: boolean } | null)?.is_active !== false
     )
-    const hasAnyConversation = toCount(conversationResult) > 0
-    const hasChatConversation = toCount(chatConversationResult) > 0
-    const hasUserMessage = toCount(userMessageResult) > 0
-    const hasAssistantMessage = toCount(assistantMessageResult) > 0
-    const hasHandledConversation = toCount(handledResult) > 0
+    const hasAnyConversation = hasRows(conversationResult.data)
+    const hasChatConversation = hasRows(chatConversationResult.data)
+    const hasUserMessage = hasRows(userMessageResult.data)
+    const hasAssistantMessage = hasRows(assistantMessageResult.data)
+    const hasHandledConversation = hasRows(handledResult.data)
     const hasTeamMemberOrInvite =
-      toCount(teamMemberResult) > 1 || toCount(pendingInviteResult) > 0
-    const hasSlaPolicy = toCount(slaPolicyResult) > 0
-    const hasActiveAiAction = toCount(activeAiActionsResult) > 0
+      (teamMemberResult.data?.length ?? 0) > 1 || hasRows(pendingInviteResult.data)
+    const hasSlaPolicy = hasRows(slaPolicyResult.data)
+    const hasActiveAiAction = hasRows(activeAiActionsResult.data)
 
     const stepStatus = (completed: boolean, locked: boolean, ready: boolean) => {
       if (completed) return 'complete'
@@ -939,7 +920,7 @@ export const dashboardRouter = router({
         locked: !canManageKnowledge,
         status: stepStatus(hasKnowledgeSource, !canManageKnowledge, hasKnowledgeBase),
         statusDetail: hasKnowledgeSource
-          ? `${toCount(knowledgeChunkResult)} knowledge chunks indexed.`
+          ? 'At least one knowledge source is indexed.'
           : hasKnowledgeBase
             ? 'Knowledge base exists. Add at least one source.'
             : 'Create a knowledge base and add a source.',
@@ -1029,7 +1010,7 @@ export const dashboardRouter = router({
         locked: !canManageInbox,
         status: stepStatus(hasSlaPolicy, !canManageInbox, true),
         statusDetail: hasSlaPolicy
-          ? `${toCount(slaPolicyResult)} SLA policy row found.`
+          ? 'SLA policy is configured.'
           : 'Create or seed the default SLA policy before launch.',
       },
       {

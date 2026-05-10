@@ -192,17 +192,31 @@ export function useDashboard() {
     commonOpts
   )
 
+  const loading = {
+    overview: overviewQuery.isLoading,
+    recentConversations: recentConversationsQuery.isLoading,
+    activityFeed: activityFeedQuery.isLoading,
+    onboarding: onboardingQuery.isLoading,
+  }
+
+  const fetching = {
+    overview: overviewQuery.isFetching,
+    recentConversations: recentConversationsQuery.isFetching,
+    activityFeed: activityFeedQuery.isFetching,
+    onboarding: onboardingQuery.isFetching,
+  }
+
   const isLoading =
-    overviewQuery.isLoading ||
-    recentConversationsQuery.isLoading ||
-    activityFeedQuery.isLoading ||
-    onboardingQuery.isLoading
+    loading.overview ||
+    loading.recentConversations ||
+    loading.activityFeed ||
+    loading.onboarding
 
   const isFetching =
-    overviewQuery.isFetching ||
-    recentConversationsQuery.isFetching ||
-    activityFeedQuery.isFetching ||
-    onboardingQuery.isFetching
+    fetching.overview ||
+    fetching.recentConversations ||
+    fetching.activityFeed ||
+    fetching.onboarding
 
   const errorMessage = useMemo(() => {
     return (
@@ -236,6 +250,8 @@ export function useDashboard() {
     onboarding: (onboardingQuery.data ?? EMPTY_ONBOARDING) as DashboardOnboarding,
     isLoading,
     isFetching,
+    loading,
+    fetching,
     errorMessage,
     refetchAll,
   }

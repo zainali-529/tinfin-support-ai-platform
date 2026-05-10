@@ -12,7 +12,7 @@ export default defineConfig({
     lib: {
       entry: 'src/main.ts',
       name: 'TinfizWidget',
-      fileName: 'widget',
+      fileName: () => 'widget.js',
       formats: ['iife'],
     },
     rollupOptions: { external: [] },

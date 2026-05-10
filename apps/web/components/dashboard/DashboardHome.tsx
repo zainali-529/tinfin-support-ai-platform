@@ -59,8 +59,8 @@ export function DashboardHome() {
     recentConversations,
     activityFeed,
     onboarding,
-    isLoading,
     isFetching,
+    loading,
     errorMessage,
     refetchAll,
   } = useDashboard()
@@ -125,22 +125,32 @@ export function DashboardHome() {
         />
       )}
 
-      <DashboardKpis overview={overview} isLoading={isLoading} />
+      <DashboardKpis overview={overview} isLoading={loading.overview} />
 
-      <DashboardOperationsGrid overview={overview} onboarding={onboarding} isLoading={isLoading} />
+      <DashboardOperationsGrid
+        overview={overview}
+        onboarding={onboarding}
+        isLoading={loading.overview || loading.onboarding}
+      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
         <div className="xl:col-span-3">
-          <DashboardRecentConversations conversations={recentConversations} isLoading={isLoading} />
+          <DashboardRecentConversations
+            conversations={recentConversations}
+            isLoading={loading.recentConversations}
+          />
         </div>
         <div className="xl:col-span-2">
-          <DashboardActivityFeed items={activityFeed} isLoading={isLoading} />
+          <DashboardActivityFeed
+            items={activityFeed}
+            isLoading={loading.activityFeed}
+          />
         </div>
       </div>
 
       <DashboardOnboardingCard
         onboarding={onboarding}
-        isLoading={isLoading}
+        isLoading={loading.onboarding}
         isVerifying={isFetching}
         onVerify={refetchAll}
       />

@@ -7,6 +7,25 @@
 import { router, protectedProcedure } from '../trpc/trpc'
 import { getOrgSubscription } from '../lib/subscriptions'
 import { getBillingLimitSummary, publicLimits } from '../lib/billing-limits'
+import { getApiDb, sql } from '../lib/db'
+
+interface UsageAggregateRow {
+  conversations: unknown
+  voice_seconds: unknown
+  team_members: unknown
+  knowledge_bases: unknown
+  kb_chunks: unknown
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
 
 export const usageRouter = router({
   getUsage: protectedProcedure.query(async ({ ctx }) => {
@@ -17,47 +36,55 @@ export const usageRouter = router({
     const periodStart = billingSummary.periodStart
     const periodStartIso = periodStart.toISOString()
 
-    const [
-      conversationsResult,
-      voiceResult,
-      membersResult,
-      kbResult,
-      chunksResult,
-    ] = await Promise.all([
-      ctx.supabase
-        .from('conversations')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId)
-        .gte('started_at', periodStartIso),
-
-      ctx.supabase
-        .from('calls')
-        .select('duration_seconds')
-        .eq('org_id', orgId)
-        .gte('created_at', periodStartIso)
-        .not('duration_seconds', 'is', null),
-
-      ctx.supabase
-        .from('user_organizations')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId),
-
-      ctx.supabase
-        .from('knowledge_bases')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId),
-
-      ctx.supabase
-        .from('kb_chunks')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId),
-    ])
-
-    const conversationsCount = conversationsResult.count ?? 0
-    const voiceSeconds = (voiceResult.data ?? []).reduce(
-      (sum, call) => sum + ((call.duration_seconds as number) || 0),
-      0
-    )
+    const rows = await getApiDb().execute(sql<UsageAggregateRow>`
+      WITH params AS (
+        SELECT
+          CAST(${orgId} AS uuid) AS org_id,
+          CAST(${periodStartIso} AS timestamptz) AS period_start
+      ),
+      conversations_usage AS (
+        SELECT COUNT(*) AS conversations
+        FROM public.conversations c
+        CROSS JOIN params p
+        WHERE c.org_id = p.org_id
+          AND c.started_at >= p.period_start
+      ),
+      voice_usage AS (
+        SELECT COALESCE(SUM(duration_seconds), 0) AS voice_seconds
+        FROM public.calls c
+        CROSS JOIN params p
+        WHERE c.org_id = p.org_id
+          AND c.created_at >= p.period_start
+          AND c.duration_seconds IS NOT NULL
+      ),
+      member_usage AS (
+        SELECT COUNT(*) AS team_members
+        FROM public.user_organizations uo
+        CROSS JOIN params p
+        WHERE uo.org_id = p.org_id
+      ),
+      knowledge_usage AS (
+        SELECT COUNT(*) AS knowledge_bases
+        FROM public.knowledge_bases kb
+        CROSS JOIN params p
+        WHERE kb.org_id = p.org_id
+      ),
+      chunk_usage AS (
+        SELECT COUNT(*) AS kb_chunks
+        FROM public.kb_chunks kc
+        CROSS JOIN params p
+        WHERE kc.org_id = p.org_id
+      )
+      SELECT *
+      FROM conversations_usage,
+        voice_usage,
+        member_usage,
+        knowledge_usage,
+        chunk_usage
+    `)
+    const usage = (rows as unknown as UsageAggregateRow[])[0]
+    const conversationsCount = toNumber(usage?.conversations)
+    const voiceSeconds = toNumber(usage?.voice_seconds)
     const voiceMinutes = Math.ceil(voiceSeconds / 60)
 
     return {
@@ -71,9 +98,9 @@ export const usageRouter = router({
       usage: {
         conversations: conversationsCount,
         voiceMinutes,
-        teamMembers: membersResult.count ?? 0,
-        knowledgeBases: kbResult.count ?? 0,
-        kbChunks: chunksResult.count ?? 0,
+        teamMembers: toNumber(usage?.team_members),
+        knowledgeBases: toNumber(usage?.knowledge_bases),
+        kbChunks: toNumber(usage?.kb_chunks),
       },
       baseLimits: publicLimits(billingSummary.baseLimits),
       addOnLimits: publicLimits(billingSummary.addOnLimits),

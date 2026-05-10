@@ -3,6 +3,14 @@ import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../trpc/trpc'
 import { scanSlaNotifications } from '../services/notifications.service'
 
+const SLA_SCAN_MIN_INTERVAL_MS = 60_000
+const lastSlaScanByOrg = new Map<string, number>()
+const runningSlaScansByOrg = new Map<string, Promise<void>>()
+type SlaScanContext = {
+  supabase: Parameters<typeof scanSlaNotifications>[0]
+  userOrgId: string
+}
+
 const listInputSchema = z
   .object({
     limit: z.number().int().min(1).max(50).default(20),
@@ -33,22 +41,35 @@ function normalizeNotification(row: Record<string, unknown>) {
   }
 }
 
-async function runSlaScanSafely(ctx: { supabase: any; userOrgId: string }) {
-  try {
-    await scanSlaNotifications(ctx.supabase, ctx.userOrgId)
-  } catch (error) {
-    console.error(
-      '[notifications.router] SLA scan failed:',
-      error instanceof Error ? error.message : error
-    )
-  }
+function scheduleSlaScan(ctx: SlaScanContext) {
+  const now = Date.now()
+  const lastScanAt = lastSlaScanByOrg.get(ctx.userOrgId) ?? 0
+
+  if (now - lastScanAt < SLA_SCAN_MIN_INTERVAL_MS) return
+  if (runningSlaScansByOrg.has(ctx.userOrgId)) return
+
+  lastSlaScanByOrg.set(ctx.userOrgId, now)
+
+  const scan = scanSlaNotifications(ctx.supabase, ctx.userOrgId)
+    .then(() => undefined)
+    .catch((error) => {
+      console.error(
+        '[notifications.router] SLA scan failed:',
+        error instanceof Error ? error.message : error
+      )
+    })
+    .finally(() => {
+      runningSlaScansByOrg.delete(ctx.userOrgId)
+    })
+
+  runningSlaScansByOrg.set(ctx.userOrgId, scan)
 }
 
 export const notificationsRouter = router({
   list: protectedProcedure
     .input(listInputSchema)
     .query(async ({ ctx, input }) => {
-      await runSlaScanSafely(ctx)
+      scheduleSlaScan(ctx)
 
       const limit = input?.limit ?? 20
       const unreadOnly = input?.unreadOnly ?? false
@@ -79,7 +100,7 @@ export const notificationsRouter = router({
     }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
-    await runSlaScanSafely(ctx)
+    scheduleSlaScan(ctx)
 
     const { count, error } = await ctx.supabase
       .from('notifications')
