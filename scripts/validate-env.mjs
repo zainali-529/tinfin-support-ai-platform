@@ -159,6 +159,28 @@ function runValidation() {
     recommendedEnv("CONTACT_REQUEST_WEBHOOK_SECRET", "Recommended to authenticate contact form webhooks.")
     if (has("DEMO_REQUEST_WEBHOOK_URL")) url("DEMO_REQUEST_WEBHOOK_URL")
     if (has("CONTACT_REQUEST_WEBHOOK_URL")) url("CONTACT_REQUEST_WEBHOOK_URL")
+
+    if (mode === "production") {
+      requireOneOf(
+        ["ISSUE_REPORT_WEBHOOK_URL", "ISSUE_REPORT_EMAIL_TO"],
+        "Configure at least one issue report delivery channel before launch.",
+      )
+    } else {
+      optionalWarnAny(
+        ["ISSUE_REPORT_WEBHOOK_URL", "ISSUE_REPORT_EMAIL_TO"],
+        "Issue reporting can still be captured in Sentry, but webhook or email delivery is recommended.",
+      )
+    }
+    if (has("ISSUE_REPORT_WEBHOOK_URL")) {
+      url("ISSUE_REPORT_WEBHOOK_URL")
+      recommendedEnv("ISSUE_REPORT_WEBHOOK_SECRET", "Recommended to authenticate issue report webhooks.")
+    }
+    if (has("ISSUE_REPORT_EMAIL_TO")) {
+      emailList("ISSUE_REPORT_EMAIL_TO")
+      recommendedEnv("ISSUE_REPORT_EMAIL_FROM", "Recommended for issue report emails; falls back to notification sender.")
+      recommendedEnv("ISSUE_REPORT_EMAIL_REPLY_TO", "Recommended for issue report replies; falls back to notification reply-to.")
+      recommendedEnv("ISSUE_REPORT_RESEND_API_KEY", "Recommended for issue report emails; falls back to notification Resend key.")
+    }
   })
 
   section("Realtime and queues", () => {
@@ -364,6 +386,16 @@ function optionalWarnAny(names, reason) {
     return
   }
   addCheck(activeSection, names.join(" | "), strictOptional ? "fail" : "warn", reason)
+}
+
+function requireOneOf(names, reason) {
+  if (names.some(has)) {
+    addCheck(activeSection, names.join(" | "), "pass", "At least one required option is set.")
+    return true
+  }
+
+  addCheck(activeSection, names.join(" | "), "fail", reason)
+  return false
 }
 
 function url(name) {
@@ -574,6 +606,20 @@ function email(name) {
     return
   }
   addCheck(activeSection, name, "pass", "Valid email shape.")
+}
+
+function emailList(name) {
+  if (!has(name)) return
+  const emails = get(name).split(",").map((item) => item.trim()).filter(Boolean)
+  if (emails.length === 0) {
+    addCheck(activeSection, name, "fail", "Must include at least one email address.")
+    return
+  }
+  if (emails.some((item) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item))) {
+    addCheck(activeSection, name, "fail", "Must be a comma-separated list of valid email addresses.")
+    return
+  }
+  addCheck(activeSection, name, "pass", `${emails.length} recipient email(s) configured.`)
 }
 
 function isLocalHost(hostname) {

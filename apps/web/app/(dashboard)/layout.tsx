@@ -24,6 +24,7 @@ import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { AgentRealtimeProvider } from '@/components/realtime/AgentRealtimeProvider'
 import { RealtimeStatusBanner } from '@/components/launch/RealtimeStatusBanner'
 import { SentryDashboardContext } from '@/components/monitoring/SentryDashboardContext'
+import { ReportIssueButton } from '@/components/support/ReportIssueButton'
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string): boolean {
   const msg = (error?.message ?? '').toLowerCase()
@@ -147,6 +148,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
                   </BreadcrumbList>
                 </Breadcrumb>
                 <div className="ml-auto flex items-center gap-2">
+                  <ReportIssueButton
+                    user={{ id: user.id, email: sidebarUser.email, name: sidebarUser.name }}
+                  />
                   <NotificationBell />
                   <DocsSearchLauncher compact />
                   <ThemeToggle />

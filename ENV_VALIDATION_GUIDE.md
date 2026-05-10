@@ -63,6 +63,7 @@ The validator checks:
 - Voice, WhatsApp, and email channel secrets.
 - Notification email settings when enabled.
 - Demo/contact lead form webhook delivery.
+- User issue reporting webhook/email delivery.
 - Redis readiness for production queues/realtime scaling.
 - Sentry DSNs, release metadata, source map upload configuration, and smoke test token.
 
@@ -92,3 +93,6 @@ Production should use live resources:
 - Staging Stripe keys should use `sk_test_` and `pk_test_`.
 - `AI_ACTION_OUTBOUND_ALLOWLIST` must not use wildcards.
 - If `NOTIFICATION_EMAIL_ENABLED=true`, Resend and email sender variables become required.
+- Production issue reporting must configure at least one delivery path:
+  - `ISSUE_REPORT_WEBHOOK_URL`, or
+  - `ISSUE_REPORT_EMAIL_TO` with Resend/sender envs.
